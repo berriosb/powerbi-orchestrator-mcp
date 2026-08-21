@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv/
+uv.lock
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Project-specific
+# PBIP / .pbix samples (solo si son fixtures generados; los manuales se commitean)
+fixtures-generated/
+*.pbix.local
+
+# Secrets / config local
+.env
+.env.local
+*.pem
+*.key
+
+# Logs / runtime
+logs/
+*.log
+audit.sqlite
+regression.sqlite
