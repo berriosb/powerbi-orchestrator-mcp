@@ -38,6 +38,23 @@
 | `generate_data_dictionary` | [`../specs/03-validation.md`](../specs/03-validation.md) | ❌ |
 | `apply_theme_and_accessibility_rules` | [`../specs/04-viz-ux.md` §3](../specs/04-viz-ux.md) | ❌ |
 
+## Tools MVP v1 sin spec dedicado (corrección post-audit 2026-08-21)
+
+Estas tools están en SPEC §6.1 pero aún no tienen archivo en `specs/tools/`. Se
+documentan como componentes en los specs por capa (`specs/01-orchestrator.md`,
+`specs/03-validation.md`) pero falta extraer el tool schema dedicado:
+
+| Tool | Dónde está documentada |
+|------|----------------------|
+| `add_measure_with_validation` | `specs/01-orchestrator.md` (referida) + falta spec dedicado |
+| `create_report_from_dataset` | sin spec dedicado, depende de Capa 2 engines |
+| `edit_report_visual` | sin spec dedicado, depende de Capa 2 engines |
+| `diff_models` | `specs/03-validation.md` §2.4 (componente, falta tool schema) |
+| `run_dax_regression` | `specs/03-validation.md` §5 (tool schema parcial, falta completar) |
+
+**Acción:** crear specs dedicados antes de la Semana 2 del IMPLEMENTATION-PLAN
+(específicamente al implementar cada tool).
+
 ## Workflows
 
 | Workflow | Spec | Status código |
@@ -59,7 +76,7 @@
 | `setup_rls_and_roles` | v2 | ❌ falta spec |
 | `create_semantic_model_from_schema` | v2 | ❌ falta spec |
 | `sync_git_to_workspace` | v3 | ❌ falta spec |
-| `screenshot_report_pages` | v3 | ❌ falta spec |
+| `screenshot_report_pages` | v2 (corrección: era v3) | ❌ falta spec |
 | `set_sensitivity_labels` | v3 | ❌ falta spec |
 
 ---

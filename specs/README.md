@@ -43,6 +43,10 @@
 
 ## Pendientes (no MVP)
 
+- [ ] `tools/add-measure-with-validation.md` → MVP v1 (corrección: faltaba del índice)
+- [ ] `tools/create-report-from-dataset.md` → MVP v1 (corrección: faltaba del índice)
+- [ ] `tools/edit-report-visual.md` → MVP v1 (corrección: faltaba del índice)
+- [ ] `tools/diff-models.md` → MVP v1 (corrección: faltaba del índice)
 - [ ] `tools/refactor-to-calculation-groups.md` (con reconciliation total) → v2
 - [ ] `tools/promote-in-pipeline.md` (dev→test→prod gates) → v2
 - [ ] `tools/design-report-page-from-requirements.md` (viz/UX completa) → v2
@@ -50,10 +54,10 @@
 - [ ] `tools/audit-report-ux-and-storytelling.md` → v2
 - [ ] `tools/setup-rls-and-roles.md` → v2
 - [ ] `tools/create-semantic-model-from-schema.md` → v2
-- [ ] `tools/run-dax-regression.md` → v3
+- [ ] `tools/run-dax-regression.md` → MVP v1 (corrección: estaba mal clasificado como v3; falta spec)
 - [ ] `tools/sync-git-to-workspace.md` → v3
-- [ ] `tools/screenshot-report-pages.md` → v3
-- [ ] `tools/apply-theme-and-accessibility-rules.md` → v3
+- [ ] `tools/screenshot-report-pages.md` → v2 (corrección: era v3, es post-MVP)
+- [ ] `tools/apply-theme-and-accessibility-rules.md` → MVP v1 (corrección: estaba mal clasificado como v3)
 
 ## Cambios v0.1 (sync 2026-08-21)
 

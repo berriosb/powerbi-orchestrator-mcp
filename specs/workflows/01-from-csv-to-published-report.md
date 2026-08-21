@@ -3,11 +3,12 @@
 > Flujo end-to-end #1. Un solo prompt del agente → modelo estrella → DAX básico
 > → RLS → reporte ejecutivo mobile-friendly → publicado en Fabric con refresh.
 
-**Status:** v0.1 (spec)
-**Prioridad:** P0 — showcase del MVP
+**Status:** v0.2 (spec — corregido tras audit 2026-08-21)
+**Prioridad:** P0 — showcase del MVP **completo** (algunas subpartes dependen de tools v2)
 **Responsable:** codehak
 **Depende de:**
-- Todos los tools MVP v1
+- Tools MVP v1: `connect_target`, `plan_change`, `apply_plan`, `add_measure_with_validation`, `create_report_from_dataset`, `edit_report_visual`, `safe_rename`, `audit_model_and_report`, `apply_theme_and_accessibility_rules`, `pre_deploy_check`, `deploy_to_workspace`, `run_refresh`, `generate_data_dictionary`
+- Tools v2 (requeridos para showcase completo): `create_semantic_model_from_schema`, `setup_rls_and_roles`, `design_report_page_from_requirements` — ver §9 "Alcance MVP alcanzable" abajo
 - [`../01-orchestrator.md`](../01-orchestrator.md) — orquestación
 - [`../02-cloud-fabric.md`](../02-cloud-fabric.md) — cloud
 - [`../03-validation.md`](../03-validation.md) — validación
@@ -267,14 +268,38 @@ duration_ms: ~250000  # ~4 min
 
 ## 6. Acceptance criteria
 
-- [ ] Workflow end-to-end ejecuta sin intervención adicional más allá de
-  las elicitations listadas.
+**MVP v1 alcanzable (solo con tools MVP):**
+- [ ] Workflow end-to-end ejecuta sin intervención adicional más allá de las elicitations listadas.
 - [ ] PBIP resultante se abre en Power BI Desktop sin warnings.
 - [ ] Dataset publicado se refresca correctamente.
-- [ ] RLS matrix 3/3 passed.
 - [ ] Overall audit score ≥80.
 - [ ] Data dictionary generado con coverage ≥80%.
 - [ ] Rollback atómico funciona si cualquier fase falla.
+
+**Requiere tools v2 (no MVP):**
+- [ ] RLS matrix 3/3 passed (depende de `setup_rls_and_roles` v2).
+- [ ] Scaffold automático del modelo estrella desde spec (depende de `create_semantic_model_from_schema` v2).
+- [ ] Diseño automático de página con 4 visuales desde brief NL (depende de `design_report_page_from_requirements` v2).
+
+Sin los tools v2, el flujo MVP se completa vía **scaffold manual + `add_measure_with_validation` para medidas** + **scaffold manual del reporte con `create_report_from_dataset` + `edit_report_visual`**. La orquestación, validación, deploy, refresh, theme/WCAG y data dictionary sí son 100% MVP.
+
+## 9. Alcance MVP alcanzable vs showcase completo
+
+Esta distinción se documenta porque el workflow 01 mezcla MVP y v2. Para no inducir a error:
+
+**MVP alcanzable sin v2 (~80% del flujo):**
+
+| Fase | MVP alcanzable | Limitación |
+|------|---------------|-----------|
+| 1. Conectar | ✅ 100% | — |
+| 2. Modelo estrella | ⚠️ scaffold manual | Schema debe venir pre-armado por el agente en formato YAML; `add_measure_with_validation` sí funciona, pero el scaffold del esqueleto (tablas, relaciones) es manual. |
+| 3. Medidas + RLS | ✅ Medidas 100% | ❌ RLS matrix testeada con `run_dax_regression` + EffectiveIdentity vía REST `Execute Queries` — `setup_rls_and_roles` v2 lo automatiza, MVP requiere setup manual del test. |
+| 4. Reporte + viz/UX | ⚠️ scaffold manual | `create_report_from_dataset` crea el PBIR con página vacía; `edit_report_visual` agrega visuales uno a uno. `design_report_page_from_requirements` v2 lo haría desde NL. Theme + WCAG sí son 100% MVP. |
+| 5. Audit + Deploy + Refresh | ✅ 100% | — |
+
+**Showcase completo (con v2):** el agente hace todo en un solo prompt, sin intervención manual adicional.
+
+**Recomendación para MVP done (SPEC §6.4):** validar el sub-flujo MVP alcanzable, no el showcase completo. El showcase completo es acceptance criteria de v2.
 
 ## 7. Riesgos
 

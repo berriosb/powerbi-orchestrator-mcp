@@ -58,7 +58,7 @@ agente. Las otras 5 son internas.
                              │ MCP (stdio)
 ┌────────────────────────────▼────────────────────────────────────┐
 │ CAPA 6 · ORQUESTACIÓN (este servidor)                           │
-│   ~35 tools de alto nivel + planner + rollback engine           │
+│   ~28 tools de alto nivel + planner + rollback engine           │
 └──┬───────────┬───────────�───────────┬──────────────────────────┘
    │           │           │           │
    ▼           ▼           ▼           ▼
@@ -142,7 +142,7 @@ Config (igual en todos):
 
 ## 4. Herramientas (alto nivel)
 
-**35 tools de alto nivel** agrupados en 7 categorías. Cada tool devuelve
+**28 tools de alto nivel** agrupados en 7 categorías. Cada tool devuelve
 `structuredContent` (JSON Schema validado por Pydantic) y opcionalmente
 `artifact` (screenshot, archivo generado).
 
@@ -269,9 +269,16 @@ con v1, sin v2/v3).
 
 ### 6.4 Criterios de "MVP done"
 
+> **Nota (post-audit 2026-08-21):** El workflow 01 tiene partes que dependen
+> de tools v2. Estos criterios validan el **sub-flujo MVP alcanzable**,
+> no el showcase completo. Ver
+> [`specs/workflows/01-from-csv-to-published-report.md` §9](./specs/workflows/01-from-csv-to-published-report.md)
+> para el detalle.
+
 - [ ] Instalación `pip install powerbi-orchestrator` funciona en Linux + macOS + Windows.
 - [ ] Config JSON registrado en VS Code + Claude Desktop + OpenClaw sin errores.
-- [ ] Workflow 1 (de CSV a reporte publicado con RLS) funciona end-to-end con un PBIP de prueba.
+- [ ] **Sub-flujo MVP del workflow 01 funciona end-to-end** con un PBIP de prueba:
+  conectar → modelo (scaffold manual del agente) → medidas con lint → theme/WCAG → audit → pre-deploy → deploy → refresh → data dictionary.
 - [ ] `safe_rename` propaga a modelo + DAX + report bindings con rollback atómico verificado por test.
 - [ ] `audit_model_and_report` devuelve score reproducible sobre el PBIP de prueba.
 - [ ] `deploy_to_workspace` publica a un workspace real y refresh completa.
