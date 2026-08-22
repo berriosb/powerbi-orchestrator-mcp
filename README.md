@@ -1,4 +1,4 @@
-# powerbi-orchestrator
+# powerbi-orchestrator-mcp
 
 > MCP server unificado y orquestador para Power BI / Fabric.
 > Une modelado semántico, autoría de reportes, nube Fabric, validación y
@@ -11,7 +11,7 @@
 ## Qué es
 
 Un servidor [Model Context Protocol](https://modelcontextprotocol.io) (stdio) que
-expone **~35 herramientas de alto nivel** (no 500 primitivas) para que un agente
+expone **28 herramientas de alto nivel** (no 500 primitivas) para que un agente
 IA pueda trabajar end-to-end con Power BI:
 
 - Diseñar y validar modelos semánticos (TMDL/TOM).
@@ -31,7 +31,7 @@ Los MCPs existentes cubren **partes**:
 - `fabric-rti-mcp`, `Fabric Core MCP`: solo nube, no autoría local.
 
 Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
-`powerbi-orchestrator` sí.
+`powerbi-orchestrator-mcp` sí.
 
 ## Quick links
 
@@ -44,14 +44,14 @@ Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
 ## Instalación (cuando esté implementado)
 
 ```bash
-pip install powerbi-orchestrator
+pip install powerbi-orchestrator-mcp
 ```
 
 Configuración en cualquier MCP client:
 
 ```json
-{"mcpServers":{"powerbi-orchestrator":{
-  "command":"powerbi-orchestrator",
+{"mcpServers":{"powerbi-orchestrator-mcp":{
+  "command":"powerbi-orchestrator-mcp",
   "args":["--start"],
   "env":{"PBI_AUTH_MODE":"interactive"}
 }}}

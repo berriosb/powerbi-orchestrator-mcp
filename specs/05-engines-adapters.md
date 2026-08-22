@@ -1,6 +1,6 @@
 # Spec: Engines Adapters (Capas 1 y 2)
 
-> Cómo `powerbi-orchestrator` delega a los motores externos especializados.
+> Cómo `powerbi-orchestrator-mcp` delega a los motores externos especializados.
 > No reimplementamos TOM/PBIR — los orquestamos.
 
 **Status:** v0.1 (spec)

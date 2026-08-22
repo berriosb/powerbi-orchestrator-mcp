@@ -1,4 +1,4 @@
-# Feature Specs — powerbi-orchestrator
+# Feature Specs — powerbi-orchestrator-mcp
 
 > Specs modulares por capa y por tool. Cada spec es un entregable implementable.
 >

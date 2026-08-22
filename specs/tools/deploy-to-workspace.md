@@ -121,7 +121,7 @@ output_schema:
 
 ### Step 2: elicitation (si workspace es production)
 
-- Verificar `~/.powerbi-orchestrator/workspaces.yaml` para tag `production`.
+- Verificar `~/.powerbi-orchestrator-mcp/workspaces.yaml` para tag `production`.
 - Si tagged: elicitar con details ("deploy a workspace 'Analytics-Prod' está marcado como producción. ¿Continuar?").
 - Si untagged o no en config: elicitar de todas formas (primera vez).
 
@@ -229,7 +229,7 @@ output_schema:
 
 ## 6. Out of scope (MVP)
 
-- � Crear workspace nuevo (v2).
+- ❌ Crear workspace nuevo (v2).
 - ❌ Deployment Pipelines (dev→test→prod gates) (v2).
 - ❌ Git Integration post-deploy (v3).
 - ❌ Incremental refresh (requiere Premium, v2).

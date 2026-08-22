@@ -1,4 +1,4 @@
-# MVP STATUS — powerbi-orchestrator
+# MVP STATUS — powerbi-orchestrator-mcp
 
 > Estado de implementación vs specs. Última sync: 2026-08-21 (specs v0.1,
 > código aún no escrito).
@@ -17,7 +17,7 @@
 |------|------|---------------|
 | 6 · Orquestación | [`../specs/01-orchestrator.md`](../specs/01-orchestrator.md) | ❌ |
 | 3 · Cloud Fabric | [`../specs/02-cloud-fabric.md`](../specs/02-cloud-fabric.md) | ❌ |
-| 4 · Validación | [`../specs/03-validation.md`](../specs/03-validation.md) | � |
+| 4 · Validación | [`../specs/03-validation.md`](../specs/03-validation.md) | ❌ |
 | 5 · Viz/UX | [`../specs/04-viz-ux.md`](../specs/04-viz-ux.md) | ❌ |
 | 1-2 · Engines | [`../specs/05-engines-adapters.md`](../specs/05-engines-adapters.md) | ❌ |
 
@@ -133,7 +133,7 @@ documentan como componentes en los specs por capa (`specs/01-orchestrator.md`,
 
 ## Criterios de "MVP done" (acceptance del [`SPEC.md`](../SPEC.md) §6.4)
 
-- [ ] Instalación `pip install powerbi-orchestrator` funciona en Linux + macOS + Windows.
+- [ ] Instalación `pip install powerbi-orchestrator-mcp` funciona en Linux + macOS + Windows.
 - [ ] Config JSON registrado en VS Code + Claude Desktop + OpenClaw sin errores.
 - [ ] Workflow 1 (de CSV a reporte publicado con RLS) funciona end-to-end con un PBIP de prueba.
 - [ ] `safe_rename` propaga a modelo + DAX + report bindings con rollback atómico verificado por test.

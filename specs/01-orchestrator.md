@@ -40,7 +40,7 @@ ejecutarlos delegando a las capas internas (1-5), validar entre steps y
 # src/orchestrator/server.py
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("powerbi-orchestrator")
+mcp = FastMCP("powerbi-orchestrator-mcp")
 
 @mcp.tool()
 async def connect_target(...) -> ConnectResult: ...
@@ -49,7 +49,7 @@ async def plan_change(...) -> PlanResult: ...
 @mcp.tool()
 async def apply_plan(...) -> ApplyResult: ...
 
-# ... 32 tools más
+# ... 25 tools más
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
@@ -101,7 +101,7 @@ class PlanOptions(BaseModel):
 3. Para tools conocidos (`safe_rename`, `audit_*`, `deploy_*`): el plan es
    fijo, viene de un template.
 4. Para intents libres: usa un LLM local (NO OpenAI) para des componer.
-   En MVP, NO se soporta intents libres arbitrarios — solo los 35 tools
+   En MVP, NO se soporta intents libres arbitrarios — solo los 28 tools
    de alto nivel predefinidos.
 5. Calcula `risk_score` heurístico: nº de archivos afectados × tipo de
    operación (rename bajo, drop alto).
@@ -125,7 +125,7 @@ class EngineStatus(BaseModel):
     reason_unavailable: str | None
 ```
 
-**Persistencia:** SQLite (WAL mode) en `~/.powerbi-orchestrator/sessions/`.
+**Persistencia:** SQLite (WAL mode) en `~/.powerbi-orchestrator-mcp/sessions/`.
 Cache de metadata con TTL configurable (default 30 min).
 
 ### 2.4 `audit.py` — Log HMAC-chained
@@ -320,7 +320,7 @@ errors:
 1. Validar plan_id existe y target está conectado.
 2. Si dry_run → ejecutar steps sin writes, devolver diff estimado.
 3. Si confirm_each_step → elicitation por step.
-4. Crear snapshot: git tag (si es repo) + tar backup del PBIP a ~/.powerbi-orchestrator/snapshots/.
+4. Crear snapshot: git tag (si es repo) + tar backup del PBIP a ~/.powerbi-orchestrator-mcp/snapshots/.
 5. Para cada step en orden:
    a. Ejecutar via engine adapter.
    b. Capturar changed_files.
@@ -349,7 +349,7 @@ errors:
 
 ```yaml
 # plan_id: plan_2026-08-21_abc123
-# generated_by: powerbi-orchestrator v0.1.0
+# generated_by: powerbi-orchestrator-mcp v0.1.0
 # target: pbip:./out/sales.pbip
 # created_at: 2026-08-21T10:30:00Z
 # risk_score: 0.3
@@ -440,7 +440,7 @@ steps:
 - ❌ Persistencia entre sesiones (el agente guarda su propio memory).
 - ❌ Remote transport (HTTP) → v4.
 - ❌ UI propia para elicitation (depende del cliente MCP).
-- ❌ Intents NL libres arbitrarios (solo los 35 tools predefinidos).
+- ❌ Intents NL libres arbitrarios (solo los 28 tools predefinidos).
 
 ## 8. Riesgos
 

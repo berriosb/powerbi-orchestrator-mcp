@@ -380,7 +380,7 @@ Formato JSON compatible con Tabular Editor BPA:
 }
 ```
 
-**Ubicación:** `~/.powerbi-orchestrator/bpa-rulesets/` (custom del usuario) +
+**Ubicación:** `~/.powerbi-orchestrator-mcp/bpa-rulesets/` (custom del usuario) +
 `src/validation/bpa_rulesets/` (oficiales bundled).
 
 ---

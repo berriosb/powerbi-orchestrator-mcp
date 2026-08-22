@@ -322,7 +322,7 @@ output_schema:
 
 ## 7. Out of scope (MVP)
 
-- � Rename en `.pbix` cerrado sin Desktop abierto (requiere Super BI).
+- ❌ Rename en `.pbix` cerrado sin Desktop abierto (requiere Super BI).
 - ❌ Rename cross-model (entre datasets relacionados).
 - ❌ Auto-fix de M references detectadas (solo warning en MVP).
 - ❌ Batch rename (múltiples objetos en un solo call) → v2.

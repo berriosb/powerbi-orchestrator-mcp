@@ -1,4 +1,4 @@
-# SPEC.md — powerbi-orchestrator
+# SPEC.md — powerbi-orchestrator-mcp
 
 > Visión, arquitectura, stack y alcance del MVP ambicioso.
 > Documento raíz. Las decisiones técnicas detalladas viven en
@@ -25,7 +25,7 @@ visualización/UX con WCAG verificable, motor de planes con rollback).
 ### 1.1 Hipótesis de diseño
 
 1. **Delegar > reimplementar.** Reimplementar TOM/TMDL/PBIR es absurdo y
-  永远不会追上 a Microsoft. El valor está en la orquestación, no en las
+   nunca alcanzará a Microsoft. El valor está en la orquestación, no en las
    primitivas.
 2. **Una intención de negocio = un tool.** El LLM no debería llamar 500
    primitivas; debería llamar "rename esta columna propagando a todo" y el
@@ -58,8 +58,8 @@ agente. Las otras 5 son internas.
                              │ MCP (stdio)
 ┌────────────────────────────▼────────────────────────────────────┐
 │ CAPA 6 · ORQUESTACIÓN (este servidor)                           │
-│   ~28 tools de alto nivel + planner + rollback engine           │
-└──┬───────────┬───────────�───────────┬──────────────────────────┘
+│   28 tools de alto nivel + planner + rollback engine            │
+└──┬───────────┬───────────┬───────────┬──────────────────────────┘
    │           │           │           │
    ▼           ▼           ▼           ▼
 ┌───────┐  ┌────────┐  ┌─────────┐  ┌─────────────┐
@@ -74,7 +74,7 @@ agente. Las otras 5 son internas.
 │→ dscmd  │→ pbip-   │           │  │→ theme      │
 │         │  validator           │  │→ story-     │
 │         │                      │  │  telling    │
-└───────┘  └────────┘  └─────────┘  └─────────────�
+└───────┘  └────────┘  └─────────┘  └─────────────┘
                   │
                   ▼
             ┌─────────────┐
@@ -109,7 +109,7 @@ Cada capa tiene su spec modular en `specs/0X-*.md`.
 
 ### 3.2 Distribución
 
-- **PyPI**: `pip install powerbi-orchestrator` → comando `powerbi-orchestrator`.
+- **PyPI**: `pip install powerbi-orchestrator-mcp` → comando `powerbi-orchestrator-mcp`.
 - **Docker**: imagen cross-platform con subset offline (sin Desktop) para CI.
 - **Binarios externos** (subprocess, version-pin):
   - `@microsoft/powerbi-modeling-mcp@<pinned>` vía `npx`.
@@ -131,8 +131,8 @@ Compatible con cualquier cliente MCP stdio:
 Config (igual en todos):
 
 ```json
-{"mcpServers":{"powerbi-orchestrator":{
-  "command":"powerbi-orchestrator",
+{"mcpServers":{"powerbi-orchestrator-mcp":{
+  "command":"powerbi-orchestrator-mcp",
   "args":["--start"],
   "env":{"PBI_AUTH_MODE":"interactive"}
 }}}
@@ -256,7 +256,7 @@ con v1, sin v2/v3).
 - ❌ `promote_in_pipeline` → v2.
 - ❌ `sync_git_to_workspace` → v3.
 - ❌ Desktop Bridge real (screenshots determinísticos) → v3.
-- � Storytelling scoring con análisis de varianza real → v3.
+- ❌ Storytelling scoring con análisis de varianza real → v3.
 
 ### 6.3 Plan de 4 semanas
 
@@ -275,7 +275,7 @@ con v1, sin v2/v3).
 > [`specs/workflows/01-from-csv-to-published-report.md` §9](./specs/workflows/01-from-csv-to-published-report.md)
 > para el detalle.
 
-- [ ] Instalación `pip install powerbi-orchestrator` funciona en Linux + macOS + Windows.
+- [ ] Instalación `pip install powerbi-orchestrator-mcp` funciona en Linux + macOS + Windows.
 - [ ] Config JSON registrado en VS Code + Claude Desktop + OpenClaw sin errores.
 - [ ] **Sub-flujo MVP del workflow 01 funciona end-to-end** con un PBIP de prueba:
   conectar → modelo (scaffold manual del agente) → medidas con lint → theme/WCAG → audit → pre-deploy → deploy → refresh → data dictionary.
@@ -334,7 +334,7 @@ Riesgos completos (14) en [`docs/MVP-STATUS.md` §Riesgos](./docs/MVP-STATUS.md)
 - 50+ stars en GitHub.
 - 5+ contributors externos.
 - 10+ organizaciones usándolo en CI.
-- Primer case study público de un equipo reemplazando flujo manual con `powerbi-orchestrator`.
+- Primer case study público de un equipo reemplazando flujo manual con `powerbi-orchestrator-mcp`.
 
 ### Calidad técnica
 - 0 secretos committed en history (verificado por CI).

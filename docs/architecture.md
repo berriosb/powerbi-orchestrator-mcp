@@ -1,4 +1,4 @@
-# Architecture — powerbi-orchestrator
+# Architecture — powerbi-orchestrator-mcp
 
 > Arquitectura técnica detallada. Diagramas, contratos cross-cutting,
 > decisiones y trade-offs.
@@ -14,7 +14,7 @@
 ┌──────────────────────────────────────────────────────────────────────┐
 │                  AGENTE (Claude / Copilot / Hermes)                  │
 │              prompt NL → secuencia de tool calls                     │
-└───────────────────────────────�──────────────────────────────────────┘
+└───────────────────────────────┬──────────────────────────────────────┘
                                 │ JSON-RPC sobre stdio (MCP 2025-06-18)
 ┌───────────────────────────────▼──────────────────────────────────────┐
 │  CAPA 6 · ORQUESTACIÓN                                               │
@@ -28,10 +28,10 @@
 │    • planner.py       — NL → Plan (YAML declarativo)                 │
 │    • context.py       — estado de sesión (target, engines, undo)     │
 │    • audit.py         — log HMAC-chained a SQLite                    │
-│    • tools/           — 35 tools de alto nivel                       │
+│    • tools/           — 28 tools de alto nivel                       │
 │                                                                       │
 │  NO implementa primitivas — solo delega y orquesta.                  │
-└─────┬───────────────┬───────────────�─────────────────┬──────────────┘
+└─────┬───────────────┬───────────────┴─────────────────┬──────────────┘
       │ delegate      │ delegate      │ delegate        │ delegate
       ▼               ▼               ▼                 ▼
 ┌──────────┐    ┌──────────┐   ┌─────────────┐   ┌──────────────┐

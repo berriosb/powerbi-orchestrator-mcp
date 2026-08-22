@@ -463,7 +463,7 @@ visual catalog. Versionado semver del JSON.
 - ❌ `select_visuals_for_kpis` avanzado con data shape analysis (v2).
 - ❌ Storytelling con análisis de varianza real sobre datos (v3).
 - ❌ Auto-fix WCAG completo (solo alt text default + theme en MVP).
-- � Marketplace de templates (v3).
+- ❌ Marketplace de templates (v3).
 - ❌ Screenshots para validación visual (best-effort post MVP).
 - ❌ Multi-language UI strings (post MVP).
 
@@ -472,7 +472,7 @@ visual catalog. Versionado semver del JSON.
 | Riesgo | Mitigación |
 |--------|-----------|
 | Visual registry desactualizado | Update mensual + version pin por `$schema` URL del PBIR. |
-| Suggester recomienda visual incorrecto | Documentar que es heurístico;用户提供 feedback via elicitation. |
+| Suggester recomienda visual incorrecto | Documentar que es heurístico; usuario provee feedback via elicitation. |
 | WCAG contrast wrong en colores declarados | Usar lib estándar (ej: `wcag-contrast-ratio` Python); tests con pares conocidos. |
 | Performance budget muy pesimista | Calibrar con dataset real de benchmarks; opt-in a "aggressive" mode. |
 | LLM genera visuals sin sentido | Suggester siempre explica rationale; LLM puede pedir alternativas. |

@@ -1,4 +1,4 @@
-# IMPLEMENTATION PLAN v1.0 — powerbi-orchestrator
+# IMPLEMENTATION PLAN v1.0 — powerbi-orchestrator-mcp
 
 > Plan de 4 semanas para MVP ambicioso (12 tools). Semana a semana, con
 > criterios de salida verificables.
@@ -36,7 +36,7 @@ Elicitation operativa. Audit log con HMAC chain.
 ### Criterios de salida
 
 - [ ] `pip install -e .` funciona en Linux + macOS + Windows.
-- [ ] `powerbi-orchestrator --start` arranca y registra 3 tools.
+- [ ] `powerbi-orchestrator-mcp --start` arranca y registra 3 tools.
 - [ ] `connect_target("pbip_folder", "./fixtures/test.pbip")` retorna
   engines_available + session_id.
 - [ ] `plan_change(template="safe_rename", ...)` genera YAML válido.
@@ -151,8 +151,8 @@ Audit completo + theme/WCAG + dictionary. Release v0.1.0 en PyPI + Docker.
 - [ ] Workflow 1 funciona end-to-end.
 - [ ] Tests pasan con coverage >80% en capas 4, 5, 6.
 - [ ] `mypy --strict` + `ruff check` limpios.
-- [ ] `pip install powerbi-orchestrator` funciona en 3 OS.
-- [ ] Docker image `powerbi-orchestrator:0.1.0` publicada.
+- [ ] `pip install powerbi-orchestrator-mcp` funciona en 3 OS.
+- [ ] Docker image `powerbi-orchestrator-mcp:0.1.0` publicada.
 - [ ] README con quickstart + scopes SPN + ejemplos.
 - [ ] GitHub release v0.1.0 con changelog.
 
