@@ -35,25 +35,39 @@
 | `run_dax_regression` | [`../specs/03-validation.md` §5](../specs/03-validation.md) | ❌ |
 | `diff_models` | [`../specs/03-validation.md` §2.4](../specs/03-validation.md) | ❌ |
 | `pre_deploy_check` | [`../specs/03-validation.md` §4](../specs/03-validation.md) | ❌ |
-| `generate_data_dictionary` | [`../specs/03-validation.md`](../specs/03-validation.md) | ❌ |
+| `generate_data_dictionary` | ❌ sin spec dedicado (solo SPEC §4.5 una línea) | ❌ |
 | `apply_theme_and_accessibility_rules` | [`../specs/04-viz-ux.md` §3](../specs/04-viz-ux.md) | ❌ |
 
-## Tools MVP v1 sin spec dedicado (corrección post-audit 2026-08-21)
+## Tools MVP v1 — ubicación real de cada spec (corrección post-audit 2026-08-26)
 
-Estas tools están en SPEC §6.1 pero aún no tienen archivo en `specs/tools/`. Se
-documentan como componentes en los specs por capa (`specs/01-orchestrator.md`,
-`specs/03-validation.md`) pero falta extraer el tool schema dedicado:
+El fix anterior (commit `3ad85c3`, 2026-08-21) agregó una sección "sin spec
+dedicado" que quedó desactualizada tras esta auditoría. La realidad:
 
-| Tool | Dónde está documentada |
-|------|----------------------|
-| `add_measure_with_validation` | `specs/01-orchestrator.md` (referida) + falta spec dedicado |
-| `create_report_from_dataset` | sin spec dedicado, depende de Capa 2 engines |
-| `edit_report_visual` | sin spec dedicado, depende de Capa 2 engines |
-| `diff_models` | `specs/03-validation.md` §2.4 (componente, falta tool schema) |
-| `run_dax_regression` | `specs/03-validation.md` §5 (tool schema parcial, falta completar) |
+| Tool | Spec real | Estado |
+|------|-----------|--------|
+| `audit_model_and_report` | [`specs/tools/audit-model-and-report.md`](../specs/tools/audit-model-and-report.md) | ✅ spec dedicado completo |
+| `safe_rename` | [`specs/tools/safe-rename.md`](../specs/tools/safe-rename.md) | ✅ spec dedicado completo |
+| `deploy_to_workspace` | [`specs/tools/deploy-to-workspace.md`](../specs/tools/deploy-to-workspace.md) | ✅ spec dedicado completo |
+| `connect_target` | [`specs/01-orchestrator.md` §3.1](../specs/01-orchestrator.md) | ✅ en spec por capa (orquestación) |
+| `plan_change` | [`specs/01-orchestrator.md` §3.2](../specs/01-orchestrator.md) | ✅ en spec por capa (orquestación) |
+| `apply_plan` | [`specs/01-orchestrator.md` §3.3](../specs/01-orchestrator.md) | ✅ en spec por capa (orquestación) |
+| `run_refresh` | [`specs/02-cloud-fabric.md` §3](../specs/02-cloud-fabric.md) | ✅ en spec por capa (cloud) |
+| `run_dax_regression` | [`specs/03-validation.md` §5](../specs/03-validation.md) | ✅ schema YAML completo en spec por capa |
+| `diff_models` | [`specs/03-validation.md` §2.4](../specs/03-validation.md) | ✅ Pydantic models + breaking rules en spec por capa |
+| `pre_deploy_check` | [`specs/03-validation.md` §4](../specs/03-validation.md) | ✅ schema YAML completo en spec por capa |
+| `apply_theme_and_accessibility_rules` | [`specs/04-viz-ux.md` §3](../specs/04-viz-ux.md) | ✅ schema YAML completo en spec por capa |
+| `generate_data_dictionary` | **❌ NO TIENE SPEC DEDICADO** | ⚠️ solo descripción de 1 línea en SPEC §4.5 |
 
-**Acción:** crear specs dedicados antes de la Semana 2 del IMPLEMENTATION-PLAN
-(específicamente al implementar cada tool).
+**Decisión arquitectónica adoptada (2026-08-26):** un tool MVP v1 puede
+tener su spec dedicado en `specs/tools/` (si su lógica es ortogonal a una
+capa) o vivir dentro del spec de la capa que lo implementa (si es parte
+del dominio de esa capa). Esto evita proliferación de archivos y
+duplicación de schemas. Ver [`specs/README.md` §Tools MVP v1 documentadas en specs por capa](../specs/README.md).
+
+**Acción concreta:** crear spec dedicado para `generate_data_dictionary`
+antes de arrancar Semana 4 (es una sola página con input/output schema;
+referencias existentes: SPEC §4.5, workflow 01 §Fase 6, workflow 02 §Fase 6,
+IMPLEMENTATION-PLAN §4.12).
 
 ## Workflows
 

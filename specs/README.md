@@ -36,17 +36,39 @@
 - [x] `tools/audit-model-and-report.md` — Auditoría integral: BPA + WCAG + lint + star-schema + naming.
 - [x] `tools/deploy-to-workspace.md` — Publish PBIP a Fabric workspace con refresh + RLS + labels.
 
+### Tools MVP v1 documentadas en specs por capa (no en `specs/tools/`)
+
+Estas tools están completamente especificadas dentro del spec de la capa
+correspondiente, en su sección dedicada. No se duplican como archivos
+separados en `specs/tools/` para evitar drift entre copias:
+
+- [x] `connect_target` → [`01-orchestrator.md` §3.1](./01-orchestrator.md)
+- [x] `plan_change` → [`01-orchestrator.md` §3.2](./01-orchestrator.md)
+- [x] `apply_plan` → [`01-orchestrator.md` §3.3](./01-orchestrator.md)
+- [x] `run_refresh` → [`02-cloud-fabric.md` §3](./02-cloud-fabric.md)
+- [x] `run_dax_regression` → [`03-validation.md` §5](./03-validation.md) (input/output schema YAML completo).
+- [x] `diff_models` → [`03-validation.md` §2.4](./03-validation.md) (Pydantic models + reglas de breaking).
+- [x] `pre_deploy_check` → [`03-validation.md` §4](./03-validation.md) (input/output schema + profiles).
+- [x] `apply_theme_and_accessibility_rules` → [`04-viz-ux.md` §3](./04-viz-ux.md) (theme.json + WCAG rules).
+
+**Decisión arquitectónica (post-audit 2026-08-26):** un tool MVP v1 puede
+tener su spec dedicado en `specs/tools/` (si su lógica es ortogonal a una
+capa única) o vivir dentro del spec de la capa que lo implementa (si es
+parte del dominio de esa capa). Esto evita proliferación de archivos y
+duplicación de schemas.
+
+**Pendiente real:** `generate_data_dictionary` está listada como MVP en
+SPEC §6.1 pero **no tiene spec dedicado en ningún archivo** (solo
+descripción de una línea en SPEC §4.5). Crear spec dedicado antes de
+arrancar Semana 4. Ver `docs/MVP-STATUS.md` §Tools pendientes de spec.
+
 ## Specs por workflow
 
 - [x] `workflows/01-from-csv-to-published-report.md` — De cero a reporte publicado con RLS en un prompt.
-- [x] `workflows/02-refactor-to-calc-groups.md` — Refactor medidas → calc group con reconciliación de totales.
+- [x] `workflows/02-refactor-to-calc-groups.md` — Refactor medidas → calc group con reconciliación de totales. **No MVP** (depende de `refactor_to_calculation_groups` v2).
 
 ## Pendientes (no MVP)
 
-- [ ] `tools/add-measure-with-validation.md` → MVP v1 (corrección: faltaba del índice)
-- [ ] `tools/create-report-from-dataset.md` → MVP v1 (corrección: faltaba del índice)
-- [ ] `tools/edit-report-visual.md` → MVP v1 (corrección: faltaba del índice)
-- [ ] `tools/diff-models.md` → MVP v1 (corrección: faltaba del índice)
 - [ ] `tools/refactor-to-calculation-groups.md` (con reconciliation total) → v2
 - [ ] `tools/promote-in-pipeline.md` (dev→test→prod gates) → v2
 - [ ] `tools/design-report-page-from-requirements.md` (viz/UX completa) → v2
@@ -54,10 +76,8 @@
 - [ ] `tools/audit-report-ux-and-storytelling.md` → v2
 - [ ] `tools/setup-rls-and-roles.md` → v2
 - [ ] `tools/create-semantic-model-from-schema.md` → v2
-- [ ] `tools/run-dax-regression.md` → MVP v1 (corrección: estaba mal clasificado como v3; falta spec)
 - [ ] `tools/sync-git-to-workspace.md` → v3
-- [ ] `tools/screenshot-report-pages.md` → v2 (corrección: era v3, es post-MVP)
-- [ ] `tools/apply-theme-and-accessibility-rules.md` → MVP v1 (corrección: estaba mal clasificado como v3)
+- [ ] `tools/screenshot-report-pages.md` → v2
 
 ## Cambios v0.1 (sync 2026-08-21)
 

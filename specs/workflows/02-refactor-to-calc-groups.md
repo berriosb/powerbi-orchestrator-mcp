@@ -4,6 +4,12 @@
 > valida que los totales no cambien respecto a las medidas originales,
 > regenera documentación y ajusta visuales afectados.
 
+> ⚠️ **Este workflow NO es MVP.** Depende de `refactor_to_calculation_groups`
+> que está planificado para v2 (semanas 5-8 según SPEC §7). El spec se
+> mantiene aquí como referencia para diseño futuro y porque define patrones
+> de reconciliación que otros workflows pueden reusar. Para el showcase MVP
+> ver [`01-from-csv-to-published-report.md`](./01-from-csv-to-published-report.md).
+
 **Status:** v0.1 (spec)
 **Prioridad:** P1 — feature v2 (`refactor_to_calculation_groups` completo)
 **Responsable:** codehak
