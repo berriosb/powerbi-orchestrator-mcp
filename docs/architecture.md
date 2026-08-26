@@ -28,7 +28,7 @@
 │    • planner.py       — NL → Plan (YAML declarativo)                 │
 │    • context.py       — estado de sesión (target, engines, undo)     │
 │    • audit.py         — log HMAC-chained a SQLite                    │
-│    • tools/           — 28 tools de alto nivel                       │
+│    • tools/           — 26 tools de alto nivel                       │
 │                                                                       │
 │  NO implementa primitivas — solo delega y orquesta.                  │
 └─────┬───────────────┬───────────────┴─────────────────┬──────────────┘

@@ -58,7 +58,7 @@ agente. Las otras 5 son internas.
                              │ MCP (stdio)
 ┌────────────────────────────▼────────────────────────────────────┐
 │ CAPA 6 · ORQUESTACIÓN (este servidor)                           │
-│   28 tools de alto nivel + planner + rollback engine            │
+│   26 tools de alto nivel + planner + rollback engine            │
 └──┬───────────┬───────────┬───────────┬──────────────────────────┘
    │           │           │           │
    ▼           ▼           ▼           ▼
@@ -142,7 +142,7 @@ Config (igual en todos):
 
 ## 4. Herramientas (alto nivel)
 
-**28 tools de alto nivel** agrupados en 7 categorías. Cada tool devuelve
+**26 tools de alto nivel** agrupados en 7 categorías. Cada tool devuelve
 `structuredContent` (JSON Schema validado por Pydantic) y opcionalmente
 `artifact` (screenshot, archivo generado).
 
@@ -180,15 +180,15 @@ Config (igual en todos):
 - `apply_theme_and_accessibility_rules` — theme.json + WCAG (contraste + alt text + tab order).
 - `design_report_page_from_requirements` — diseño completo de página desde brief NL (v2).
 - `select_visuals_for_kpis` — recomendación de visuales según data shape + audiencia (v2).
-- `optimize_report_performance` — análisis heurístico de performance sin ejecutar.
-- `audit_report_ux_and_storytelling` — auditoría cualitativa: jerarquía, densidad, narrativa.
+- `optimize_report_performance` — análisis heurístico de performance sin ejecutar (v2).
+- `audit_report_ux_and_storytelling` — auditoría cualitativa: jerarquía, densidad, narrativa (v2).
 
 ### 4.7 Documentación y observabilidad (2)
 - `generate_data_dictionary` — ver 4.5.
-- `screenshot_report_pages` — best-effort via Desktop Bridge.
+- `screenshot_report_pages` — best-effort via Desktop Bridge (v2).
 
-Detalle de cada tool en `specs/tools/`. **MVP incluye 12 tools** (los marcados
-con v1, sin v2/v3).
+Detalle de cada tool en `specs/tools/`. **MVP incluye 12 tools** (las
+listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
 
 ---
 
