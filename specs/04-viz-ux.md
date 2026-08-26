@@ -7,7 +7,7 @@
 **Prioridad:** P0 — gap real, nadie lo cubre
 **Responsable:** codehak
 **Depende de:** [`03-validation.md`](./03-validation.md) (WCAG rules compartidos)
-**Habilita:** [`tools/apply-theme-and-accessibility-rules.md`](./tools/apply-theme-and-accessibility-rules.md), `optimize_report_performance`, `audit_report_ux_and_storytelling`, v2: `design_report_page_from_requirements`, `select_visuals_for_kpis`
+**Habilita:** `apply_theme_and_accessibility_rules` (especificada en este spec §3, no en archivo dedicado en `specs/tools/`), `optimize_report_performance` (v2), `audit_report_ux_and_storytelling` (v2), `design_report_page_from_requirements` (v2), `select_visuals_for_kpis` (v2)
 
 **Spec relacionado:** [`docs/architecture.md`](../docs/architecture.md) §2.6
 
@@ -481,5 +481,5 @@ visual catalog. Versionado semver del JSON.
 
 - [`01-orchestrator.md`](./01-orchestrator.md)
 - [`03-validation.md`](./03-validation.md) — WCAG rules compartido
-- [`tools/apply-theme-and-accessibility-rules.md`](./tools/apply-theme-and-accessibility-rules.md)
+- `apply_theme_and_accessibility_rules` — especificada en este spec §3 (no en archivo dedicado en `specs/tools/`)
 - [`tools/audit-model-and-report.md`](./tools/audit-model-and-report.md)

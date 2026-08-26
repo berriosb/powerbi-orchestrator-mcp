@@ -244,8 +244,8 @@ Si `auto_fix=true` y hay findings `auto_fixable=true`:
 ## 10. Specs relacionados
 
 - [`../01-orchestrator.md`](../01-orchestrator.md) — orchestration
-- [`../03-validation.md`](../03-validation.md) — BPA + DAX lint + WCAG
-- [`../04-viz-ux.md`](../04-viz-ux.md) — performance budget + storytelling
+- [`../03-validation.md`](../03-validation.md) — BPA + DAX lint + WCAG + pre-deploy gate + run_dax_regression + diff_models (estos últimos dos documentados en este spec, no en archivos dedicados en `specs/tools/`)
+- [`../04-viz-ux.md`](../04-viz-ux.md) — performance budget + storytelling + apply_theme_and_accessibility_rules (este último documentado en este spec, no en archivo dedicado en `specs/tools/`)
 - [`../05-engines-adapters.md`](../05-engines-adapters.md) — `te` CLI
-- [`audit-report-ux-and-storytelling.md`](./audit-report-ux-and-storytelling.md) — complementario (solo reporte)
-- [`pre-deploy-check.md`](./pre-deploy-check.md) — usa audit
+- [`./safe-rename.md`](./safe-rename.md) — usa audit_model_and_report post-rename
+- [`./deploy-to-workspace.md`](./deploy-to-workspace.md) — usa pre_deploy_check antes de deploy
