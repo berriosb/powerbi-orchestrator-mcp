@@ -69,6 +69,51 @@ antes de arrancar Semana 4 (es una sola página con input/output schema;
 referencias existentes: SPEC §4.5, workflow 01 §Fase 6, workflow 02 §Fase 6,
 IMPLEMENTATION-PLAN §4.12).
 
+---
+
+## Issues abiertos — drift residual (post-audit 2026-08-26)
+
+### Issue 1: Workflow 01 referencia tools no declaradas en §6.1
+
+El workflow 01 ([`specs/workflows/01-from-csv-to-published-report.md`](../specs/workflows/01-from-csv-to-published-report.md))
+declara **13 tools MVP** en su header y **14 tools** en §2, pero SPEC §6.1
+solo lista 12 MVP. El delta:
+
+| Tool | En §6.1 | En wf01 | En §4 | Tiene spec dedicado |
+|------|---------|---------|-------|---------------------|
+| `add_measure_with_validation` | ❌ | ✅ | ✅ (§4.2) | ❌ |
+| `create_report_from_dataset` | ❌ | ✅ | ✅ (§4.3) | ❌ |
+| `edit_report_visual` | ❌ | ✅ | ✅ (§4.3) | ❌ |
+| `audit_model_and_report` | ✅ | ✅ | ✅ | ✅ dedic. |
+| `diff_models` | ✅ | ❌ | ✅ | en `03-validation.md §2.4` |
+| `run_dax_regression` | ✅ | ❌ | ✅ | en `03-validation.md §5` |
+
+**Decisión adoptada (2026-08-26):** mantener §6.1 en 12 tools MVP
+(coherente con plan de 4 semanas ya saturado en 188h). Las 3 tools
+`add_measure_with_validation`, `create_report_from_dataset`,
+`edit_report_visual` son **v1.1 (post-MVP)** — se implementan en semana 5
+si el cronograma lo permite, o se documentan como workarounds manuales
+del workflow 01 (el §9 del workflow ya marca estas 3 como "requieren
+v2" para el showcase completo, pero la línea de dependencies las lista
+como MVP v1 — esto es drift conocido a resolver).
+
+**Acción:** al implementar v1.1, decidir si:
+- (a) Promover las 3 a §6.1 → plan a 5 semanas.
+- (b) Reescribir workflow 01 §9 para que sean explícitamente v2 degraded.
+
+### Issue 2: Tabla "Specs pendientes de detalle (v2/v3)" desactualizada
+
+La tabla de "Specs pendientes de detalle" abajo refleja la realidad
+post-audit pero está incompleta. Las tools MVP v1 que **no tienen spec
+dedicado** (más allá de los schemas inline en specs por capa) son:
+
+| Tool | MVP | Spec dedicado |
+|------|-----|---------------|
+| `generate_data_dictionary` | MVP v1 | ❌ falta |
+| `add_measure_with_validation` | v1.1 (Issue 1) | ❌ falta |
+| `create_report_from_dataset` | v1.1 (Issue 1) | ❌ falta |
+| `edit_report_visual` | v1.1 (Issue 1) | ❌ falta |
+
 ## Workflows
 
 | Workflow | Spec | Status código |
