@@ -48,6 +48,9 @@ dev = [
 [project.scripts]
 powerbi-orchestrator-mcp = "powerbi_orchestrator_mcp.orchestrator.server:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/powerbi_orchestrator_mcp"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
