@@ -3,12 +3,13 @@
 > Flujo end-to-end #1. Un solo prompt del agente → modelo estrella → DAX básico
 > → RLS → reporte ejecutivo mobile-friendly → publicado en Fabric con refresh.
 
-**Status:** v0.2 (spec — corregido tras audit 2026-08-21)
-**Prioridad:** P0 — showcase del MVP **completo** (algunas subpartes dependen de tools v2)
+**Status:** v0.3 (spec — corregido tras audit 2026-08-26, opciones C)
+**Prioridad:** P0 — showcase del MVP **completo** (algunas subpartes dependen de tools v1.1/v2)
 **Responsable:** codehak
 **Depende de:**
-- Tools MVP v1: `connect_target`, `plan_change`, `apply_plan`, `add_measure_with_validation`, `create_report_from_dataset`, `edit_report_visual`, `safe_rename`, `audit_model_and_report`, `apply_theme_and_accessibility_rules`, `pre_deploy_check`, `deploy_to_workspace`, `run_refresh`, `generate_data_dictionary`
-- Tools v2 (requeridos para showcase completo): `create_semantic_model_from_schema`, `setup_rls_and_roles`, `design_report_page_from_requirements` — ver §9 "Alcance MVP alcanzable" abajo
+- Tools MVP v1 (12): `connect_target`, `plan_change`, `apply_plan`, `safe_rename`, `audit_model_and_report`, `deploy_to_workspace`, `run_refresh`, `run_dax_regression`, `diff_models`, `pre_deploy_check`, `generate_data_dictionary`, `apply_theme_and_accessibility_rules`
+- Tools v1.1 (post-MVP, semana 5): `add_measure_with_validation`, `create_report_from_dataset`, `edit_report_visual` — ver §9 "Alcance MVP alcanzable"
+- Tools v2 (sin fecha): `create_semantic_model_from_schema`, `setup_rls_and_roles`, `design_report_page_from_requirements` — ver §9
 - [`../01-orchestrator.md`](../01-orchestrator.md) — orquestación
 - [`../02-cloud-fabric.md`](../02-cloud-fabric.md) — cloud
 - [`../03-validation.md`](../03-validation.md) — validación
@@ -281,25 +282,41 @@ duration_ms: ~250000  # ~4 min
 - [ ] Scaffold automático del modelo estrella desde spec (depende de `create_semantic_model_from_schema` v2).
 - [ ] Diseño automático de página con 4 visuales desde brief NL (depende de `design_report_page_from_requirements` v2).
 
-Sin los tools v2, el flujo MVP se completa vía **scaffold manual + `add_measure_with_validation` para medidas** + **scaffold manual del reporte con `create_report_from_dataset` + `edit_report_visual`**. La orquestación, validación, deploy, refresh, theme/WCAG y data dictionary sí son 100% MVP.
+Sin los tools v1.1/v2, el flujo MVP se completa vía **scaffold manual del modelo + medidas escritas a mano en TMDL con lint por línea** + **scaffold manual del reporte en PBIR + adición de visuales uno a uno**. La orquestación, validación, deploy, refresh, theme/WCAG y data dictionary sí son 100% MVP.
 
 ## 9. Alcance MVP alcanzable vs showcase completo
 
-Esta distinción se documenta porque el workflow 01 mezcla MVP y v2. Para no inducir a error:
+Esta distinción se documenta porque el workflow 01 mezcla MVP, v1.1 y v2. Para no inducir a error:
 
-**MVP alcanzable sin v2 (~80% del flujo):**
+**MVP alcanzable (post Semana 4) sin v1.1/v2 (~70% del flujo):**
 
 | Fase | MVP alcanzable | Limitación |
 |------|---------------|-----------|
 | 1. Conectar | ✅ 100% | — |
-| 2. Modelo estrella | ⚠️ scaffold manual | Schema debe venir pre-armado por el agente en formato YAML; `add_measure_with_validation` sí funciona, pero el scaffold del esqueleto (tablas, relaciones) es manual. |
-| 3. Medidas + RLS | ✅ Medidas 100% | ❌ RLS matrix testeada con `run_dax_regression` + EffectiveIdentity vía REST `Execute Queries` — `setup_rls_and_roles` v2 lo automatiza, MVP requiere setup manual del test. |
-| 4. Reporte + viz/UX | ⚠️ scaffold manual | `create_report_from_dataset` crea el PBIR con página vacía; `edit_report_visual` agrega visuales uno a uno. `design_report_page_from_requirements` v2 lo haría desde NL. Theme + WCAG sí son 100% MVP. |
+| 2. Modelo estrella | ⚠️ scaffold manual completo | El agente escribe el YAML de schema y luego el TMDL a mano. NO usa `add_measure_with_validation` (es v1.1). Validación vía `audit_model_and_report` post-scaffold. |
+| 3. Medidas + RLS | 🟡 Medidas escritas a mano | Sin `add_measure_with_validation`: el agente escribe DAX directo, lint manual con `audit_model_and_report.dax_lint` post-creación. RLS matrix testeada con `run_dax_regression` + EffectiveIdentity vía REST `Execute Queries` — `setup_rls_and_roles` v2 lo automatiza, MVP requiere setup manual del test. |
+| 4. Reporte + viz/UX | ⚠️ scaffold manual completo | El agente escribe el JSON de cada visual en PBIR a mano. NO usa `create_report_from_dataset` (v1.1) ni `edit_report_visual` (v1.1). `design_report_page_from_requirements` v2 lo haría desde NL. Theme + WCAG sí son 100% MVP. |
 | 5. Audit + Deploy + Refresh | ✅ 100% | — |
 
-**Showcase completo (con v2):** el agente hace todo en un solo prompt, sin intervención manual adicional.
+**MVP + v1.1 (post Semana 5) — flow completo automatizable (~90%):**
 
-**Recomendación para MVP done (SPEC §6.4):** validar el sub-flujo MVP alcanzable, no el showcase completo. El showcase completo es acceptance criteria de v2.
+| Mejora vs MVP | Tools que lo habilitan |
+|----------------|------------------------|
+| Scaffold modelo desde YAML con validación inline | `add_measure_with_validation` |
+| Crear PBIR desde dataset con página inicial | `create_report_from_dataset` |
+| Editar visuales determinísticamente (sin escribir JSON) | `edit_report_visual` |
+
+**Showcase completo (con v2) — un solo prompt, cero intervención (~100%):**
+
+El agente hace todo en un solo prompt, sin intervención manual adicional.
+Tools v2 que lo cierran:
+- `create_semantic_model_from_schema`: infiere modelo desde CSV sin YAML previo.
+- `setup_rls_and_roles`: automatiza roles RLS + matriz de prueba.
+- `design_report_page_from_requirements`: diseña página desde brief NL.
+
+**Recomendación para MVP done (SPEC §6.4):** validar el sub-flujo MVP
+alcanzable (~70%, scaffold manual). El MVP + v1.1 es acceptance criteria
+de Semana 5. El showcase completo es acceptance criteria de v2.
 
 ## 7. Riesgos
 

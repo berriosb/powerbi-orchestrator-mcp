@@ -35,6 +35,7 @@
 - [x] `tools/safe-rename.md` — Tool estrella: rename cross-engine (model + DAX + M + report bindings) con rollback.
 - [x] `tools/audit-model-and-report.md` — Auditoría integral: BPA + WCAG + lint + star-schema + naming.
 - [x] `tools/deploy-to-workspace.md` — Publish PBIP a Fabric workspace con refresh + RLS + labels.
+- [x] `tools/generate-data-dictionary.md` — Data dictionary Markdown/HTML con diagrama Mermaid + coverage score (creado 2026-08-26).
 
 ### Tools MVP v1 documentadas en specs por capa (no en `specs/tools/`)
 
@@ -57,27 +58,43 @@ capa única) o vivir dentro del spec de la capa que lo implementa (si es
 parte del dominio de esa capa). Esto evita proliferación de archivos y
 duplicación de schemas.
 
-**Pendiente real:** `generate_data_dictionary` está listada como MVP en
-SPEC §6.1 pero **no tiene spec dedicado en ningún archivo** (solo
-descripción de una línea en SPEC §4.5). Crear spec dedicado antes de
-arrancar Semana 4. Ver `docs/MVP-STATUS.md` §Tools pendientes de spec.
-
 ## Specs por workflow
 
 - [x] `workflows/01-from-csv-to-published-report.md` — De cero a reporte publicado con RLS en un prompt.
 - [x] `workflows/02-refactor-to-calc-groups.md` — Refactor medidas → calc group con reconciliación de totales. **No MVP** (depende de `refactor_to_calculation_groups` v2).
 
-## Pendientes (no MVP)
+## Specs pendientes (post-MVP)
 
-- [ ] `tools/refactor-to-calculation-groups.md` (con reconciliation total) → v2
-- [ ] `tools/promote-in-pipeline.md` (dev→test→prod gates) → v2
-- [ ] `tools/design-report-page-from-requirements.md` (viz/UX completa) → v2
-- [ ] `tools/select-visuals-for-kpis.md` → v2
-- [ ] `tools/audit-report-ux-and-storytelling.md` → v2
-- [ ] `tools/setup-rls-and-roles.md` → v2
-- [ ] `tools/create-semantic-model-from-schema.md` → v2
-- [ ] `tools/sync-git-to-workspace.md` → v3
-- [ ] `tools/screenshot-report-pages.md` → v2
+### v1.1 — Semana 5
+
+- [ ] `tools/add-measure-with-validation.md` → v1.1 (spec dedicado a crear)
+- [ ] `tools/create-report-from-dataset.md` → v1.1 (spec dedicado a crear)
+- [ ] `tools/edit-report-visual.md` → v1.1 (spec dedicado a crear)
+
+### v2 — Semanas 6-8
+
+- [ ] `tools/refactor-to-calculation-groups.md` (con reconciliation total)
+- [ ] `tools/promote-in-pipeline.md` (dev→test→prod gates)
+- [ ] `tools/design-report-page-from-requirements.md` (viz/UX completa)
+- [ ] `tools/select-visuals-for-kpis.md`
+- [ ] `tools/audit-report-ux-and-storytelling.md`
+- [ ] `tools/setup-rls-and-roles.md`
+- [ ] `tools/create-semantic-model-from-schema.md`
+- [ ] `tools/screenshot-report-pages.md`
+
+### v3 — Semanas 9-12
+
+- [ ] `tools/sync-git-to-workspace.md`
+
+## Cambios v0.2 (audit 2026-08-26)
+
+- ✅ Conteos corregidos: 26 tools catálogo (era 28), 12 MVP (sin cambios), 14 no-MVP (10 v2 + 4 v3).
+- ✅ `tools/generate-data-dictionary.md` creado (1 página con schema completo).
+- ✅ Workflow 01 §9: tabla de 3 columnas (MVP / MVP+v1.1 / v2) para distinguir alcances.
+- ✅ Links rotos a specs inexistentes eliminados (`audit-model-and-report.md`, `04-viz-ux.md`).
+- ✅ MVP-STATUS.md actualizado con issues abiertos, decisión de plan renegociado (5 semanas), y tabla de ubicación real de specs.
+- ✅ Decisión arquitectónica adoptada: specs pueden vivir en `specs/tools/` (dedicado) o en spec por capa (inline).
+- ✅ Plan renegociado a 5 semanas: Semana 5 v1.1 con `add_measure_with_validation`, `create_report_from_dataset`, `edit_report_visual`.
 
 ## Cambios v0.1 (sync 2026-08-21)
 
