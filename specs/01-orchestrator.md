@@ -49,7 +49,7 @@ async def plan_change(...) -> PlanResult: ...
 @mcp.tool()
 async def apply_plan(...) -> ApplyResult: ...
 
-# ... 25 tools más
+# ... 23 tools más
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
@@ -101,8 +101,8 @@ class PlanOptions(BaseModel):
 3. Para tools conocidos (`safe_rename`, `audit_*`, `deploy_*`): el plan es
    fijo, viene de un template.
 4. Para intents libres: usa un LLM local (NO OpenAI) para des componer.
-   En MVP, NO se soporta intents libres arbitrarios — solo los 28 tools
-   de alto nivel predefinidos.
+   En MVP, NO se soporta intents libres arbitrarios — solo los 26 tools
+   de alto nivel predefinidos (ver SPEC §4).
 5. Calcula `risk_score` heurístico: nº de archivos afectados × tipo de
    operación (rename bajo, drop alto).
 6. Calcula `estimated_changes` consultando engines (ej: "rename propagará a
@@ -440,7 +440,7 @@ steps:
 - ❌ Persistencia entre sesiones (el agente guarda su propio memory).
 - ❌ Remote transport (HTTP) → v4.
 - ❌ UI propia para elicitation (depende del cliente MCP).
-- ❌ Intents NL libres arbitrarios (solo los 28 tools predefinidos).
+- ❌ Intents NL libres arbitrarios (solo los 26 tools predefinidos, ver SPEC §4).
 
 ## 8. Riesgos
 
