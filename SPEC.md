@@ -251,12 +251,31 @@ listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
 
 ### 6.2 Lo que NO va en v1
 
-- ❌ `design_report_page_from_requirements` completo (selector de visuales) → v2.
-- ❌ `refactor_to_calculation_groups` con reconciliación total → v2.
-- ❌ `promote_in_pipeline` → v2.
-- ❌ `sync_git_to_workspace` → v3.
-- ❌ Desktop Bridge real (screenshots determinísticos) → v3.
-- ❌ Storytelling scoring con análisis de varianza real → v3.
+**Tools v2 (semanas 5-8):**
+- ❌ `design_report_page_from_requirements` completo (selector de visuales).
+- ❌ `refactor_to_calculation_groups` con reconciliación total.
+- ❌ `promote_in_pipeline` (dev→test→prod gates).
+- ❌ `select_visuals_for_kpis` (recomendador).
+- ❌ `audit_report_ux_and_storytelling` (heurístico).
+- ❌ `optimize_report_performance` (análisis heurístico).
+- ❌ `setup_rls_and_roles` (automatización de roles RLS).
+- ❌ `create_semantic_model_from_schema` (scaffold desde spec).
+- ❌ `screenshot_report_pages` (best-effort via Desktop Bridge).
+
+**Tools v3 (semanas 9-12):**
+- ❌ `sync_git_to_workspace` / `commit_workspace_to_git`.
+- ❌ `set_sensitivity_labels` (governance).
+- ❌ Storytelling scoring con análisis de varianza real.
+
+> **Nota sobre `screenshot_report_pages`:** el spec inicial lo marcaba como
+> v3; el fix post-audit (commit `3ad85c3`, 2026-08-21) lo reclasificó a
+> v2 porque Desktop Bridge básico es viable en MVP tardío. Este spec §6.2
+> ahora lo lista explícitamente en v2 (coherente con §4.7 y `specs/README.md`).
+>
+> **Nota sobre Desktop Bridge real (determinístico):** lo que SÍ queda v3
+> es la versión "determinística con análisis de varianza real", que
+> requiere telemetría de rendering. El best-effort via Desktop Bridge
+> normal es v2.
 
 ### 6.3 Plan de 4 semanas
 
@@ -283,7 +302,7 @@ listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
 - [ ] `audit_model_and_report` devuelve score reproducible sobre el PBIP de prueba.
 - [ ] `deploy_to_workspace` publica a un workspace real y refresh completa.
 - [ ] Audit log SQLite con HMAC chaining verificable.
-- [ ] Coverage de tests >80% en código de orquestación (capa 6) y validación (capa 4).
+- [ ] Coverage de tests >80% en código de orquestación (capa 6) y validación (capa 4). Métrica complementaria en §9.2 incluye capa 5 (viz/UX) por su criticidad para WCAG.
 - [ ] `mypy --strict` limpio. `ruff check` limpio.
 
 ---
@@ -294,6 +313,10 @@ listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
 - `design_report_page_from_requirements` con selector de visuales.
 - `select_visuals_for_kpis`.
 - `audit_report_ux_and_storytelling` (sin screenshots).
+- `optimize_report_performance` (análisis heurístico).
+- `screenshot_report_pages` (best-effort via Desktop Bridge básico).
+- `setup_rls_and_roles` (automatización + matriz de prueba).
+- `create_semantic_model_from_schema` (scaffold desde YAML/JSON spec).
 - `refactor_to_calculation_groups` con reconciliación total.
 - `promote_in_pipeline` con quality gate.
 - Super BI MCP integration cuando hay Windows.
