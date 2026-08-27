@@ -228,7 +228,7 @@ listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
 
 ---
 
-## 6. MVP ambicioso (12 tools, 4 semanas)
+## 6. MVP ambicioso (12 tools MVP + 3 v1.1, 5 semanas)
 
 ### 6.1 Alcance MVP v1
 
@@ -277,7 +277,29 @@ listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
 > requiere telemetría de rendering. El best-effort via Desktop Bridge
 > normal es v2.
 
-### 6.3 Plan de 4 semanas
+### 6.3 Plan de 5 semanas (renegociado 2026-08-26)
+
+El plan original era de 4 semanas (188h). Tras la auditoría de 2026-08-26
+se renegoció a **5 semanas** (217h totales) para incluir la entrega de las
+3 tools v1.1 (`add_measure_with_validation`, `create_report_from_dataset`,
+`edit_report_visual`) sin las cuales el workflow 01 queda en ~70% en lugar
+de ~90%. Ver `docs/MVP-STATUS.md` §Plan renegociado y
+`docs/IMPLEMENTATION-PLAN-v1.0.md` Semana 5.
+
+**Tools v1.1 (post-MVP, semana 5):**
+- `add_measure_with_validation` — añade measure con lint DAX + runtime check.
+- `create_report_from_dataset` — scaffold PBIR mínimo viable desde dataset.
+- `edit_report_visual` — edición determinística (tipo, fields, format, posición).
+
+> **Decisión 2026-08-26 (opción C):** estas 3 tools NO se promueven a
+> §6.1 MVP para no romper el plan de 4 semanas. Viven como v1.1 — su spec
+> dedicado y código se entregan en Semana 5 dedicada. Aceptar el plan de 5
+> semanas en lugar de 4.
+
+### 6.4 Plan original de 4 semanas (referencia histórica)
+
+El plan detallado tarea por tarea está en `docs/IMPLEMENTATION-PLAN-v1.0.md`.
+Resumen:
 
 | Semana | Entregable | Capa |
 |--------|-----------|------|
@@ -285,11 +307,12 @@ listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
 | 2 | Engine adapters (powerbi-modeling-mcp subprocess + pbip-validator). `safe_rename` end-to-end cross-platform (model + report bindings, sin M). | 1+2+6 |
 | 3 | Capa 3 cloud: REST Fabric (workspaces, datasets, refresh, items CRUD). `deploy_to_workspace` + `run_refresh` maduros. Azure Identity + elicitation + audit log. | 3 |
 | 4 | Capa 4 validación: BPA via `te`, DAX linter propio, `audit_model_and_report` + `pre_deploy_check` + `run_dax_regression` + `diff_models`. `apply_theme_and_accessibility_rules`. | 4+5 |
+| 5 (v1.1) | Specs + código de `add_measure_with_validation`, `create_report_from_dataset`, `edit_report_visual`. Tests e2e. | 1+2+6 |
 
-### 6.4 Criterios de "MVP done"
+### 6.5 Criterios de "MVP done"
 
 > **Nota (post-audit 2026-08-21):** El workflow 01 tiene partes que dependen
-> de tools v2. Estos criterios validan el **sub-flujo MVP alcanzable**,
+> de tools v1.1/v2. Estos criterios validan el **sub-flujo MVP alcanzable**,
 > no el showcase completo. Ver
 > [`specs/workflows/01-from-csv-to-published-report.md` §9](./specs/workflows/01-from-csv-to-published-report.md)
 > para el detalle.

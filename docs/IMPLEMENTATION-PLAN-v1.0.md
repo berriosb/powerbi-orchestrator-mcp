@@ -1,7 +1,14 @@
 # IMPLEMENTATION PLAN v1.0 — powerbi-orchestrator-mcp
 
-> Plan de 4 semanas para MVP ambicioso (12 tools). Semana a semana, con
-> criterios de salida verificables.
+> Plan de **5 semanas** (renegociado 2026-08-26 desde el original de 4
+> semanas) para MVP ambicioso + v1.1: 12 tools MVP + 3 tools v1.1.
+> Semana a semana, con criterios de salida verificables.
+
+> **Por qué 5 semanas:** la auditoría del 2026-08-26 detectó que el
+> workflow 01 (`specs/workflows/01-from-csv-to-published-report.md`)
+> depende de 3 tools que no estaban en §6.1 MVP. Decisión opción C:
+> implementarlas como v1.1 en Semana 5 dedicada, sin romper el plan de
+> 4 semanas ya saturado (188h). Total: **217h**.
 
 **Fecha de inicio estimada:** cuando Bastian apruebe.
 **Responsable:** codehak.
@@ -145,10 +152,10 @@ Audit completo + theme/WCAG + dictionary. Release v0.1.0 en PyPI + Docker.
 
 **Total Semana 4:** ~70h.
 
-### Criterios de salida (= MVP done)
+### Criterios de salida (= MVP done, fin de Semana 4)
 
 - [ ] 12 tools MVP implementados.
-- [ ] Workflow 1 funciona end-to-end.
+- [ ] Workflow 1 funciona end-to-end (sub-flujo MVP alcanzable ~70%).
 - [ ] Tests pasan con coverage >80% en capas 4, 5, 6.
 - [ ] `mypy --strict` + `ruff check` limpios.
 - [ ] `pip install powerbi-orchestrator-mcp` funciona en 3 OS.
@@ -181,7 +188,9 @@ Audit completo + theme/WCAG + dictionary. Release v0.1.0 en PyPI + Docker.
 | Miércoles Semana 3 | Checkpoint: deploy end-to-end. |
 | Viernes Semana 3 | Demo: `deploy_to_workspace` real a workspace dev. |
 | Miércoles Semana 4 | Checkpoint: audit completo funcionando. |
-| Viernes Semana 4 | Release v0.1.0. |
+| Viernes Semana 4 | Release v0.1.0 (MVP). |
+| Miércoles Semana 5 | Checkpoint: 3 tools v1.1 implementadas + tests. |
+| Viernes Semana 5 | Release v1.1.0 (MVP + 3 tools v1.1). |
 
 ---
 
@@ -196,3 +205,41 @@ Audit completo + theme/WCAG + dictionary. Release v0.1.0 en PyPI + Docker.
 
 > **Después del MVP:** v2 añade `refactor_to_calculation_groups` completo,
 > `design_report_page_from_requirements`, y Super BI integration.
+
+---
+
+## Semana 5 — v1.1 (post-MVP, opcional pero recomendado)
+
+### Objetivo
+
+Cerrar las 3 tools que el workflow 01 necesita para llegar al 90% de
+automatización (en lugar del 70% del MVP puro). Specs dedicados +
+implementación + tests e2e con la misma fixture PBIP de Semana 2.
+
+### Tasks
+
+|| # | Task | Tiempo | Dependencias |
+||---|------|--------|--------------|
+| 5.1 | Escribir `specs/tools/add-measure-with-validation.md` (spec dedicado MVP — pendiente de crear) | 1h | Semana 4 done |
+| 5.2 | Implementar `tools/add_measure_with_validation.py` (lint DAX inline + recompile) | 4h | 5.1 |
+| 5.3 | Escribir `specs/tools/create-report-from-dataset.md` (spec dedicado MVP — pendiente de crear) | 1h | Semana 4 done |
+| 5.4 | Implementar `tools/create_report_from_dataset.py` (scaffold PBIR con página vacía) | 6h | 5.3 |
+| 5.5 | Escribir `specs/tools/edit-report-visual.md` (spec dedicado MVP — pendiente de crear) | 1h | Semana 4 done |
+| 5.6 | Implementar `tools/edit_report_visual.py` (CRUD determinístico sobre visuales) | 6h | 5.5 |
+|| 5.7 | Tests e2e de las 3 tools con fixture PBIP de Semana 2 | 6h | 5.2, 5.4, 5.6 |
+|| 5.8 | Validar workflow 01 sub-flujo MVP+v1.1 end-to-end con PBIP de prueba | 3h | 5.7 |
+|| 5.9 | Actualizar `docs/MVP-STATUS.md` cerrando Issue 1 + actualizar workflow 01 §9 acceptance criteria | 1h | 5.8 |
+
+**Total Semana 5:** ~29h.
+
+### Criterios de salida
+
+- [ ] Specs dedicados escritos y consistentes con §6.1 MVP.
+- [ ] 3 tools implementadas + tests pasando con >80% coverage.
+- [ ] Workflow 01 sub-flujo MVP+v1.1 ejecuta sin intervención manual.
+- [ ] `docs/MVP-STATUS.md` refleja estado v1.1 cerrado.
+- [ ] Pipeline PyPI publica v1.1.0 (o v0.2.0 si MVP aún no released).
+
+---
+
+## Riesgos del plan (actualizado)

@@ -73,46 +73,70 @@ IMPLEMENTATION-PLAN §4.12).
 
 ## Issues abiertos — drift residual (post-audit 2026-08-26)
 
-### Issue 1: Workflow 01 referencia tools no declaradas en §6.1
+### Issue 1: Workflow 01 referencia tools no declaradas en §6.1 — **CERRADO (opción C, 2026-08-26)**
 
 El workflow 01 ([`specs/workflows/01-from-csv-to-published-report.md`](../specs/workflows/01-from-csv-to-published-report.md))
-declara **13 tools MVP** en su header y **14 tools** en §2, pero SPEC §6.1
+declaraba **13 tools MVP** en su header y **14 tools** en §2, pero SPEC §6.1
 solo lista 12 MVP. El delta:
 
-| Tool | En §6.1 | En wf01 | En §4 | Tiene spec dedicado |
-|------|---------|---------|-------|---------------------|
-| `add_measure_with_validation` | ❌ | ✅ | ✅ (§4.2) | ❌ |
-| `create_report_from_dataset` | ❌ | ✅ | ✅ (§4.3) | ❌ |
-| `edit_report_visual` | ❌ | ✅ | ✅ (§4.3) | ❌ |
-| `audit_model_and_report` | ✅ | ✅ | ✅ | ✅ dedic. |
-| `diff_models` | ✅ | ❌ | ✅ | en `03-validation.md §2.4` |
-| `run_dax_regression` | ✅ | ❌ | ✅ | en `03-validation.md §5` |
+| Tool | Estado |
+|------|--------|
+| `add_measure_with_validation` | **v1.1 (post-MVP)** — ver plan renegociado abajo |
+| `create_report_from_dataset` | **v1.1 (post-MVP)** — ver plan renegociado abajo |
+| `edit_report_visual` | **v1.1 (post-MVP)** — ver plan renegociado abajo |
+| `audit_model_and_report` | ✅ en §6.1 |
+| `diff_models` | ✅ en §6.1 (workflow 01 no la usa explícitamente, opcional) |
+| `run_dax_regression` | ✅ en §6.1 (workflow 01 no la usa explícitamente, opcional) |
 
-**Decisión adoptada (2026-08-26):** mantener §6.1 en 12 tools MVP
+**Decisión adoptada (2026-08-26, código C):** mantener §6.1 en 12 tools MVP
 (coherente con plan de 4 semanas ya saturado en 188h). Las 3 tools
 `add_measure_with_validation`, `create_report_from_dataset`,
-`edit_report_visual` son **v1.1 (post-MVP)** — se implementan en semana 5
-si el cronograma lo permite, o se documentan como workarounds manuales
-del workflow 01 (el §9 del workflow ya marca estas 3 como "requieren
-v2" para el showcase completo, pero la línea de dependencies las lista
-como MVP v1 — esto es drift conocido a resolver).
+`edit_report_visual` se reclasifican como **v1.1 (post-MVP)** — se implementan
+en Semana 5 dedicada (ver plan renegociado abajo).
 
-**Acción:** al implementar v1.1, decidir si:
-- (a) Promover las 3 a §6.1 → plan a 5 semanas.
-- (b) Reescribir workflow 01 §9 para que sean explícitamente v2 degraded.
+**Acciones aplicadas:**
+- `specs/workflows/01-from-csv-to-published-report.md` header: tools v1.1
+  marcadas explícitamente en línea separada.
+- `specs/workflows/01-from-csv-to-published-report.md` §9: tabla con tres
+  columnas (MVP / MVP+v1.1 / Showcase v2) y fases explícitas.
 
-### Issue 2: Tabla "Specs pendientes de detalle (v2/v3)" desactualizada
+### Plan renegociado — Semana 5 v1.1 (post-MVP, opcional)
+
+El MVP v1 (Semanas 1-4) entrega el sub-flujo MVP alcanzable (~70%) con
+scaffold manual de modelo y reporte. Para llegar al MVP+v1.1 (~90%, scaffold
+automatizado pero sin brief NL), se necesita **una semana adicional** con
+las siguientes tasks:
+
+| # | Task | Tiempo | Dependencias |
+|---|------|--------|--------------|
+| 5.1 | Escribir `specs/tools/add-measure-with-validation.md` (spec dedicado MVP) | 1h | MVP done |
+| 5.2 | Implementar `tools/add_measure_with_validation.py` | 4h | 5.1 |
+| 5.3 | Escribir `specs/tools/create-report-from-dataset.md` (spec dedicado MVP) | 1h | MVP done |
+| 5.4 | Implementar `tools/create_report_from_dataset.py` (scaffolding PBIR con página vacía) | 6h | 5.3 |
+| 5.5 | Escribir `specs/tools/edit-report-visual.md` (spec dedicado MVP) | 1h | MVP done |
+| 5.6 | Implementar `tools/edit_report_visual.py` (CRUD determinístico sobre visuales existentes) | 6h | 5.5 |
+| 5.7 | Tests e2e de las 3 tools con fixture PBIP | 6h | 5.2, 5.4, 5.6 |
+| 5.8 | Actualizar `docs/IMPLEMENTATION-PLAN-v1.0.md` con Semana 5 | 1h | 5.7 |
+| 5.9 | Validar workflow 01 con v1.1 + actualizar §9 acceptance criteria | 3h | 5.7 |
+
+**Total Semana 5:** ~29h (≈ 4 días dev senior).
+
+**Decisión de Bastian (2026-08-26):** "en lo pendiente de desicion hagamos
+todo lo que recomiendas tu" — ejecutar Semana 5 antes de declarar MVP done
+formalmente. Aceptar el plan de 5 semanas en lugar de 4.
+
+### Issue 2: Tabla "Specs pendientes de detalle (v2/v3)" desactualizada — **PARCIALMENTE CERRADO**
 
 La tabla de "Specs pendientes de detalle" abajo refleja la realidad
 post-audit pero está incompleta. Las tools MVP v1 que **no tienen spec
 dedicado** (más allá de los schemas inline en specs por capa) son:
 
-| Tool | MVP | Spec dedicado |
-|------|-----|---------------|
-| `generate_data_dictionary` | MVP v1 | ❌ falta |
-| `add_measure_with_validation` | v1.1 (Issue 1) | ❌ falta |
-| `create_report_from_dataset` | v1.1 (Issue 1) | ❌ falta |
-| `edit_report_visual` | v1.1 (Issue 1) | ❌ falta |
+| Tool | MVP | Spec dedicado | Status |
+|------|-----|---------------|--------|
+| `generate_data_dictionary` | MVP v1 | ✅ **creado 2026-08-26** ([`specs/tools/generate-data-dictionary.md`](../specs/tools/generate-data-dictionary.md)) | ✅ cerrado |
+| `add_measure_with_validation` | v1.1 | 📝 pendiente — crear en Semana 5.1 | plan definido |
+| `create_report_from_dataset` | v1.1 | 📝 pendiente — crear en Semana 5.3 | plan definido |
+| `edit_report_visual` | v1.1 | 📝 pendiente — crear en Semana 5.5 | plan definido |
 
 ## Workflows
 
