@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,12 +12,14 @@ from powerbi_orchestrator_mcp.engines.base import (
     ConnectionHandle,
     OperationResult,
     Table,
+    ValidationResult,
 )
 from powerbi_orchestrator_mcp.engines.errors import (
     EngineNotFoundError,
 )
 from powerbi_orchestrator_mcp.engines.selector import (
     DEFAULT_MODELING_CHAIN,
+    DEFAULT_REPORT_CHAIN,
     EngineSelector,
 )
 from powerbi_orchestrator_mcp.orchestrator.context import EngineStatus, Target
@@ -116,6 +119,71 @@ class _FakeModelingEngine:
         return None
 
 
+class _FakeReportEngine:
+    """Minimal ReportEngine stand-in for selector tests."""
+
+    def __init__(self, name: str = "python_report", version: str = "1.0.0") -> None:
+        self._name = name
+        self._version = version
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def health_check(self) -> EngineStatus:
+        return EngineStatus(
+            name=self._name, available=True, version=self._version
+        )
+
+    async def connect(self, pbip_path: Path) -> ConnectionHandle:
+        return ConnectionHandle(
+            engine=self._name,
+            target_type="pbip_folder",
+            target_ref=str(pbip_path),
+            session_token="x",
+        )
+
+    async def disconnect(self, conn: ConnectionHandle) -> None:
+        pass
+
+    async def add_page(
+        self,
+        conn: ConnectionHandle,
+        page_name: str,
+        layout: Any = None,
+    ) -> OperationResult:
+        return OperationResult(success=True)
+
+    async def add_visual(
+        self,
+        conn: ConnectionHandle,
+        page: str,
+        visual_spec: Any,
+    ) -> OperationResult:
+        return OperationResult(success=True)
+
+    async def update_visual(
+        self,
+        conn: ConnectionHandle,
+        page: str,
+        visual_id: str,
+        changes: dict[str, Any],
+    ) -> OperationResult:
+        return OperationResult(success=True)
+
+    async def propagate_rename(
+        self,
+        conn: ConnectionHandle,
+        old_path: str,
+        new_path: str,
+        scope: str,
+    ) -> OperationResult:
+        return OperationResult(success=True)
+
+    async def validate_pbir(self, conn: ConnectionHandle) -> ValidationResult:
+        return ValidationResult(valid=True)
+
+
 @pytest.fixture()
 def target() -> Target:
     return Target(target_type="pbip_folder", target_ref="./x")
@@ -129,20 +197,20 @@ def target() -> Target:
 class TestSelection:
     def test_picks_preferred_when_registered(self, target: Target) -> None:
         sel = EngineSelector()
-        sel.register("powerbi-modeling-mcp", _FakeModelingEngine())
+        sel.register_modeling("powerbi-modeling-mcp", _FakeModelingEngine())
         engine = sel.select_modeling_engine("update_column", target)
         assert engine.name == "powerbi-modeling-mcp"
 
     def test_caches_selection(self, target: Target) -> None:
         sel = EngineSelector()
-        sel.register("powerbi-modeling-mcp", _FakeModelingEngine())
+        sel.register_modeling("powerbi-modeling-mcp", _FakeModelingEngine())
         engine1 = sel.select_modeling_engine("update_column", target)
         engine2 = sel.select_modeling_engine("update_column", target)
         assert engine1 is engine2
 
     def test_cache_invalidated_by_unregister(self, target: Target) -> None:
         sel = EngineSelector()
-        sel.register("powerbi-modeling-mcp", _FakeModelingEngine())
+        sel.register_modeling("powerbi-modeling-mcp", _FakeModelingEngine())
         sel.select_modeling_engine("update_column", target)  # populates cache
         sel.unregister("powerbi-modeling-mcp")
         with pytest.raises(EngineNotFoundError):
@@ -150,12 +218,55 @@ class TestSelection:
 
     def test_cache_key_includes_target_type(self, target: Target) -> None:
         sel = EngineSelector()
-        sel.register("powerbi-modeling-mcp", _FakeModelingEngine())
+        sel.register_modeling("powerbi-modeling-mcp", _FakeModelingEngine())
         sel.select_modeling_engine("op", target)  # cache key: (op, pbip_folder)
         # Different target_type, second call should still find the engine.
         target2 = Target(target_type="fabric_workspace", target_ref="ws-1")
         engine = sel.select_modeling_engine("op", target2)
         assert engine.name == "powerbi-modeling-mcp"
+
+    def test_generic_register_dispatches_to_modeling(self, target: Target) -> None:
+        sel = EngineSelector()
+        sel.register("powerbi-modeling-mcp", _FakeModelingEngine())
+        # Should be in the modeling registry.
+        engine = sel.select_modeling_engine("update_column", target)
+        assert hasattr(engine, "list_tables") and hasattr(engine, "snapshot")
+
+    def test_generic_register_dispatches_to_report(self, target: Target) -> None:
+        sel = EngineSelector()
+        sel.register("python_report", _FakeReportEngine())
+        # Should be in the report registry.
+        engine = sel.select_report_engine("propagate_rename", target)
+        assert hasattr(engine, "add_page") and hasattr(engine, "add_visual")
+
+
+class TestReportSelection:
+    def test_picks_python_report_first(self, target: Target) -> None:
+        sel = EngineSelector()
+        sel.register_report("python_report", _FakeReportEngine("python_report"))
+        sel.register_report("superbi-mcp", _FakeReportEngine("superbi-mcp"))
+        engine = sel.select_report_engine("propagate_rename", target)
+        assert engine.name == "python_report"
+
+    def test_falls_back_to_superbi_mcp(self, target: Target) -> None:
+        sel = EngineSelector()
+        # Only superbi-mcp registered.
+        sel.register_report("superbi-mcp", _FakeReportEngine("superbi-mcp"))
+        engine = sel.select_report_engine("propagate_rename", target)
+        assert engine.name == "superbi-mcp"
+
+    def test_raises_when_no_report_engines(self, target: Target) -> None:
+        sel = EngineSelector()
+        with pytest.raises(EngineNotFoundError):
+            sel.select_report_engine("propagate_rename", target)
+
+    def test_plan_compatibility_kind_report(self, target: Target) -> None:
+        sel = EngineSelector()
+        sel.register_report("python_report", _FakeReportEngine())
+        result = sel.plan_compatibility(
+            [("propagate_rename", target)], kind="report"
+        )
+        assert result["ready"] is True
 
 
 class TestNotRegistered:
@@ -221,3 +332,11 @@ class TestDefaultChain:
         preferred, fallbacks = DEFAULT_MODELING_CHAIN
         assert preferred == "powerbi-modeling-mcp"
         assert fallbacks == ()
+
+    def test_default_report_chain_prefers_python_report(self) -> None:
+        assert DEFAULT_REPORT_CHAIN[0] == "python_report"
+
+    def test_default_report_chain_falls_back_to_superbi_mcp(self) -> None:
+        preferred, fallbacks = DEFAULT_REPORT_CHAIN
+        assert preferred == "python_report"
+        assert "superbi-mcp" in fallbacks
