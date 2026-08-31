@@ -295,6 +295,11 @@ de ~90%. Ver `docs/MVP-STATUS.md` §Plan renegociado y
 > §6.1 MVP para no romper el plan de 4 semanas. Viven como v1.1 — su spec
 > dedicado y código se entregan en Semana 5 dedicada. Aceptar el plan de 5
 > semanas en lugar de 4.
+>
+> **Decisión 2026-08-26 (Bastian):** ejecutar Semana 5 antes de declarar
+> "MVP done" formalmente. Es decir, **MVP done = 12 tools MVP + 3 tools
+> v1.1** (15 totales). Esto se refleja en los acceptance criteria de §6.5
+> (Semana 4 se considera "MVP parcial" hasta cerrar Semana 5).
 
 ### 6.4 Plan original de 4 semanas (referencia histórica)
 

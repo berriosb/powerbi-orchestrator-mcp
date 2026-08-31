@@ -1,7 +1,8 @@
 # MVP STATUS — powerbi-orchestrator-mcp
 
-> Estado de implementación vs specs. Última sync: 2026-08-21 (specs v0.1,
-> código aún no escrito).
+> Estado de implementación vs specs. Última sync: 2026-08-26 (specs v0.2
+> cerrados: Tier A bloqueante para Semana 2 completo; código aún no escrito
+> más allá de Semana 1 en progreso).
 
 **Leyenda:**
 - ❌ No implementado
@@ -15,11 +16,11 @@
 
 | Capa | Spec | Status código |
 |------|------|---------------|
-| 6 · Orquestación | [`../specs/01-orchestrator.md`](../specs/01-orchestrator.md) | ❌ |
+| 6 · Orquestación | [`../specs/01-orchestrator.md`](../specs/01-orchestrator.md) | 🟡 (Semana 1: server stub, context, audit, elicitation listos; planner + rollback pendiente) |
 | 3 · Cloud Fabric | [`../specs/02-cloud-fabric.md`](../specs/02-cloud-fabric.md) | ❌ |
 | 4 · Validación | [`../specs/03-validation.md`](../specs/03-validation.md) | ❌ |
 | 5 · Viz/UX | [`../specs/04-viz-ux.md`](../specs/04-viz-ux.md) | ❌ |
-| 1-2 · Engines | [`../specs/05-engines-adapters.md`](../specs/05-engines-adapters.md) | ❌ |
+| 1-2 · Engines | [`../specs/05-engines-adapters.md`](../specs/05-engines-adapters.md) + [`../specs/06-engine-error-contracts.md`](../specs/06-engine-error-contracts.md) | ❌ |
 
 ## Tools MVP
 
@@ -147,6 +148,67 @@ dedicado** (más allá de los schemas inline en specs por capa) son:
 
 ---
 
+## Specs Tier A completados (pre-Semana 2, 2026-08-26)
+
+Gap analysis identificó 5 specs/secciones críticas faltantes para los
+engine adapters de Semana 2. **Todas cerradas** en este commit:
+
+| # | Spec/sección | Bloqueaba | Estado |
+|---|--------------|-----------|--------|
+| A1 | Identifiers canónicos (`session_id`, `plan_id`, `target_id`, etc.) en [`01-orchestrator.md` §2.7](../specs/01-orchestrator.md) | Audit log consistente entre sesiones | ✅ |
+| A2 | Contratos de error/timeout para subprocess engines en [`06-engine-error-contracts.md`](../specs/06-engine-error-contracts.md) (nuevo) | Adapter degradation strategy | ✅ |
+| A3 | Crash recovery & plan state machine en [`01-orchestrator.md` §2.8](../specs/01-orchestrator.md) | Resiliencia ante `kill -9` | ✅ |
+| A4 | Integración con `pbip-validator` en [`05-engines-adapters.md` §10](../specs/05-engines-adapters.md) | Validator de `safe_rename` | ✅ |
+| A5 | Matriz `connect_target` por tipo de target en [`05-engines-adapters.md` §11](../specs/05-engines-adapters.md) | Comportamiento ante Desktop cerrado / PBIP malformado | ✅ |
+
+**Decisiones adoptadas en estos specs:**
+
+- HMAC key rotation: **manual via CLI** (`python -m orchestrator.audit rotate-key`).
+- Crash recovery: **detección + elicitación al próximo `apply_plan`** (no auto-rollback).
+- Identifier format: `plan_id` con prefijo `plan_YYYY-MM-DD_<nanoid>` para sortability.
+- `target_id`: se hashea cuando contiene PII o es muy largo (>200 chars).
+- Plan execution state machine: 6 estados (`pending|in_progress|completed|rolled_back|partial|orphaned`).
+
+## Specs Tier B pendientes (bloqueante Semana 3)
+
+| # | Spec/sección | Bloqueaba | Esfuerzo | Estado |
+|---|--------------|-----------|----------|--------|
+| B1 | Elicitation rejection path + `--readonly` ↔ `run_refresh` interaction en `01-orchestrator.md` §2.9 | UX consistente para rechazos | ~1h | ✅ |
+| B2 | HMAC key manual rotation CLI en `01-orchestrator.md` §2.10 | Compliance workflow | ~1h | ✅ |
+| B3 | `audit_cloud.py` spec en `02-cloud-fabric.md` §5 | Audit log cloud separado | ~1h | ✅ |
+| B4 | Concurrency limits / Fabric rate limit budget en `02-cloud-fabric.md` §6 | Rate limit real (~200 req/min/tenant) | ~1h | ✅ |
+
+**Tier B cerrado en este commit (2026-08-26).** Decisiones tomadas:
+
+- **Flags globales:** `--readonly`, `--allow-refresh`, `--allow-prod` (separados para distinguir "técnico" de "político").
+- **Elicitation outcomes:** 3 outcomes (`accept | decline | dismiss`), `decline` no es error, audit log diferencia `declined` de `dismissed`.
+- **HMAC rotation:** manual via `python -m audit rotate-key`, atómica via SQLite WAL, con verificación post-rotación obligatoria.
+- **Cloud audit:** reusa el mismo `audit_log` SQLite + HMAC chain; `tool_name="cloud:<operation>"`; redacción obligatoria de tokens/JWT/connection strings/emails.
+- **Rate limiting:** token bucket (200 RPM default, burst 30), circuit breaker (5 errores 5xx → abre 60s), long-running operations (`run_refresh`, `cancel_refresh`) usan conexión dedicada fuera del budget.
+
+## Specs Tier C pendientes (bloqueante Semana 4)
+
+| # | Spec/sección | Bloqueaba | Esfuerzo | Estado |
+|---|--------------|-----------|----------|--------|
+| C1 | Fixture PBIP specification en `tests/fixtures/README.md` (nuevo) | Tests reproducibles | ~2h | ✅ |
+| C2 | Plan YAML schema versioning en `01-orchestrator.md` §5.1 | Forward compat de plans commiteados | ~1h | ✅ |
+
+**Tier C cerrado en este commit (2026-08-26).** Decisiones tomadas:
+
+- **Plan YAML versioning:** rango MVP estricto (`min == max == current`); sin transformaciones automáticas; elicitación si plan sin header; tabla de bump policy (patch=add optional field, minor=new optional field, major=new required field / rename / semantic change).
+- **Fixture PBIP:** cobertura amplia (15 medidas = 5 limpias + 10 con anti-patterns uno por regla del linter; 30 columnas con 80% descriptions; 4 visuales incluyendo 1 sin alt text + mobile layout + WCAG baseline; 3 roles RLS con test matrix 3/3; 1 medida con error DAX intencional para test de detección). Generación determinística via script Python con seed 42.
+
+---
+
+## Fase 4 — Outlines v2/v3 (2026-08-26)
+
+9 outlines de 1 página creados para tools v2/v3, formato uniforme
+(Objetivo, Inputs/Outputs, Dependencias, Acceptance criteria, Riesgos,
+Fuera de alcance). Ver tabla §"Specs pendientes de detalle" arriba.
+
+**Pendiente:** outline de `set_sensitivity_labels` (v3) — no priorizado
+en este pase; hacerlo antes de su semana de implementación.
+
 ## Specs pendientes de detalle (v2/v3)
 
 | Tool | Versión | Spec |
@@ -268,6 +330,41 @@ dedicado** (más allá de los schemas inline en specs por capa) son:
 - 1+ paper/talk presentando la arquitectura.
 
 ---
+
+## Specs pendientes de detalle (v2/v3)
+
+| Tool | Versión | Spec | Estado |
+|------|---------|------|--------|
+| `refactor_to_calculation_groups` | v2 | [`../specs/tools/refactor-to-calculation-groups.md`](../specs/tools/refactor-to-calculation-groups.md) | ✅ outline v0.1 |
+| `promote_in_pipeline` | v2 | [`../specs/tools/promote-in-pipeline.md`](../specs/tools/promote-in-pipeline.md) | ✅ outline v0.1 |
+| `design_report_page_from_requirements` | v2 | [`../specs/tools/design-report-page-from-requirements.md`](../specs/tools/design-report-page-from-requirements.md) | ✅ outline v0.1 |
+| `select_visuals_for_kpis` | v2 | [`../specs/tools/select-visuals-for-kpis.md`](../specs/tools/select-visuals-for-kpis.md) | ✅ outline v0.1 |
+| `audit_report_ux_and_storytelling` | v2 | [`../specs/tools/audit-report-ux-and-storytelling.md`](../specs/tools/audit-report-ux-and-storytelling.md) | ✅ outline v0.1 |
+| `setup_rls_and_roles` | v2 | [`../specs/tools/setup-rls-and-roles.md`](../specs/tools/setup-rls-and-roles.md) | ✅ outline v0.1 |
+| `create_semantic_model_from_schema` | v2 | [`../specs/tools/create-semantic-model-from-schema.md`](../specs/tools/create-semantic-model-from-schema.md) | ✅ outline v0.1 |
+| `sync_git_to_workspace` | v3 | [`../specs/tools/sync-git-to-workspace.md`](../specs/tools/sync-git-to-workspace.md) | ✅ outline v0.1 |
+| `screenshot_report_pages` | v2 (corrección: era v3) | [`../specs/tools/screenshot-report-pages.md`](../specs/tools/screenshot-report-pages.md) | ✅ outline v0.1 |
+| `set_sensitivity_labels` | v3 | ❌ falta spec | ⏳ pendiente outline |
+
+## Resumen de cambios Fase 4 (outlines v2/v3) — 2026-08-26
+
+**9 outlines creados** (1 página cada uno, formato uniforme: Objetivo,
+Inputs/Outputs principales, Dependencias, Acceptance criteria, Riesgos,
+Fuera de alcance). Sirven como contrato público del roadmap y como
+documentación para contribuidores externos que pregunten sobre tools
+futuros.
+
+**Decisión arquitectónica documentada en los outlines:**
+
+- `screenshot_report_pages`: v2 best-effort (Desktop Bridge) + v3
+  determinístico con análisis de varianza real (mantiene la corrección
+  post-audit de `3ad85c3`).
+- `sync_git_to_workspace`: en v3 inicial solo `commit_workspace_to_git`
+  (workspace → Git, write-only); `sync_git_to_workspace` bidireccional
+  con merge conflicts queda v3 posterior. Razón: validar el sentido
+  workspace→Git antes de implementar merge TMDL/PBIR.
+- `create_semantic_model_from_schema`: spec YAML con schema_version
+  (reusa patrón de §5.1 de `01-orchestrator.md`).
 
 > **Próximo paso cuando Bastian apruebe:** arrancar Semana 1.
 > Antes: validar specs y resolver dudas con Bastian.

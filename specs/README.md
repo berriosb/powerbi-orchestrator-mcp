@@ -24,11 +24,16 @@
 
 ## Specs por capa
 
-- [x] `01-orchestrator.md` — Capa 6: planner, connect_target, apply_plan, rollback engine.
-- [x] `02-cloud-fabric.md` — Capa 3: REST Fabric, auth, deploy, refresh, RLS, git integration.
+- [x] `01-orchestrator.md` — Capa 6: planner, connect_target, apply_plan, rollback engine, **identifiers (§2.7)**, **crash recovery (§2.8)**, **elicitation outcomes + flags globales (§2.9)**, **audit key rotation (§2.10)**, **plan YAML versioning (§5.1)**.
+- [x] `02-cloud-fabric.md` — Capa 3: REST Fabric, auth, deploy, refresh, RLS, git integration, **cloud audit log (§5)**, **concurrency limits + rate limiting (§6)**.
 - [x] `03-validation.md` — Capa 4: BPA, DAX linter, regression runner, accessibility, pre-deploy gate.
 - [x] `04-viz-ux.md` — Capa 5: visual registry, suggester, layout, theme, storytelling.
-- [x] `05-engines-adapters.md` — Cómo se delega a `powerbi-modeling-mcp`, `superbi-mcp`, `te`, `dscmd`, `pbip-validator`.
+- [x] `05-engines-adapters.md` — Cómo se delega a `powerbi-modeling-mcp`, `superbi-mcp`, `te`, `dscmd`, `pbip-validator`, **integración `pbip-validator` (§10)**, **matriz `connect_target` (§11)**.
+
+## Specs cross-cutting
+
+- [x] `06-engine-error-contracts.md` — Jerarquía de errores, timeouts y exit codes canónicos para todos los subprocess engines (creado 2026-08-26, pre-Semana 2).
+- [x] [`../tests/fixtures/README.md`](../tests/fixtures/README.md) — Especificación del fixture PBIP load-bearing (4 tablas, ~15 medidas, 4 visuales, RLS) usado por todos los tests e2e (creado 2026-08-26, pre-Semana 4).
 
 ## Specs por tool (MVP ambicioso)
 
@@ -73,18 +78,19 @@ duplicación de schemas.
 
 ### v2 — Semanas 6-8
 
-- [ ] `tools/refactor-to-calculation-groups.md` (con reconciliation total)
-- [ ] `tools/promote-in-pipeline.md` (dev→test→prod gates)
-- [ ] `tools/design-report-page-from-requirements.md` (viz/UX completa)
-- [ ] `tools/select-visuals-for-kpis.md`
-- [ ] `tools/audit-report-ux-and-storytelling.md`
-- [ ] `tools/setup-rls-and-roles.md`
-- [ ] `tools/create-semantic-model-from-schema.md`
-- [ ] `tools/screenshot-report-pages.md`
+- [x] `tools/refactor-to-calculation-groups.md` (con reconciliation total) — outline v0.1
+- [x] `tools/promote-in-pipeline.md` (dev→test→prod gates) — outline v0.1
+- [x] `tools/design-report-page-from-requirements.md` (viz/UX completa) — outline v0.1
+- [x] `tools/select-visuals-for-kpis.md` — outline v0.1
+- [x] `tools/audit-report-ux-and-storytelling.md` — outline v0.1
+- [x] `tools/setup-rls-and-roles.md` — outline v0.1
+- [x] `tools/create-semantic-model-from-schema.md` — outline v0.1
+- [x] `tools/screenshot-report-pages.md` — outline v0.1
 
 ### v3 — Semanas 9-12
 
-- [ ] `tools/sync-git-to-workspace.md`
+- [x] `tools/sync-git-to-workspace.md` — outline v0.1
+- [ ] `tools/set-sensitivity-labels.md` (pendiente outline; governance)
 
 ## Cambios v0.2 (audit 2026-08-26)
 
@@ -95,6 +101,15 @@ duplicación de schemas.
 - ✅ MVP-STATUS.md actualizado con issues abiertos, decisión de plan renegociado (5 semanas), y tabla de ubicación real de specs.
 - ✅ Decisión arquitectónica adoptada: specs pueden vivir en `specs/tools/` (dedicado) o en spec por capa (inline).
 - ✅ Plan renegociado a 5 semanas: Semana 5 v1.1 con `add_measure_with_validation`, `create_report_from_dataset`, `edit_report_visual`.
+- ✅ `06-engine-error-contracts.md` creado (errores canónicos para subprocess engines).
+- ✅ `01-orchestrator.md` §2.7 (Identifiers) y §2.8 (Crash recovery & plan state machine) añadidos.
+- ✅ `05-engines-adapters.md` §10 (integración `pbip-validator`) y §11 (matriz `connect_target` por tipo de target) añadidos.
+- ✅ SPEC.md §6.3: nota explícita que MVP done = MVP + v1.1 (opción C, decisión 2026-08-26).
+- ✅ README.md: conteo de tools corregido (28 → 26).
+- ✅ Tier B cerrado: `01-orchestrator.md` §2.9 (elicitation outcomes + `--readonly`/`--allow-prod`/`--allow-refresh` flags) y §2.10 (HMAC key rotation CLI manual).
+- ✅ Tier B cerrado: `02-cloud-fabric.md` §5 (Cloud audit log con redacción obligatoria) y §6 (concurrency limits, token bucket, circuit breaker).
+- ✅ Tier C cerrado: `01-orchestrator.md` §5.1 (Plan YAML schema versioning) y `tests/fixtures/README.md` (especificación del fixture PBIP con cobertura amplia: 10 anti-patterns DAX + RLS 3 roles + 4 visuales + WCAG baseline + 1 error DAX intencional).
+- ✅ Fase 4 cerrada: 9 outlines v2/v3 (8 v2 + 1 v3) en `specs/tools/`. Formato uniforme de 1 página.
 
 ## Cambios v0.1 (sync 2026-08-21)
 

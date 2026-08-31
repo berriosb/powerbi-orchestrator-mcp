@@ -11,7 +11,7 @@
 ## Qué es
 
 Un servidor [Model Context Protocol](https://modelcontextprotocol.io) (stdio) que
-expone **28 herramientas de alto nivel** (no 500 primitivas) para que un agente
+expone **26 herramientas de alto nivel** (no 500 primitivas) para que un agente
 IA pueda trabajar end-to-end con Power BI:
 
 - Diseñar y validar modelos semánticos (TMDL/TOM).
