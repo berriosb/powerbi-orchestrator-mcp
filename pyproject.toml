@@ -23,8 +23,8 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "mcp[cli]>=1.0.0",
-    "pydantic>=2.0.0",
+    "mcp[cli]>=1.0.0,<2.0.0",
+    "pydantic>=2.0.0,<3.0.0",
     "pydantic-settings>=2.0.0",
     "azure-identity>=1.15.0",
     "azure-core>=1.30.0",
@@ -70,6 +70,11 @@ select = [
 ignore = [
     "E501",  # line too long (handled by formatter)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests commonly have protocol-shaped fixtures whose params are part
+# of the contract even when unused in a specific test body.
+"tests/**" = ["ARG001", "ARG002"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["powerbi_orchestrator_mcp"]
