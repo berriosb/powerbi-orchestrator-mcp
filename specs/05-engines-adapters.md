@@ -357,7 +357,208 @@ PINNED_VERSIONS = {
 
 ---
 
-## 10. Tests
+## 10. Integración con `pbip-validator`
+
+`pbip-validator` (Microsoft, paquete Python o CLI standalone cuando esté
+disponible) es el preflight oficial para PBIP. Lo invocamos después de
+cada write a modelo o PBIR para detectar corrupción antes de que el
+siguiente step falle por algo más opaco.
+
+### 10.1 Cuándo corre
+
+| Trigger | Comando | Config |
+|---------|---------|--------|
+| `apply_plan.step.validators` incluye `pbip_validate_model` | `pbip-validator model <pbip_path>` | `--severity-threshold=error` |
+| `apply_plan.step.validators` incluye `pbip_validate_pbir` | `pbip-validator pbir <report_path>` | `--severity-threshold=warning` |
+| `safe_rename` después de propagar al reporte | `pbip-validator pbir <report_path>` | `--severity-threshold=error` |
+| `plan_change(template=...)` dry-run (pre-flight) | ambos en paralelo | `--severity-threshold=warning` |
+
+**Default behavior:** si el binario está disponible, corre. Si no,
+warning en `audit_log` y el `apply_plan` continúa con `result_status`
+potentially degradado (ver §10.4).
+
+### 10.2 Exit codes y mapeo
+
+| Exit | Significado | Acción del orchestrator |
+|------|-------------|-------------------------|
+| 0 | Validación completa OK | Continuar normal |
+| 1 | Findings (severity según config) | Warning/Info: continuar; Error: bloquear step; depurar según output JSON |
+| 2 | PBIP/PBIR malformado (no parseable) | Bloquear step, elevar `EngineValidationError` con remediation_hint apuntando al archivo específico |
+| 3 | Timeout interno del validator | Bloquear step si es write crítico (deploy, refresh); warning si es validator no-bloqueante |
+| 64+ | Contract violation del validator | `EngineContractError`, log a stderr completo + abrir issue upstream |
+
+### 10.3 Output schema
+
+`pbip-validator` emite JSON en stdout con este formato (contrato MVP):
+
+```python
+class PbipValidatorFinding(BaseModel):
+    severity: Literal["error", "warning", "info"]
+    rule_id: str
+    location: str  # path relativo al PBIP root, ej: "model/tables/Customer.tmdl#L42"
+    message: str
+    suggestion: str | None = None
+
+
+class PbipValidatorResult(BaseModel):
+    target: str  # "model" | "pbir"
+    target_path: str
+    findings: list[PbipValidatorFinding]
+    summary: dict[str, int]  # {"error": N, "warning": N, "info": N}
+    duration_ms: int
+```
+
+Si el output no cumple este schema → `EngineOutputParseError` con
+`remediation_hint` indicando "pbip-validator versión incompatible, ¿actualizar?".
+
+### 10.4 Configuración
+
+Archivo opcional `pbip_validator_config.json` en el PBIP root o en
+`~/.powerbi-orchestrator-mcp/config/`:
+
+```json
+{
+  "model": {
+    "severity_threshold": "error",
+    "ignore_paths": ["model/tables/AutoDate/*.tmdl"],
+    "ignore_rules": ["MSFT_001"]
+  },
+  "pbir": {
+    "severity_threshold": "warning",
+    "ignore_visual_ids": []
+  }
+}
+```
+
+**Reglas:**
+
+1. Si el archivo no existe, defaults: model=error, pbir=warning.
+2. `ignore_paths` usa sintaxis glob (`fnmatch`).
+3. `ignore_rules` referencia `rule_id` del finding.
+
+### 10.5 Degradación cuando el validator no está disponible
+
+Si `pbip-validator --version` falla al `connect_target`:
+
+- `engines_available.pbip-validator.EngineStatus.available = false`
+- `engines_available.pbip-validator.EngineStatus.reason_unavailable = "binary not found"`
+- En `warnings` del `ConnectResult`: warning `"pbip-validator unavailable; some validators will be skipped"`.
+- Cualquier `apply_plan.step.validators` que liste `pbip_validate_*` se comporta así:
+  - El step se ejecuta normalmente.
+  - El validator reporta `validation_status = "skipped"` en su output.
+  - El `apply_plan` overall `result_status` se marca `partial` si el step fue crítico (deploy/refresh) o normal en otros casos.
+  - Se emite un audit log entry con `payload_json.validation_skipped=true`.
+
+### 10.6 Acceptance criteria
+
+- [ ] `pbip_validator_config.json` parseado correctamente con defaults sensatos.
+- [ ] Test con mock de subprocess: exit 1 + JSON con findings → orchestrator bloquea step con lista de findings estructurada.
+- [ ] Test con mock: exit 2 → `EngineValidationError` con location específica.
+- [ ] Test: validator no disponible → step ejecutado, `partial` result, audit log con `validation_skipped=true`.
+- [ ] Documentado en `docs/engines-setup.md` cómo instalar el paquete y la versión pinneada.
+
+---
+
+## 11. Matriz `connect_target` por tipo de target
+
+`connect_target` (definido en [`01-orchestrator.md` §3.1](./01-orchestrator.md))
+acepta 4 tipos de target: `pbi_desktop`, `fabric_workspace`, `pbip_folder`,
+`pbix_file`. Cada tipo tiene un **contrato de descubrimiento diferente** y
+posibles estados de fallo que el orquestador debe elicitar.
+
+### 11.1 `pbi_desktop` (Power BI Desktop local)
+
+Power BI Desktop expone un endpoint loopback TCP en `localhost:56121`
+(según Microsoft, hardcoded). El `connect_target` lo descubre vía el
+proceso `msmdsrv.exe` / `PBIDesktop` en ejecución.
+
+**Estados posibles:**
+
+| Estado del Desktop | Detección | Comportamiento |
+|--------------------|-----------|----------------|
+| **Cerrado** | `msmdsrv.exe` no encontrado en procesos | Elicitar: "Abrí Power BI Desktop con un modelo cargado y reintentá". No retry interno (la apertura es decisión humana). |
+| **Abierto sin modelo activo** | Puerto 56121 abierto pero handshake devuelve `no_model_loaded` | Elicitar con opciones: (a) abrir el `.pbix` de tu última sesión, (b) conectarse a un workspace Fabric, (c) abortar. |
+| **Abierto con modelo activo** | Handshake devuelve model metadata | Proceder normal. `engines_available` con model info en metadata_cache. |
+| **Abierto con Information Protection** | Metadata indica sensitivity label encryptada | Elicitar credenciales. Cachear token en `~/.powerbi-orchestrator-mcp/auth/` con permisos 0600 (mismo path que `DefaultAzureCredential`). |
+| **Múltiples instancias (raro, devs)** | Más de un proceso con puerto distinto (PBI soporta puertos alternativos) | Elicitar: "¿A qué instancia querés conectar? [lista de instancias detectadas]". |
+| **Versión incompatible** | Desktop version < 2.91 (jul-2023) sin TOM público | Warning + degradar a read-only via TE CLI si está disponible. Si no, error `unsupported_pbi_desktop_version`. |
+
+**Loopback TCP — detalles:**
+
+```python
+DISCOVERY_TIMEOUT_S = 3.0          # cuánto esperar el handshake inicial
+HANDSHAKE_TIMEOUT_S = 5.0          # cuánto esperar metadata del modelo
+DEFAULT_PORT = 56121               # hardcoded por Microsoft
+
+class PbiDesktopConnection:
+    host: str = "localhost"
+    port: int = DEFAULT_PORT
+    model_id: str | None = None    # extraído del handshake
+    model_name: str | None = None
+```
+
+**Si el puerto está bloqueado por firewall:** elicitar instrucción al
+usuario (no se puede bypassear automáticamente).
+
+### 11.2 `pbix_file` (legacy Power BI Desktop file)
+
+`.pbix` es un archivo binario (ZIP con estructura interna desde 2019; binario
+puro antes). Solo lectura/escritura parcial sin Desktop.
+
+| Versión del `.pbix` | Comportamiento |
+|---------------------|----------------|
+| ≥ 2019 (PBIX-as-ZIP) | `te` puede abrirlo; lectura/escritura de model + report limitadas. |
+| < 2019 (binario legacy) | Solo lectura via `powerbi-modeling-mcp` (si soporta esa versión). Write = degradado o no soportado. |
+| Encriptado con Information Protection | Elicitar credenciales (igual que PBI Desktop). |
+
+**Detección de versión:** leer header del archivo (primeros 4 bytes =
+`PK\x03\x04` para ZIP-as-PBIX; magic bytes antiguos para legacy).
+
+### 11.3 `pbip_folder` (Power BI Project folder)
+
+`.pbip` es un folder con subcarpetas `model/` (TMDL) y `report/` (PBIR).
+Es el target preferido para versionado en Git.
+
+**Validaciones al conectar:**
+
+1. Existe `<target_ref>/.pbip` con metadata JSON.
+2. Existe `<target_ref>/model/` con al menos un `.tmdl`.
+3. Existe `<target_ref>/report/` con al menos un `.json` (puede ser `report.json` o carpeta por página).
+4. El schema TMDL parsea (test rápido con `pbip-validator model` si está disponible; warning si no).
+5. El schema PBIR parsea (idem con `pbip-validator pbir`).
+
+**Si falta alguna estructura:** elicitar al usuario indicando qué falta
+y ofreciendo opción de inicializar estructura vacía o apuntar a otro
+target.
+
+### 11.4 `fabric_workspace` (Power BI Service / Fabric)
+
+Manejado enteramente por la Capa 3 (REST + auth). Ver
+[`02-cloud-fabric.md`](./02-cloud-fabric.md) §3.1. Resumen:
+
+- Primera conexión en el proceso: elicitar auth mode (interactive vs SPN).
+- Si SPN: leer env vars `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`/`AZURE_CLIENT_SECRET`; elicitar si faltan.
+- Cachear token en memoria del proceso (no en disco); refresh transparente.
+- `engines_available` para target cloud no aplica (no es un subprocess); se reporta como `cloud:available`.
+
+### 11.5 `xmla_endpoint` (Analysis Services)
+
+Avanzado, no MVP. Listado solo para completitud; ver
+[`docs/architecture.md`](../docs/architecture.md) §1.
+
+### 11.6 Acceptance criteria
+
+- [ ] `connect_target(pbi_desktop)` con Desktop cerrado elicita correctamente con opciones claras.
+- [ ] `connect_target(pbi_desktop)` con modelo activo retorna model_id y model_name en metadata_cache.
+- [ ] `connect_target(pbix_file)` detecta versión ≥2019 vs legacy y reporta en `engines_available`.
+- [ ] `connect_target(pbip_folder)` valida las 5 condiciones listadas en §11.3 antes de retornar `success`.
+- [ ] `connect_target(fabric_workspace)` con SPN sin env var elicita con `remediation_hint` apuntando a la env var faltante.
+- [ ] Test e2e: Desktop cerrado → elicitation → usuario abre Desktop → retry → success.
+- [ ] Test e2e: `.pbix` legacy → warning + read-only mode confirmado.
+
+---
+
+## 12. Tests
 
 - **Unit tests:** cada adapter con mock del subprocess.
 - **Contract tests:** verificar que el adapter expone la interfaz completa.
@@ -367,7 +568,7 @@ PINNED_VERSIONS = {
 
 ---
 
-## 11. Acceptance criteria
+## 13. Acceptance criteria
 
 - [ ] Los 4 adapters implementan la interfaz común.
 - [ ] Selector dinámico elige engine correcto según target + OS.
@@ -376,13 +577,13 @@ PINNED_VERSIONS = {
 - [ ] Al menos 1 integration test con fixture real por adapter.
 - [ ] Documentación: qué adapter usar en cada escenario.
 
-## 12. Out of scope (MVP)
+## 14. Out of scope (MVP)
 
 - ❌ Custom rulesets via UI (solo JSON file en MVP).
 - ❌ Auto-discovery de engines nuevos.
 - ❌ Hot-swap de engines mid-session.
 
-## 13. Riesgos
+## 15. Riesgos
 
 | Riesgo | Mitigación |
 |--------|-----------|
@@ -392,9 +593,10 @@ PINNED_VERSIONS = {
 | Engine no soporta target | Selector reporta claramente + elicitation al usuario. |
 | OS-specific paths | Usar `pathlib.Path`; resolver binarios via `which` con fallback paths. |
 
-## 14. Specs relacionados
+## 16. Specs relacionados
 
 - [`01-orchestrator.md`](./01-orchestrator.md) — planner que usa estos adapters
 - [`02-cloud-fabric.md`](./02-cloud-fabric.md) — engine cloud (REST, no subprocess)
 - [`03-validation.md`](./03-validation.md) — usa `te` para BPA
 - [`tools/safe-rename.md`](./tools/safe-rename.md) — usa modeling + report engines
+- [`06-engine-error-contracts.md`](./06-engine-error-contracts.md) — errores canónicos que emiten los adapters
