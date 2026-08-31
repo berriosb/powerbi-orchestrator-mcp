@@ -296,7 +296,265 @@ class CredentialsExpired(CloudAPIError):
 
 ---
 
-## 5. Acceptance criteria
+## 5. Cloud audit log (`audit_cloud.py`)
+
+El `audit.py` general (en `01-orchestrator.md` §2.4) persiste operaciones
+de orquestación con HMAC chain. Las operaciones **cloud** (REST contra
+Fabric) tienen requisitos adicionales que justifican un módulo
+dedicado: redacción de secrets más agresiva, integración con el contexto
+de la sesión (workspace_id, item_id), y trazabilidad de `request_id`
+que Fabric devuelve.
+
+### 5.1 Diseño
+
+```python
+# src/cloud/audit_cloud.py
+from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog, AuditEntry
+
+
+class CloudAuditLog:
+    """Wrapper sobre AuditLog para operaciones cloud.
+
+    Reusa el audit log SQLite + HMAC chain del orquestador.
+    Anade redacción específica de cloud + campos adicionales en payload.
+    """
+
+    def __init__(self, base_audit: AuditLog) -> None:
+        self._audit = base_audit
+
+    def record(
+        self,
+        operation: str,          # "workspace.list", "dataset.refresh", "deploy.create"
+        args: dict[str, Any],    # argumentos del tool (ya redactados si PII)
+        response_status: int,    # HTTP status code
+        request_id: str | None,  # X-Microsoft-Request-Id de Fabric
+        fabric_path: str,        # "/v1/workspaces/<id>/datasets/<id>/refreshes"
+        workspace_id: str | None = None,
+        item_id: str | None = None,
+        dataset_id: str | None = None,
+        effective_identity: dict | None = None,  # si RLS test
+        result_status: str = "success",
+        error_code: str | None = None,
+        duration_ms: int = 0,
+        extra_payload: dict | None = None,
+    ) -> AuditEntry: ...
+
+    def record_batch(self, operations: list[dict]) -> list[AuditEntry]: ...
+```
+
+### 5.2 Redacción obligatoria
+
+Antes de persistir `args` y `extra_payload`, se aplica redacción:
+
+| Pattern | Reemplazo | Razón |
+|---------|-----------|-------|
+| `Bearer [A-Za-z0-9._-]+` | `Bearer [REDACTED]` | JWT tokens |
+| `code=[A-Za-z0-9_-]{20,}` (query params) | `code=[REDACTED]` | OAuth codes en URLs de refresh |
+| `Server=[^;]+` (en connection strings) | `Server=[REDACTED]` | Connection strings |
+| `Data Source=[^;]+` | `Data Source=[REDACTED]` | Idem |
+| `Password=[^;]+` | `Password=[REDACTED]` | Credenciales |
+| `eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+` | `[JWT_REDACTED]` | JWT completos fuera de headers |
+| Emails en `effective_identity` | `<email_hash>` (sha256[:8]) | PII minimization |
+
+**Test automatizado:** `tests/unit/test_audit_cloud_redaction.py` verifica
+que 100 patrones conocidos (fixtures con samples de cada tipo) se
+redactan correctamente. Si una redacción falla, el test falla y bloquea
+el CI.
+
+### 5.3 Payload schema
+
+`payload_json` se serializa con este shape:
+
+```python
+class CloudAuditPayload(BaseModel):
+    operation: str
+    fabric_path: str
+    request_id: str | None
+    response_status: int
+    workspace_id: str | None
+    item_id: str | None
+    dataset_id: str | None
+    effective_identity_hash: str | None  # sha256[:8] del email, no el email
+    error_code: str | None
+    duration_ms: int
+    extra: dict[str, Any]  # operation-specific (ej: refresh_type, partition count)
+```
+
+### 5.4 Integración con `audit.py` general
+
+`CloudAuditLog.record()` llama internamente a `AuditLog.insert()` con:
+
+- `tool_name`: `"cloud:" + operation` (ej: `"cloud:dataset.refresh"`)
+- `target_id`: el `target_id` calculado según §2.7 de `01-orchestrator.md`
+  para el tipo `fabric_workspace:<workspace_id>`.
+- `result_status`: `"success"`, `"failed"`, `"declined"`, etc.
+- `payload_json`: el `CloudAuditPayload` serializado + redactado.
+
+Esto significa que **toda fila cloud aparece en el mismo `audit_log`
+SQLite que las filas de orquestación**, mantiene la misma HMAC chain,
+y `verify()` funciona transparentemente sobre todo.
+
+### 5.5 Retention y querying
+
+- Misma política de rotación que el audit log general (ver §2.10).
+- Querying específico de cloud: `SELECT * FROM audit_log WHERE tool_name LIKE 'cloud:%'`
+  indexado via `CREATE INDEX idx_audit_tool_name ON audit_log(tool_name)` (añadido al
+  schema si no existe).
+- Retention: opt-in via `PBI_AUDIT_CLOUD_RETENTION_DAYS` (default 365 días
+  para filas cloud; las orquestación更重要 infinito hasta rotación manual).
+
+### 5.6 Acceptance criteria
+
+- [ ] Test con 100 patrones de secrets verifica redacción 100%.
+- [ ] `CloudAuditLog.record` produce fila con `tool_name="cloud:<operation>"`.
+- [ ] `verify()` de audit log funciona con filas mixtas (orchestration + cloud).
+- [ ] Email en `effective_identity` aparece hasheado en `payload_json`, no en claro.
+- [ ] Performance: 1000 `record()` consecutivos en <2s.
+
+---
+
+## 6. Concurrency limits y rate limiting
+
+Fabric REST API tiene rate limits documentados (≈200 requests/min por
+tenant; throttling 429 con header `Retry-After`). El orquestador
+implementa **token bucket por sesión** + **circuit breaker** para no
+excederlos y degradar con gracia bajo carga sostenida.
+
+### 6.1 Configuración
+
+```python
+# src/cloud/concurrency.py
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class FabricRateLimitConfig:
+    requests_per_minute: int = 200          # soft limit Fabric
+    concurrent_requests: int = 10            # hard limit orquestador
+    burst_capacity: int = 30                 # permite picos cortos
+    circuit_breaker_threshold: int = 5       # errores 5xx consecutivos para abrir
+    circuit_breaker_cooldown_s: int = 60     # cuánto permanece abierto
+    circuit_breaker_half_open_requests: int = 3  # requests de prueba en half-open
+```
+
+**Overrides por env var:**
+
+| Variable | Default | Efecto |
+|----------|---------|--------|
+| `PBI_FABRIC_RPM_LIMIT` | 200 | RPM por sesión |
+| `PBI_FABRIC_CONCURRENT_LIMIT` | 10 | Requests paralelas |
+| `PBI_FABRIC_CIRCUIT_BREAKER_THRESHOLD` | 5 | Errores 5xx consecutivos |
+| `PBI_FABRIC_CIRCUIT_BREAKER_COOLDOWN_S` | 60 | Cooldown del circuit breaker |
+
+### 6.2 Token bucket implementation
+
+```python
+class TokenBucket:
+    """Thread-safe (asyncio.Lock) token bucket."""
+
+    def __init__(self, rpm: int, burst: int) -> None:
+        self._rpm = rpm
+        self._burst = burst
+        self._tokens = float(burst)
+        self._last_refill = time.monotonic()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self, timeout_s: float = 30.0) -> bool:
+        """Espera hasta tener un token. Retorna False si timeout."""
+        async with self._lock:
+            while True:
+                self._refill()
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return True
+                wait_s = (1.0 - self._tokens) / (self._rpm / 60.0)
+                if wait_s > timeout_s:
+                    return False
+                self._lock.release()
+                try:
+                    await asyncio.sleep(wait_s)
+                finally:
+                    await self._lock.acquire()
+```
+
+### 6.3 Circuit breaker
+
+```python
+class CircuitBreakerState(str, Enum):
+    CLOSED = "closed"          # normal
+    OPEN = "open"              # failing fast
+    HALF_OPEN = "half_open"    # probando si volvió
+
+
+class CircuitBreaker:
+    def __init__(self, threshold: int, cooldown_s: int, half_open_requests: int): ...
+    async def call(self, fn: Callable[[], Awaitable[T]]) -> T: ...
+    def state(self) -> CircuitBreakerState: ...
+```
+
+**Comportamiento:**
+
+| State | Comportamiento |
+|-------|----------------|
+| `closed` | Normal; cuenta errores 5xx consecutivos. |
+| `open` | Cualquier request retorna `CircuitBreakerOpenError` inmediatamente. Después de `cooldown_s`, transiciona a `half_open`. |
+| `half_open` | Permite hasta `half_open_requests` requests. Si todas succeed → `closed`. Si alguna falla → `open` de nuevo. |
+
+### 6.4 Comportamiento bajo presión
+
+**Si el token bucket está saturado (espera >5s por token):**
+
+- `apply_plan` con `wait_for_capacity=true` (default): espera hasta tener token.
+- `apply_plan` con `wait_for_capacity=false`: elicita al usuario con opciones
+  (esperar, abortar, reducir concurrency_limit y reintentar).
+
+**Si el circuit breaker está `open`:**
+
+- Toda request retorna `CircuitBreakerOpenError` con
+  `remediation_hint="Fabric REST experimentando problemas. Retry en {cooldown_remaining}s"`.
+- `apply_plan` en curso: elicita con opciones (esperar recovery, abort, rollback).
+
+**Métricas expuestas** (en `/metrics` Prometheus cuando esté habilitado, o en
+`structlog` events):
+
+```
+fabric_requests_inflight          # gauge
+fabric_requests_total             # counter (labels: operation, status_class)
+fabric_429_total                  # counter
+fabric_5xx_total                  # counter
+fabric_circuit_breaker_state      # gauge (0=closed, 1=half_open, 2=open)
+fabric_token_bucket_wait_ms       # histogram (cuánto espera cada request)
+```
+
+### 6.5 Excepciones: long-running operations
+
+`run_refresh` y `cancel_refresh` son **long-running** (pueden tardar
+minutos). NO cuentan contra el token bucket principal; usan una
+conexión dedicada que polling-ea el status sin consumir budget.
+
+```python
+LONG_RUNNING_OPERATIONS = {
+    "dataset.refresh",
+    "dataset.cancel_refresh",
+    "pipeline.deploy",
+    "git.commit_to_workspace",
+}
+```
+
+Estas operaciones tienen su propio budget reducido (default 5/min) y
+timeout explícito por tool.
+
+### 6.6 Acceptance criteria
+
+- [ ] 1000 requests rápidas (sin throttling) completan sin errores.
+- [ ] Simulación de 250 RPM durante 60s: ≤5 requests reciben 429 (resto pasan).
+- [ ] Circuit breaker abre tras 5 errores 5xx consecutivos; cierra tras cooldown exitoso.
+- [ ] `CircuitBreakerOpenError` retorna con `remediation_hint` clara.
+- [ ] Métricas Prometheus exportadas (o structlog events).
+- [ ] Test con mock de Fabric retornando 429: orquestador respeta `Retry-After`.
+
+---
+
+## 7. Acceptance criteria
 
 - [ ] Auth funciona con interactive + SPN + managed identity.
 - [ ] Token cache: nunca pedir re-auth dentro de la misma sesión.
@@ -313,7 +571,7 @@ class CredentialsExpired(CloudAPIError):
 - [ ] 0 secretos en logs (test automatizado busca patterns de token).
 - [ ] Latencia p95 `list_workspaces` <500ms.
 
-## 6. Out of scope (MVP)
+## 8. Out of scope (MVP)
 
 - ❌ Crear / borrar workspaces (v2).
 - ❌ Deployment Pipelines completos (v2).
@@ -324,19 +582,20 @@ class CredentialsExpired(CloudAPIError):
 - ❌ Dataflow Gen2 / Notebook operations (no son target de MVP).
 - ❌ Real-time / Push datasets.
 
-## 7. Riesgos
+## 9. Riesgos
 
 | Riesgo | Mitigación |
 |--------|-----------|
 | Token expira mid-operation | Refresh transparente de Azure Identity; reintentar UNA vez si 401. |
 | Scope insuficiente en SPN | Documentar scopes mínimos por tool en README; elicitation previa si falta. |
-| API rate limit | Retry exponencial + circuit breaker; warning al usuario si sostenido. |
+| API rate limit | Retry exponencial + circuit breaker + token bucket (ver §6). |
 | Refresh timeout inesperado | `cancel_refresh` + rollback de partición + audit log `partial`. |
 | Tenant policy bloquea operación | Elicitation con remediation clara ("ask tenant admin to enable X"). |
 | Refresh credentials expired | `refresh_doctor` automático + sugerencia de fix. |
+| Circuit breaker abierto por outage externo | Elicitación al usuario; `apply_plan` espera recovery o aborta. |
 
-## 8. Specs relacionados
+## 10. Specs relacionados
 
-- [`01-orchestrator.md`](./01-orchestrator.md) — elicitation + audit
+- [`01-orchestrator.md`](./01-orchestrator.md) — elicitation + audit + crash recovery
 - [`tools/deploy-to-workspace.md`](./tools/deploy-to-workspace.md) — usuario principal
 - [`docs/architecture.md`](../docs/architecture.md) §2.4 + §5 (security)
