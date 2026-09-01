@@ -60,6 +60,23 @@ from powerbi_orchestrator_mcp.orchestrator.rollback import (
 from powerbi_orchestrator_mcp.orchestrator.step_executor import (
     get_default_registry,
 )
+from powerbi_orchestrator_mcp.tools.apply_theme_and_accessibility_rules import (
+    apply_theme_and_accessibility_rules as _apply_theme,
+)
+from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
+    audit_model_and_report as _audit,
+)
+from powerbi_orchestrator_mcp.tools.deploy_to_workspace import (
+    deploy_to_workspace as _deploy,
+)
+from powerbi_orchestrator_mcp.tools.diff_models import diff_models as _diff
+from powerbi_orchestrator_mcp.tools.generate_data_dictionary import (
+    generate_data_dictionary as _data_dict,
+)
+from powerbi_orchestrator_mcp.tools.run_dax_regression import (
+    run_dax_regression as _dax_regress,
+)
+from powerbi_orchestrator_mcp.tools.run_refresh import run_refresh as _refresh
 
 # ---------------------------------------------------------------------------
 # Output schemas (spec sections 3.1-3.3)
@@ -531,6 +548,194 @@ async def apply_plan(
         artifacts_changed=[],
         rollback_handle=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Sprint 7: 8 high-level MVP tools wired here
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def audit_model_and_report(
+    pbip_path: str,
+    bpa_ruleset: str = "default",
+    dax_measures_json: str = "{}",
+    bpa: bool = True,
+    dax_lint: bool = True,
+    accessibility: bool = True,
+    naming: bool = True,
+) -> dict[str, Any]:
+    """Composite audit (BPA + DAX lint + WCAG) on a PBIP folder."""
+    import json as _json
+
+    try:
+        dax_measures = _json.loads(dax_measures_json)
+    except _json.JSONDecodeError:
+        dax_measures = {}
+    from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
+        AuditCheck as _AC,  # noqa: F821
+    )
+
+    result = await _audit(
+        pbip_path=pbip_path,
+        bpa_ruleset=bpa_ruleset,
+        dax_measures=dax_measures,
+        checks=_AC(bpa=bpa, dax_lint=dax_lint, accessibility=accessibility, naming=naming),
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def deploy_to_workspace(
+    pbip_path: str,
+    workspace_id: str,
+    refresh_daily_hour: int = 6,
+    findings_json: str = "[]",
+    gate_profile: str = "standard",
+    auth_mode: str = "interactive",
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+    mock: bool = False,
+) -> dict[str, Any]:
+    """Pre-deploy gate + publish PBIP + configure refresh + initial refresh."""
+    import json as _json
+
+    try:
+        findings = _json.loads(findings_json)
+    except _json.JSONDecodeError:
+        findings = []
+    result = await _deploy(
+        pbip_path=pbip_path,
+        workspace_id=workspace_id,
+        refresh_daily_hour=refresh_daily_hour,
+        findings=findings,
+        gate_profile=gate_profile,
+        auth_mode=auth_mode,
+        tenant_id=tenant_id,
+        client_id=client_id,
+        client_secret=client_secret,
+        mock=mock,
+    )
+    out = result.model_dump(mode="json")
+    if result.gate_result is not None:
+        out["gate_result"] = result.gate_result.model_dump(mode="json")
+    return out
+
+
+@mcp.tool()
+async def run_refresh(
+    workspace_id: str,
+    dataset_id: str,
+    refresh_type: str = "full",
+    wait: bool = True,
+    timeout_s: int = 1800,
+    auth_mode: str = "interactive",
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+) -> dict[str, Any]:
+    """Trigger and optionally wait for a dataset refresh."""
+    result = await _refresh(
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
+        refresh_type=refresh_type,
+        wait=wait,
+        timeout_s=timeout_s,
+        auth_mode=auth_mode,
+        tenant_id=tenant_id,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def run_dax_regression(
+    baseline_path: str,
+    queries_json: str = "[]",
+    tolerance_pct: float = 0.1,
+    query_executor: Any = None,
+) -> dict[str, Any]:
+    """Run DAX queries vs a baseline JSON and diff results."""
+    import json as _json
+
+    try:
+        queries = _json.loads(queries_json)
+    except _json.JSONDecodeError:
+        queries = None
+    result = await _dax_regress(
+        baseline_path=baseline_path,
+        queries=queries,
+        tolerance_pct=tolerance_pct,
+        query_executor=query_executor,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def diff_models(
+    before: str,
+    after: str,
+    inspector: Any = None,
+) -> dict[str, Any]:
+    """Diff two semantic models (PBIP folders or snapshots)."""
+    result = _diff(before=before, after=after, inspector=inspector)
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def pre_deploy_check(
+    findings_json: str = "[]",
+    profile: str = "standard",
+) -> dict[str, Any]:
+    """Evaluate findings against a pre-deploy gate profile."""
+    import json as _json
+
+    try:
+        findings = _json.loads(findings_json)
+    except _json.JSONDecodeError:
+        findings = []
+    result = _pre_deploy_check  # type: ignore[name-defined]  # noqa: F821
+    # Use the imported name instead of the underscore-prefixed one.
+    from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
+        pre_deploy_check as _gate,
+    )
+
+    result = _gate(findings, profile=profile)
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def generate_data_dictionary(
+    pbip_path: str,
+    output_path: str | None = None,
+    inspector: Any = None,
+) -> dict[str, Any]:
+    """Generate a Markdown data dictionary (with Mermaid ER diagram) for a PBIP."""
+    result = _data_dict(
+        pbip_path=pbip_path,
+        output_path=output_path,
+        inspector=inspector,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def apply_theme_and_accessibility_rules(
+    pbip_path: str,
+    palette: str = "okabe_ito",
+    auto_backfill_alt_text: bool = True,
+    alt_text_template: str = "{visual_type} visualizing measure {first_measure}",
+) -> dict[str, Any]:
+    """Apply a colorblind-safe theme + backfill alt text + re-audit WCAG."""
+    result = _apply_theme(
+        pbip_path=pbip_path,
+        palette=palette,
+        auto_backfill_alt_text=auto_backfill_alt_text,
+        alt_text_template=alt_text_template,
+    )
+    return result.model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------

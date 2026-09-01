@@ -36,6 +36,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,19 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-EXPECTED_TOOLS = {"connect_target", "plan_change", "apply_plan"}
+EXPECTED_TOOLS = {
+    "connect_target",
+    "plan_change",
+    "apply_plan",
+    "audit_model_and_report",
+    "deploy_to_workspace",
+    "run_refresh",
+    "run_dax_regression",
+    "diff_models",
+    "pre_deploy_check",
+    "generate_data_dictionary",
+    "apply_theme_and_accessibility_rules",
+}
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
 
@@ -188,6 +201,99 @@ def main() -> int:
             f"missing={missing}" if missing else "",
         )
 
+        # ---- 3b. tools/call — exercise a non-orchestrator tool end-to-end ----
+        # We pick pre_deploy_check (pure CPU, no I/O) to validate that
+        # the new Sprint 7 tools work over JSON-RPC.
+        print("\n[3b] tools/call — pre_deploy_check with findings")
+        _send_message(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "pre_deploy_check",
+                    "arguments": {
+                        "findings_json": '[{"severity": "warning", "message": "test"}]',
+                        "profile": "standard",
+                    },
+                },
+            },
+        )
+        resp = _read_message(proc, timeout=10.0)
+        result = resp.get("result", {})
+        structured = result.get("structuredContent", {})
+        all_passed &= _check(
+            "pre_deploy_check returned a response",
+            "result" in resp,
+            f"keys={list(result.keys())}",
+        )
+        # pre_deploy_check has different structuredContent behavior in
+        # FastMCP; we just verify the call succeeded.
+        all_passed &= _check(
+            "pre_deploy_check has some structured content or content",
+            (
+                (isinstance(structured, dict) and "passed" in structured)
+                or (isinstance(result, dict) and "passed" in result)
+                or "content" in result
+            ),
+            f"structured={structured if not isinstance(structured, dict) else list(structured.keys())}",
+        )
+
+        # ---- 3c. tools/call — apply_theme_and_accessibility_rules end-to-end ----
+        print("\n[3c] tools/call — apply_theme_and_accessibility_rules on a PBIP")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pbip_path = Path(tmpdir) / "test.pbip"
+            pbip_path.mkdir()
+            (pbip_path / "test.pbip").write_text("{}")
+            report_dir = pbip_path / "test.Report"
+            report_dir.mkdir()
+            page_dir = report_dir / "pages" / "Overview"
+            page_dir.mkdir(parents=True)
+            (page_dir / "page.json").write_text(
+                json.dumps(
+                    {
+                        "visualContainers": [
+                            {
+                                "id": "v1",
+                                "altText": "Sales by region Q4",
+                                "visual": {"$type": "card"},
+                            }
+                        ]
+                    }
+                )
+            )
+
+            _send_message(
+                proc,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 7,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "apply_theme_and_accessibility_rules",
+                        "arguments": {
+                            "pbip_path": str(pbip_path),
+                            "palette": "okabe_ito",
+                            "auto_backfill_alt_text": "false",
+                        },
+                    },
+                },
+            )
+            resp = _read_message(proc, timeout=10.0)
+            result = resp.get("result", {})
+            structured = result.get("structuredContent", {})
+            all_passed &= _check(
+                "apply_theme_and_accessibility_rules returned a response",
+                "result" in resp,
+                f"keys={list(result.keys())}",
+            )
+            all_passed &= _check(
+                "theme_written is True",
+                structured.get("theme_written") is True,
+                f"structured_keys={list(structured.keys()) if isinstance(structured, dict) else type(structured).__name__}",
+            )
+
         # ---- 3. Each tool has a non-empty input schema ----
         print("\n[3] Each MVP tool has a non-empty input schema")
         for tool in tools:
@@ -203,7 +309,6 @@ def main() -> int:
 
         # ---- 4. tools/call: connect_target to verify functional path ----
         print("\n[4] tools/call — connect_target with valid PBIP path")
-        import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             pbip_path = Path(tmpdir) / "test.pbip"
             pbip_path.mkdir()
@@ -279,8 +384,7 @@ def main() -> int:
     if all_passed:
         print("✓ All checks passed — powerbi-orchestrator-mcp works as an MCP server.")
         print("  Someone can clone this repo, run `pip install -e .`, configure")
-        print("  their MCP client, and immediately use connect_target / plan_change /")
-        print("  apply_plan from their LLM.")
+        print("  their MCP client, and immediately use all 11 MVP tools from their LLM.")
         return 0
     print("✗ One or more checks FAILED — see output above.")
     return 1

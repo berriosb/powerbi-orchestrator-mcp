@@ -109,11 +109,14 @@ class PreDeployGate:
         """Evaluate a list of findings against the profile.
 
         ``findings`` may be ``BpaFinding`` instances (with .severity) or
-        any object with a ``severity`` attribute.
+        dicts with a ``"severity"`` key.
         """
         counts = {"error": 0, "warning": 0, "info": 0}
         for f in findings:
-            sev = getattr(f, "severity", "info")
+            if isinstance(f, dict):
+                sev = f.get("severity", "info")
+            else:
+                sev = getattr(f, "severity", "info")
             if sev in counts:
                 counts[sev] += 1
 
