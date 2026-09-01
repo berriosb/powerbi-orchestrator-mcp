@@ -14,7 +14,6 @@ from powerbi_orchestrator_mcp.orchestrator.elicitation import (
     ElicitationResponse,
     ElicitationSchema,
     _check_rate_limit,
-    _last_elicit_time,
     elicit,
 )
 
@@ -71,9 +70,8 @@ class TestRateLimiter:
         with patch(
             "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time",
             time.monotonic(),
-        ):
-            with pytest.raises(ElicitationRateLimitError):
-                _check_rate_limit()
+        ), pytest.raises(ElicitationRateLimitError):
+            _check_rate_limit()
 
 
 class TestElicit:
@@ -145,6 +143,5 @@ class TestElicit:
         with patch(
             "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time",
             time.monotonic(),
-        ):
-            with pytest.raises(ElicitationRateLimitError):
-                await elicit(ctx, req)
+        ), pytest.raises(ElicitationRateLimitError):
+            await elicit(ctx, req)

@@ -19,7 +19,8 @@ model+report rollback). The engine accepts either:
 
 from __future__ import annotations
 
-from typing import Callable, Protocol, Union
+from collections.abc import Callable
+from typing import Protocol
 
 from pydantic import BaseModel, Field
 
@@ -45,7 +46,7 @@ StepDispatcher = Callable[[PlanStep], StepExecutor]
 # RollbackEngine.__init__ accepts either form: a fixed executor or a
 # dispatcher callable. The first form is shorthand for "use this for
 # every step" (no cross-engine).
-ExecutorOrDispatcher = Union[StepExecutor, StepDispatcher]
+ExecutorOrDispatcher = StepExecutor | StepDispatcher
 
 
 def _resolve_executor(

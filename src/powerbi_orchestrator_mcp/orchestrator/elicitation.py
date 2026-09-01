@@ -8,7 +8,6 @@ from typing import Any
 from mcp.server.fastmcp import Context
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # Pydantic models (spec section 2.6)
 # ---------------------------------------------------------------------------
