@@ -7,11 +7,19 @@ all previously-successful steps in inverse order using each step's
 ``rollback_step`` field. Rollback is atomic per step: if one rollback
 fails, the engine continues trying the remaining rollbacks (best
 effort) and reports the partial state via ``RollbackError``.
+
+Cross-engine rollback support
+-----------------------------
+Per spec, rollback can span multiple engines (e.g. safe_rename's
+model+report rollback). The engine accepts either:
+- a single ``StepExecutor`` (all rollback steps use it — simple case)
+- a ``dispatcher: Callable[[PlanStep], StepExecutor]`` that returns the
+  right executor per rollback step (cross-engine case)
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol, Union
 
 from pydantic import BaseModel, Field
 
@@ -27,6 +35,28 @@ class StepExecutor(Protocol):
     """
 
     async def execute_step(self, step: PlanStep) -> StepOutcome: ...
+
+
+# A dispatcher takes a step and returns the executor that should run it.
+# Lets RollbackEngine handle cross-engine plans (e.g. safe_rename with
+# modeling + report rollbacks) by routing each step to its engine.
+StepDispatcher = Callable[[PlanStep], StepExecutor]
+
+# RollbackEngine.__init__ accepts either form: a fixed executor or a
+# dispatcher callable. The first form is shorthand for "use this for
+# every step" (no cross-engine).
+ExecutorOrDispatcher = Union[StepExecutor, StepDispatcher]
+
+
+def _resolve_executor(
+    param: ExecutorOrDispatcher, step: PlanStep
+) -> StepExecutor:
+    """Resolve an executor for a single step, handling the union type."""
+    if callable(param) and not hasattr(param, "execute_step"):
+        # It's a dispatcher callable (no execute_step attribute).
+        return param(step)
+    # Otherwise it's a StepExecutor instance.
+    return param
 
 
 class StepOutcome(BaseModel):
@@ -79,10 +109,19 @@ class RollbackEngine:
     - Atomic per step: we try to fully complete each rollback before
       moving to the next, but we DO continue with remaining rollbacks
       even if one fails (best-effort to maximize recovered state).
+
+    Supports cross-engine rollback via the ``executor_or_dispatcher``
+    constructor argument. Pass a single ``StepExecutor`` for single-
+    engine plans, or a ``Callable[[PlanStep], StepExecutor]`` dispatcher
+    for cross-engine plans (e.g. safe_rename with model + report).
     """
 
-    def __init__(self, executor: StepExecutor) -> None:
-        self._executor = executor
+    def __init__(self, executor_or_dispatcher: ExecutorOrDispatcher) -> None:
+        self._executor = executor_or_dispatcher
+
+    def _get_executor(self, step: PlanStep) -> StepExecutor:
+        """Resolve the right executor for this step (handles both forms)."""
+        return _resolve_executor(self._executor, step)
 
     async def execute_plan(
         self,
@@ -130,7 +169,8 @@ class RollbackEngine:
         failed: list[FailedRollback] = []
 
         for original, rb in queue:
-            outcome = await self._executor.execute_step(rb)
+            executor = self._get_executor(rb)
+            outcome = await executor.execute_step(rb)
             if outcome.success:
                 rolled.append(original.id)
             else:
@@ -168,7 +208,8 @@ class RollbackEngine:
                 success=False,
                 error_message=f"step {step.id} has no rollback_step",
             )
-        return await self._executor.execute_step(step.rollback_step)
+        executor = self._get_executor(step.rollback_step)
+        return await executor.execute_step(step.rollback_step)
 
 
 def raise_if_partial(result: RollbackResult) -> None:

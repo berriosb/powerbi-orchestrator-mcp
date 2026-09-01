@@ -390,7 +390,9 @@ async def _rollback_plan(
     """Run rollback for the executed steps after a failure.
 
     Returns the list of rollback step ids that ran (success + failure).
-    Uses the in-memory plan to reconstruct PlanStep objects.
+    Uses the in-memory plan to reconstruct PlanStep objects. Passes a
+    dispatcher to RollbackEngine so cross-engine rollback (e.g. safe_rename's
+    modeling + report) routes each step to its correct engine.
     """
     step_by_id = {s.id: s for s in plan.steps}
     executed_plan_steps: list[PlanStep] = []
@@ -403,8 +405,13 @@ async def _rollback_plan(
     if failed_plan_step is None:
         return []
 
-    registry_executor = get_default_registry().get(failed_plan_step.engine)
-    rollback_engine = RollbackEngine(registry_executor)
+    # Cross-engine dispatcher: routes each rollback step to its engine.
+    registry = get_default_registry()
+
+    def _dispatcher(step: PlanStep) -> StepExecutor:
+        return registry.get(step.engine)
+
+    rollback_engine = RollbackEngine(_dispatcher)
     result = await rollback_engine.execute_plan(
         executed_steps=executed_plan_steps,
         failed_step=failed_plan_step,

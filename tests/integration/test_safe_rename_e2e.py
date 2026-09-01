@@ -214,30 +214,9 @@ def _register_engines(
         async def execute_step(self, step: PlanStep) -> StepOutcome:
             return StepOutcome(success=True)
 
-    class _RouterExecutor(StepExecutor):
-        """Dispatches to the right per-engine executor based on step.engine.
-
-        Used for cross-engine rollback: RollbackEngine calls execute_step
-        once per rollback step and we route to the correct engine.
-        """
-
-        engine_name = "_router"
-
-        async def execute_step(self, step: PlanStep) -> StepOutcome:
-            reg = get_default_registry()
-            executor = reg.get(step.engine)
-            if isinstance(executor, _RouterExecutor):
-                # Don't recurse.
-                return StepOutcome(
-                    success=False,
-                    error_message=f"no executor for {step.engine}",
-                )
-            return await executor.execute_step(step)
-
     get_default_registry().register(_ModelingExecutor(modeling))
     get_default_registry().register(_ReportExecutor(report))
     get_default_registry().register(_ValidationExecutor())
-    get_default_registry().register(_RouterExecutor())
     return modeling, report
 
 
@@ -419,10 +398,12 @@ class TestSafeRenameEndToEnd:
         assert failed.id.endswith(":s3")
 
         # Run rollback for executed steps before the failure.
-        # Use the router executor so cross-engine rollbacks dispatch
-        # to the correct per-engine executor.
-        router = registry.get("_router")
-        rollback_engine = RollbackEngine(router)
+        # Use the new dispatcher API so cross-engine rollback (modeling +
+        # report) routes correctly.
+        def _dispatcher(step: PlanStep) -> StepExecutor:
+            return registry.get(step.engine)
+
+        rollback_engine = RollbackEngine(_dispatcher)
         rb_result = await rollback_engine.execute_plan(
             executed_steps=[s for s, _ in executed if s.id != failed.id],
             failed_step=failed,
