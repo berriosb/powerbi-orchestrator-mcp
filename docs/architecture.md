@@ -191,6 +191,63 @@ tool_call → Capa 6 → Capa 1/2/3/4/5 → subprocess / httpx / internal
 - Inputs/outputs son Pydantic models compartidos (`src/models/`).
 - Errores siguen jerarquía `PBIOrchestratorError` con `code` + `remediation_hint`.
 
+### 3.1 Patrones de invocación de engines
+
+El orquestrador usa **tres patrones** distintos según el engine:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Capa 6 · Orquestación                                           │
+│                                                                 │
+│   tool_call → server.py → Planner → ExecutorRegistry            │
+│                                              │                  │
+│                                              ▼                  │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Pattern A: Embedded MCP client                          │   │
+│   │  (engines that ARE MCP servers)                          │   │
+│   │  subprocess + JSON-RPC 2.0 over stdio                  │   │
+│   │  → powerbi-modeling-mcp                                │   │
+│   │  → superbi-mcp                                         │   │
+│   │  See: src/engines/base.py::JsonRpcSubprocessEngine     │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Pattern B: Subprocess CLI wrapper                     │   │
+│   │  (native CLI binaries)                                 │   │
+│   │  subprocess + stdout parsing                           │   │
+│   │  → te (Tabular Editor)                                 │   │
+│   │  → dscmd (DAX Studio, Windows)                         │   │
+│   │  → pbip-validator (Python CLI)                         │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Pattern C: Built-in (no subprocess)                   │   │
+│   │  direct Python function calls                           │   │
+│   │  → python_report (always available)                    │   │
+│   └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**¿Por qué el orquestrador habla MCP a otros MCP servers?**
+
+Cuando un engine ya es un servidor MCP (como `@microsoft/powerbi-modeling-mcp`
+o `superbi-mcp`), re-implementar su protocolo TMDL/PBIR sería absurdo y nunca
+alcanzaría la calidad upstream. En su lugar, el orquestrador **embebe un
+cliente MCP mínimo** (`JsonRpcSubprocessEngine` en `src/engines/base.py`) que:
+
+1. Spawnea el engine como subprocess (`npx @microsoft/powerbi-modeling-mcp`).
+2. Escribe requests JSON-RPC 2.0 en su stdin.
+3. Lee responses de su stdout, correlacionadas por `id`.
+4. Aplica timeouts via `engines/timeouts.py`.
+5. Mapea errores a `EngineError` via `engines/exit_codes.py`.
+
+El orquestrador actúa como **cliente MCP headless** sin usar el SDK MCP de
+Python (demasiado pesado para MVP). El protocolo es literalmente
+JSON-RPC 2.0 sobre stdio — exactamente lo que define MCP.
+
+Desde el punto de vista del cliente MCP upstream (Claude Desktop, VS Code...),
+el orquestrador aparece como un servidor "con 26 tools". El hecho de que
+esas herramientas internamente coordinan 4-5 servidores MCP adicionales
+es invisible.
+
 ---
 
 ## 4. Ciclo de vida de un plan

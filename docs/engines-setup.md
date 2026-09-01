@@ -20,17 +20,69 @@ The orchestrator dispatches operations to subprocess engines via the
 **per-adapter**: a missing engine means the corresponding operation
 falls back or elicits a remediation hint — it doesn't crash the server.
 
-| Engine | Layer | OS | Source | MVP |
-|--------|-------|----|----|-----|
-| `powerbi-modeling-mcp` | Modeling | Win/Mac/Linux | `npx @microsoft/powerbi-modeling-mcp` | Recommended |
-| `te` (Tabular Editor CLI) | Modeling + BPA | Win/Mac/Linux | [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases) | Week 2 fallback |
-| `dscmd` (DAX Studio CLI) | DAX trace | Windows only | [DAX Studio releases](https://daxstudio.org/) | Week 2 |
-| `pbip-validator` | Validation | Win/Mac/Linux | `pip install pbip-validator` (when published) | Week 2 |
-| `superbi-mcp` | Report | Windows primarily | `npx superbi-mcp` | Week 2 upgrade |
-| `python_report` (built-in) | Report | Win/Mac/Linux | (built into orchestrator) | ✅ always available |
+| Engine | Layer | OS | Source | Protocol | MVP |
+|--------|-------|----|----|----------|-----|
+| `python_report` (built-in) | Report | Win/Mac/Linux | (built into orchestrator) | Direct file I/O | ✅ always available |
+| `powerbi-modeling-mcp` | Modeling | Win/Mac/Linux | `npx @microsoft/powerbi-modeling-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ Recommended |
+| `superbi-mcp` | Report | Windows primarily | `npx superbi-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ wired (mock-tested) |
+| `te` (Tabular Editor CLI) | Modeling + BPA | Win/Mac/Linux | [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases) | CLI subprocess (no MCP) | ⏳ Week 2 |
+| `dscmd` (DAX Studio CLI) | DAX trace | Windows only | [DAX Studio releases](https://daxstudio.org/) | CLI subprocess (no MCP) | ⏳ Week 2 |
+| `pbip-validator` | Validation | Win/Mac/Linux | `pip install pbip-validator` (when published) | Python subprocess (no MCP) | ⏳ Week 2 |
+
+**Protocol notes:**
+
+- **MCP over stdio** = the orchestrator spawns the engine as a subprocess and
+  talks JSON-RPC 2.0 over its stdin/stdout. This is the literal MCP
+  protocol — we embed an MCP client inside the orchestrator (see
+  `src/engines/base.py::JsonRpcSubprocessEngine`).
+- **CLI subprocess (no MCP)** = the engine is a regular CLI binary; the
+  orchestrator runs it with arguments and parses stdout. We do NOT use MCP.
+- **Python subprocess (no MCP)** = the engine is a Python package exposing a
+  CLI (e.g. `pbip-validator --model <path>`); same pattern as CLI.
+- **Direct file I/O** = `python_report` reads/writes PBIR JSON files
+  directly without spawning anything. Fastest path; no external dep.
 
 `python_report` is implemented directly in the orchestrator (`src/engines/report_python.py`)
 and does NOT need installation — it's the default fallback for report operations.
+
+---
+
+## 1.5 How the orchestrator talks to engines (technical detail)
+
+The orchestrator has **three internal patterns** for invoking engines:
+
+### Pattern A: Embedded MCP client (for MCP-server engines)
+
+For `powerbi-modeling-mcp` and `superbi-mcp` (both are MCP servers), the
+orchestrator embeds a minimal MCP client in `src/engines/base.py`:
+
+```python
+async def _rpc(self, method, params, *, timeout_s=None):
+    """Send a JSON-RPC request and await the matching response."""
+    # Build JSON-RPC envelope: {"jsonrpc": "2.0", "id": ..., "method": ..., "params": ...}
+    # Write to subprocess stdin, read response from stdout
+    # Match by request id (multiple in-flight calls supported)
+    # Apply timeout via engines/timeouts.py
+    # Map exit codes to EngineError subclasses via engines/exit_codes.py
+```
+
+The orchestrator acts as a **headless MCP client** — it never exposes
+this to the upstream MCP client. From Claude Desktop's perspective,
+the orchestrator is "just" a server with 26 tools; the fact that
+those tools internally talk to other MCP servers is invisible.
+
+### Pattern B: Subprocess CLI wrapper (for native binaries)
+
+For `te`, `dscmd`, and (future) `pbip-validator`, the orchestrator wraps
+each CLI in an async subprocess call. Same error/timeout contracts as
+Pattern A, but the JSON-RPC envelope is replaced by CLI args + stdout
+parsing.
+
+### Pattern C: Built-in (for `python_report`)
+
+`python_report` is part of the orchestrator itself — no subprocess, no
+remote protocol. Just Python functions over the local filesystem.
+This is the fallback when no other report engine is available.
 
 ---
 
