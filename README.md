@@ -7,7 +7,7 @@
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-**Status:** v0.1.0 released ([release notes](./RELEASE-NOTES-v0.1.0.md)) — MVP foundation, alpha quality.
+**Status:** v1.0.0 released ([release notes](./RELEASE-NOTES-v1.0.0.md)) — MVP done (15/15 tools: 12 MVP + 3 v1.1).
 
 ---
 

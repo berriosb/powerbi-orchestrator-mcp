@@ -1,8 +1,7 @@
 # MVP STATUS — powerbi-orchestrator-mcp
 
-> Estado de implementación vs specs. Última sync: 2026-08-26 (specs v0.2
-> cerrados: Tier A bloqueante para Semana 2 completo; código aún no escrito
-> más allá de Semana 1 en progreso).
+> Estado de implementación vs specs. **MVP done = 15/15 tools** (12 MVP + 3
+> v1.1) per SPEC §6.3 decisión 2026-08-26. Tag [`v1.0.0`](../git) creado.
 
 **Leyenda:**
 - ❌ No implementado
@@ -12,359 +11,112 @@
 
 ---
 
-## Estado global
+## Estado por capa
 
-| Capa | Spec | Status código |
-|------|------|---------------|
-| 6 · Orquestación | [`../specs/01-orchestrator.md`](../specs/01-orchestrator.md) | 🟡 (Semana 1: server stub, context, audit, elicitation listos; planner + rollback pendiente) |
-| 3 · Cloud Fabric | [`../specs/02-cloud-fabric.md`](../specs/02-cloud-fabric.md) | ❌ |
-| 4 · Validación | [`../specs/03-validation.md`](../specs/03-validation.md) | ❌ |
-| 5 · Viz/UX | [`../specs/04-viz-ux.md`](../specs/04-viz-ux.md) | ❌ |
-| 1-2 · Engines | [`../specs/05-engines-adapters.md`](../specs/05-engines-adapters.md) + [`../specs/06-engine-error-contracts.md`](../specs/06-engine-error-contracts.md) | ❌ |
-
-## Tools MVP
-
-| Tool | Spec | Status código |
-|------|------|---------------|
-| `connect_target` | [`../specs/01-orchestrator.md` §3.1](../specs/01-orchestrator.md) | ❌ |
-| `plan_change` | [`../specs/01-orchestrator.md` §3.2](../specs/01-orchestrator.md) | ❌ |
-| `apply_plan` | [`../specs/01-orchestrator.md` §3.3](../specs/01-orchestrator.md) | ❌ |
-| `safe_rename` | [`../specs/tools/safe-rename.md`](../specs/tools/safe-rename.md) | ❌ |
-| `audit_model_and_report` | [`../specs/tools/audit-model-and-report.md`](../specs/tools/audit-model-and-report.md) | ❌ |
-| `deploy_to_workspace` | [`../specs/tools/deploy-to-workspace.md`](../specs/tools/deploy-to-workspace.md) | ❌ |
-| `run_refresh` | [`../specs/02-cloud-fabric.md` §3](../specs/02-cloud-fabric.md) | ❌ |
-| `run_dax_regression` | [`../specs/03-validation.md` §5](../specs/03-validation.md) | ❌ |
-| `diff_models` | [`../specs/03-validation.md` §2.4](../specs/03-validation.md) | ❌ |
-| `pre_deploy_check` | [`../specs/03-validation.md` §4](../specs/03-validation.md) | ❌ |
-| `generate_data_dictionary` | ❌ sin spec dedicado (solo SPEC §4.5 una línea) | ❌ |
-| `apply_theme_and_accessibility_rules` | [`../specs/04-viz-ux.md` §3](../specs/04-viz-ux.md) | ❌ |
-
-## Tools MVP v1 — ubicación real de cada spec (corrección post-audit 2026-08-26)
-
-El fix anterior (commit `3ad85c3`, 2026-08-21) agregó una sección "sin spec
-dedicado" que quedó desactualizada tras esta auditoría. La realidad:
-
-| Tool | Spec real | Estado |
+| Capa | Cobertura | Estado |
 |------|-----------|--------|
-| `audit_model_and_report` | [`specs/tools/audit-model-and-report.md`](../specs/tools/audit-model-and-report.md) | ✅ spec dedicado completo |
-| `safe_rename` | [`specs/tools/safe-rename.md`](../specs/tools/safe-rename.md) | ✅ spec dedicado completo |
-| `deploy_to_workspace` | [`specs/tools/deploy-to-workspace.md`](../specs/tools/deploy-to-workspace.md) | ✅ spec dedicado completo |
-| `connect_target` | [`specs/01-orchestrator.md` §3.1](../specs/01-orchestrator.md) | ✅ en spec por capa (orquestación) |
-| `plan_change` | [`specs/01-orchestrator.md` §3.2](../specs/01-orchestrator.md) | ✅ en spec por capa (orquestación) |
-| `apply_plan` | [`specs/01-orchestrator.md` §3.3](../specs/01-orchestrator.md) | ✅ en spec por capa (orquestación) |
-| `run_refresh` | [`specs/02-cloud-fabric.md` §3](../specs/02-cloud-fabric.md) | ✅ en spec por capa (cloud) |
-| `run_dax_regression` | [`specs/03-validation.md` §5](../specs/03-validation.md) | ✅ schema YAML completo en spec por capa |
-| `diff_models` | [`specs/03-validation.md` §2.4](../specs/03-validation.md) | ✅ Pydantic models + breaking rules en spec por capa |
-| `pre_deploy_check` | [`specs/03-validation.md` §4](../specs/03-validation.md) | ✅ schema YAML completo en spec por capa |
-| `apply_theme_and_accessibility_rules` | [`specs/04-viz-ux.md` §3](../specs/04-viz-ux.md) | ✅ schema YAML completo en spec por capa |
-| `generate_data_dictionary` | **❌ NO TIENE SPEC DEDICADO** | ⚠️ solo descripción de 1 línea en SPEC §4.5 |
-
-**Decisión arquitectónica adoptada (2026-08-26):** un tool MVP v1 puede
-tener su spec dedicado en `specs/tools/` (si su lógica es ortogonal a una
-capa) o vivir dentro del spec de la capa que lo implementa (si es parte
-del dominio de esa capa). Esto evita proliferación de archivos y
-duplicación de schemas. Ver [`specs/README.md` §Tools MVP v1 documentadas en specs por capa](../specs/README.md).
-
-**Acción concreta:** crear spec dedicado para `generate_data_dictionary`
-antes de arrancar Semana 4 (es una sola página con input/output schema;
-referencias existentes: SPEC §4.5, workflow 01 §Fase 6, workflow 02 §Fase 6,
-IMPLEMENTATION-PLAN §4.12).
+| 6 · Orquestación | 100% | ✅ completa |
+| 1 · Modeling | 50% | ✅ `powerbi-modeling-mcp` wired (mock-tested); `te` adapter pendiente Week 2 |
+| 2 · Report | 70% | ✅ `python_report` (built-in) + `superbi_mcp` (wired, mock-tested) |
+| 3 · Cloud | 85% | ✅ `fabric_client`, `refresh`, `audit_cloud` con redacción obligatoria |
+| 4 · Validación | 95% | ✅ `bpa_runner`, `dax_linter` (7 patterns), `dax_regression`, `model_diff`, `pre_deploy_gate` |
+| 5 · Viz/UX | 30% | ⚠️ `WcagAuditor` (en `validation/`) + `apply_theme_and_accessibility_rules`. Módulos `visual_registry`/`suggester`/`layout`/`storytelling`/`performance_budget` son **v2**. |
 
 ---
 
-## Issues abiertos — drift residual (post-audit 2026-08-26)
+## v1.0.0 — MVP done (Sprints 1-8)
 
-### Issue 1: Workflow 01 referencia tools no declaradas en §6.1 — **CERRADO (opción C, 2026-08-26)**
+### Sprints ejecutados
 
-El workflow 01 ([`specs/workflows/01-from-csv-to-published-report.md`](../specs/workflows/01-from-csv-to-published-report.md))
-declaraba **13 tools MVP** en su header y **14 tools** en §2, pero SPEC §6.1
-solo lista 12 MVP. El delta:
+- **Sprint 1** — Scaffold + orquestación (server, context, audit, elicitation, identifiers, plan_executions).
+- **Sprint 2** — Planner (4 MVP templates) + RollbackEngine.
+- **Sprint 3-4** — Engine contracts (errors, timeouts, exit_codes), `powerbi-modeling-mcp` adapter, `python_report`, `superbi_mcp`, selector.
+- **Sprint 5** — Cross-engine dispatcher + integration test `safe_rename` end-to-end.
+- **Sprint 6** — Capa 3 (cloud: auth, fabric_client con token bucket + circuit breaker, refresh + refresh_doctor, audit_cloud con redacción PII) + Capa 4 (validation: bpa, dax_linter con 7 anti-patterns, dax_regression, model_diff, pre_deploy_gate, accessibility/wcag_auditor).
+- **Sprint 7** — 8 tools MVP adicionales: `audit_model_and_report`, `deploy_to_workspace`, `run_refresh`, `run_dax_regression`, `diff_models`, `pre_deploy_check`, `generate_data_dictionary`, `apply_theme_and_accessibility_rules`.
+- **Sprint 8** — 3 tools v1.1: `add_measure_with_validation` (lint gate + pluggable writer), `create_report_from_dataset` (PBIR scaffold idempotente), `edit_report_visual` (field-level merge + atomic write).
 
-| Tool | Estado |
-|------|--------|
-| `add_measure_with_validation` | **v1.1 (post-MVP)** — ver plan renegociado abajo |
-| `create_report_from_dataset` | **v1.1 (post-MVP)** — ver plan renegociado abajo |
-| `edit_report_visual` | **v1.1 (post-MVP)** — ver plan renegociado abajo |
-| `audit_model_and_report` | ✅ en §6.1 |
-| `diff_models` | ✅ en §6.1 (workflow 01 no la usa explícitamente, opcional) |
-| `run_dax_regression` | ✅ en §6.1 (workflow 01 no la usa explícitamente, opcional) |
+### Tools MVP (12/12) ✅
 
-**Decisión adoptada (2026-08-26, código C):** mantener §6.1 en 12 tools MVP
-(coherente con plan de 4 semanas ya saturado en 188h). Las 3 tools
-`add_measure_with_validation`, `create_report_from_dataset`,
-`edit_report_visual` se reclasifican como **v1.1 (post-MVP)** — se implementan
-en Semana 5 dedicada (ver plan renegociado abajo).
+| # | Tool | Estado |
+|---|------|--------|
+| 1 | `connect_target` | ✅ real, valida target_ref, detecta engines, crea session |
+| 2 | `plan_change` | ✅ real, 4 templates MVP |
+| 3 | `apply_plan` | ✅ real, heartbeat + rollback + audit log |
+| 4 | `safe_rename` (via `plan_change` template) | ✅ end-to-end test |
+| 5 | `audit_model_and_report` | ✅ composto BPA + lint + WCAG |
+| 6 | `deploy_to_workspace` | ✅ pre-deploy + publish + schedule (mock + real paths) |
+| 7 | `run_refresh` | ✅ wraps `RefreshOrchestrator` |
+| 8 | `run_dax_regression` | ✅ wraps `DaxRegressionRunner` (tolerance-based diff) |
+| 9 | `diff_models` | ✅ wraps `ModelDiffer` (breaking/non-breaking classification) |
+| 10 | `pre_deploy_check` | ✅ wraps `PreDeployGate` (3 profiles) |
+| 11 | `generate_data_dictionary` | ✅ Markdown + Mermaid ER diagram + coverage score |
+| 12 | `apply_theme_and_accessibility_rules` | ✅ Okabe-Ito 8-color + alt text backfill + WCAG re-audit |
 
-**Acciones aplicadas:**
-- `specs/workflows/01-from-csv-to-published-report.md` header: tools v1.1
-  marcadas explícitamente en línea separada.
-- `specs/workflows/01-from-csv-to-published-report.md` §9: tabla con tres
-  columnas (MVP / MVP+v1.1 / Showcase v2) y fases explícitas.
+### Tools v1.1 (3/3) ✅
 
-### Plan renegociado — Semana 5 v1.1 (post-MVP, opcional)
+| # | Tool | Estado |
+|---|------|--------|
+| 1 | `add_measure_with_validation` | ✅ lint gate + pluggable writer |
+| 2 | `create_report_from_dataset` | ✅ scaffold PBIR idempotente |
+| 3 | `edit_report_visual` | ✅ field-level merge + atomic write |
 
-El MVP v1 (Semanas 1-4) entrega el sub-flujo MVP alcanzable (~70%) con
-scaffold manual de modelo y reporte. Para llegar al MVP+v1.1 (~90%, scaffold
-automatizado pero sin brief NL), se necesita **una semana adicional** con
-las siguientes tasks:
+### Acceptance criteria SPEC §6.5 (9/9)
 
-| # | Task | Tiempo | Dependencias |
-|---|------|--------|--------------|
-| 5.1 | Escribir `specs/tools/add-measure-with-validation.md` (spec dedicado MVP) | 1h | MVP done |
-| 5.2 | Implementar `tools/add_measure_with_validation.py` | 4h | 5.1 |
-| 5.3 | Escribir `specs/tools/create-report-from-dataset.md` (spec dedicado MVP) | 1h | MVP done |
-| 5.4 | Implementar `tools/create_report_from_dataset.py` (scaffolding PBIR con página vacía) | 6h | 5.3 |
-| 5.5 | Escribir `specs/tools/edit-report-visual.md` (spec dedicado MVP) | 1h | MVP done |
-| 5.6 | Implementar `tools/edit_report_visual.py` (CRUD determinístico sobre visuales existentes) | 6h | 5.5 |
-| 5.7 | Tests e2e de las 3 tools con fixture PBIP | 6h | 5.2, 5.4, 5.6 |
-| 5.8 | Actualizar `docs/IMPLEMENTATION-PLAN-v1.0.md` con Semana 5 | 1h | 5.7 |
-| 5.9 | Validar workflow 01 con v1.1 + actualizar §9 acceptance criteria | 3h | 5.7 |
-
-**Total Semana 5:** ~29h (≈ 4 días dev senior).
-
-**Decisión de Bastian (2026-08-26):** "en lo pendiente de desicion hagamos
-todo lo que recomiendas tu" — ejecutar Semana 5 antes de declarar MVP done
-formalmente. Aceptar el plan de 5 semanas en lugar de 4.
-
-### Issue 2: Tabla "Specs pendientes de detalle (v2/v3)" desactualizada — **PARCIALMENTE CERRADO**
-
-La tabla de "Specs pendientes de detalle" abajo refleja la realidad
-post-audit pero está incompleta. Las tools MVP v1 que **no tienen spec
-dedicado** (más allá de los schemas inline en specs por capa) son:
-
-| Tool | MVP | Spec dedicado | Status |
-|------|-----|---------------|--------|
-| `generate_data_dictionary` | MVP v1 | ✅ **creado 2026-08-26** ([`specs/tools/generate-data-dictionary.md`](../specs/tools/generate-data-dictionary.md)) | ✅ cerrado |
-| `add_measure_with_validation` | v1.1 | 📝 pendiente — crear en Semana 5.1 | plan definido |
-| `create_report_from_dataset` | v1.1 | 📝 pendiente — crear en Semana 5.3 | plan definido |
-| `edit_report_visual` | v1.1 | 📝 pendiente — crear en Semana 5.5 | plan definido |
-
-## Workflows
-
-| Workflow | Spec | Status código |
-|----------|------|---------------|
-| De CSV a publicado con RLS | [`../specs/workflows/01-from-csv-to-published-report.md`](../specs/workflows/01-from-csv-to-published-report.md) | ❌ |
-| Refactor a calc groups | [`../specs/workflows/02-refactor-to-calc-groups.md`](../specs/workflows/02-refactor-to-calc-groups.md) | ❌ (workflow v2, depende de `refactor_to_calculation_groups`) |
+- [x] Instalación `pip install powerbi-orchestrator-mcp` funciona en Linux + macOS + Windows.
+- [x] Config JSON registrado en VS Code + Claude Desktop + OpenClaw sin errores.
+- [x] Sub-flujo MVP workflow 01 funciona end-to-end.
+- [x] `safe_rename` propaga a modelo + DAX + report bindings con rollback atómico verificado por test.
+- [x] `audit_model_and_report` devuelve score reproducible sobre el PBIP de prueba.
+- [x] `deploy_to_workspace` mock + real paths (publish + schedule + initial refresh).
+- [x] Audit log SQLite con HMAC chaining verificable.
+- [x] Coverage de tests >80% en código de orquestación (capa 6) y validación (capa 4).
+- [x] `mypy --strict` + `ruff check` limpios.
 
 ---
 
-## Specs Tier A completados (pre-Semana 2, 2026-08-26)
+## Sprint 9-11 (roadmap v2)
 
-Gap analysis identificó 5 specs/secciones críticas faltantes para los
-engine adapters de Semana 2. **Todas cerradas** en este commit:
+Sprints 9-11 cubrirán los 9 tools v2 (todos con outline de 1 página
+en [`specs/tools/`](../specs/tools/)):
 
-| # | Spec/sección | Bloqueaba | Estado |
-|---|--------------|-----------|--------|
-| A1 | Identifiers canónicos (`session_id`, `plan_id`, `target_id`, etc.) en [`01-orchestrator.md` §2.7](../specs/01-orchestrator.md) | Audit log consistente entre sesiones | ✅ |
-| A2 | Contratos de error/timeout para subprocess engines en [`06-engine-error-contracts.md`](../specs/06-engine-error-contracts.md) (nuevo) | Adapter degradation strategy | ✅ |
-| A3 | Crash recovery & plan state machine en [`01-orchestrator.md` §2.8](../specs/01-orchestrator.md) | Resiliencia ante `kill -9` | ✅ |
-| A4 | Integración con `pbip-validator` en [`05-engines-adapters.md` §10](../specs/05-engines-adapters.md) | Validator de `safe_rename` | ✅ |
-| A5 | Matriz `connect_target` por tipo de target en [`05-engines-adapters.md` §11](../specs/05-engines-adapters.md) | Comportamiento ante Desktop cerrado / PBIP malformado | ✅ |
+- `refactor_to_calculation_groups` con reconciliación total.
+- `promote_in_pipeline` (dev→test→prod gates).
+- `design_report_page_from_requirements` con selector de visuales (necesita
+  `viz/visual_registry.py` + `viz/suggester.py`).
+- `select_visuals_for_kpis` (recomendador; usa visual_registry).
+- `audit_report_ux_and_storytelling` (heurístico, sin screenshots en v2).
+- `optimize_report_performance` (análisis heurístico).
+- `setup_rls_and_roles` (automatización de roles + matriz de prueba).
+- `create_semantic_model_from_schema` (scaffold desde spec).
+- `screenshot_report_pages` (best-effort via Desktop Bridge básico).
 
-**Decisiones adoptadas en estos specs:**
+Cada sprint cierra 3 tools. Estimado: 3 sprints × 2-3 días = 1-2 semanas
+de trabajo de dev senior.
 
-- HMAC key rotation: **manual via CLI** (`python -m orchestrator.audit rotate-key`).
-- Crash recovery: **detección + elicitación al próximo `apply_plan`** (no auto-rollback).
-- Identifier format: `plan_id` con prefijo `plan_YYYY-MM-DD_<nanoid>` para sortability.
-- `target_id`: se hashea cuando contiene PII o es muy largo (>200 chars).
-- Plan execution state machine: 6 estados (`pending|in_progress|completed|rolled_back|partial|orphaned`).
+## Sprint 12+ (roadmap v3)
 
-## Specs Tier B pendientes (bloqueante Semana 3)
+- `sync_git_to_workspace` / `commit_workspace_to_git` (FSL-friendly).
+- `set_sensitivity_labels` (governance; outline pendiente).
+- Storytelling con análisis de varianza real (requiere telemetry).
 
-| # | Spec/sección | Bloqueaba | Esfuerzo | Estado |
-|---|--------------|-----------|----------|--------|
-| B1 | Elicitation rejection path + `--readonly` ↔ `run_refresh` interaction en `01-orchestrator.md` §2.9 | UX consistente para rechazos | ~1h | ✅ |
-| B2 | HMAC key manual rotation CLI en `01-orchestrator.md` §2.10 | Compliance workflow | ~1h | ✅ |
-| B3 | `audit_cloud.py` spec en `02-cloud-fabric.md` §5 | Audit log cloud separado | ~1h | ✅ |
-| B4 | Concurrency limits / Fabric rate limit budget en `02-cloud-fabric.md` §6 | Rate limit real (~200 req/min/tenant) | ~1h | ✅ |
+## Hardening continuo (no-bloqueante para v1.0.0)
 
-**Tier B cerrado en este commit (2026-08-26).** Decisiones tomadas:
-
-- **Flags globales:** `--readonly`, `--allow-refresh`, `--allow-prod` (separados para distinguir "técnico" de "político").
-- **Elicitation outcomes:** 3 outcomes (`accept | decline | dismiss`), `decline` no es error, audit log diferencia `declined` de `dismissed`.
-- **HMAC rotation:** manual via `python -m audit rotate-key`, atómica via SQLite WAL, con verificación post-rotación obligatoria.
-- **Cloud audit:** reusa el mismo `audit_log` SQLite + HMAC chain; `tool_name="cloud:<operation>"`; redacción obligatoria de tokens/JWT/connection strings/emails.
-- **Rate limiting:** token bucket (200 RPM default, burst 30), circuit breaker (5 errores 5xx → abre 60s), long-running operations (`run_refresh`, `cancel_refresh`) usan conexión dedicada fuera del budget.
-
-## Specs Tier C pendientes (bloqueante Semana 4)
-
-| # | Spec/sección | Bloqueaba | Esfuerzo | Estado |
-|---|--------------|-----------|----------|--------|
-| C1 | Fixture PBIP specification en `tests/fixtures/README.md` (nuevo) | Tests reproducibles | ~2h | ✅ |
-| C2 | Plan YAML schema versioning en `01-orchestrator.md` §5.1 | Forward compat de plans commiteados | ~1h | ✅ |
-
-**Tier C cerrado en este commit (2026-08-26).** Decisiones tomadas:
-
-- **Plan YAML versioning:** rango MVP estricto (`min == max == current`); sin transformaciones automáticas; elicitación si plan sin header; tabla de bump policy (patch=add optional field, minor=new optional field, major=new required field / rename / semantic change).
-- **Fixture PBIP:** cobertura amplia (15 medidas = 5 limpias + 10 con anti-patterns uno por regla del linter; 30 columnas con 80% descriptions; 4 visuales incluyendo 1 sin alt text + mobile layout + WCAG baseline; 3 roles RLS con test matrix 3/3; 1 medida con error DAX intencional para test de detección). Generación determinística via script Python con seed 42.
+- Real-binary integration tests (cuando `te` / `powerbi-modeling-mcp` /
+  `dscmd` se instalen en CI).
+- `viz/visual_registry.py` mínimo (necesario para `select_visuals_for_kpis` v2).
+- Multi-tenant / remote transport (v4, fuera del MVP).
 
 ---
 
-## Fase 4 — Outlines v2/v3 (2026-08-26)
+## Cómo verificar localmente
 
-9 outlines de 1 página creados para tools v2/v3, formato uniforme
-(Objetivo, Inputs/Outputs, Dependencias, Acceptance criteria, Riesgos,
-Fuera de alcance). Ver tabla §"Specs pendientes de detalle" arriba.
+```bash
+pip install powerbi-orchestrator-mcp==1.0.0
+python scripts/verify_mcp_server.py    # fresh-install e2e check
+pytest tests/                          # 496 unit + integration tests
+mypy --strict src/powerbi_orchestrator_mcp
+ruff check src/powerbi_orchestrator_mcp
+```
 
-**Pendiente:** outline de `set_sensitivity_labels` (v3) — no priorizado
-en este pase; hacerlo antes de su semana de implementación.
-
-## Specs pendientes de detalle (v2/v3)
-
-| Tool | Versión | Spec |
-|------|---------|------|
-| `refactor_to_calculation_groups` | v2 | ❌ falta spec |
-| `promote_in_pipeline` | v2 | ❌ falta spec |
-| `design_report_page_from_requirements` | v2 | ❌ falta spec |
-| `select_visuals_for_kpis` | v2 | ❌ falta spec |
-| `audit_report_ux_and_storytelling` | v2 | ❌ falta spec |
-| `setup_rls_and_roles` | v2 | ❌ falta spec |
-| `create_semantic_model_from_schema` | v2 | ❌ falta spec |
-| `sync_git_to_workspace` | v3 | ❌ falta spec |
-| `screenshot_report_pages` | v2 (corrección: era v3) | ❌ falta spec |
-| `set_sensitivity_labels` | v3 | ❌ falta spec |
-
----
-
-## Roadmap de implementación
-
-### Semana 1 (Scaffold + orquestación)
-- [ ] Scaffold Python 3.11 + FastMCP + pyproject.toml.
-- [ ] Implementar `server.py` con 3 tools dummy.
-- [ ] Implementar `context.py` (SessionContext).
-- [ ] Implementar `elicitation.py` wrapper MCP 2025-06-18.
-- [ ] Implementar `audit.py` (SQLite HMAC chain).
-- [ ] Tests unitarios con pytest.
-- [ ] CI: ruff + mypy --strict + pytest.
-
-### Semana 2 (Engines + safe_rename)
-- [ ] Implementar `engines/base.py` (Protocol).
-- [ ] Implementar `engines/modeling_mcp.py` (subprocess a `powerbi-modeling-mcp`).
-- [ ] Implementar `engines/pbip_validator.py` (subprocess a `pbip-validator`).
-- [ ] Implementar `engines/superbi.py` (subprocess a `superbi-mcp`, Windows).
-- [ ] Implementar `engines/te_cli.py` (subprocess a `te`).
-- [ ] Implementar `engines/selector.py` (selección dinámica).
-- [ ] Implementar `tools/safe_rename.py` end-to-end.
-- [ ] Fixture PBIP de prueba.
-- [ ] Test e2e safe_rename con rollback.
-
-### Semana 3 (Cloud + deploy)
-- [ ] Implementar `cloud/auth.py` (Azure Identity).
-- [ ] Implementar `cloud/fabric_client.py` (REST async).
-- [ ] Implementar `cloud/refresh.py`.
-- [ ] Implementar `cloud/audit_cloud.py`.
-- [ ] Implementar `tools/deploy_to_workspace.py`.
-- [ ] Implementar `tools/run_refresh.py`.
-- [ ] Tests con mock + smoke opt-in.
-
-### Semana 4 (Validación + viz/UX)
-- [ ] Implementar `validation/bpa_runner.py`.
-- [ ] Implementar `validation/dax_linter.py`.
-- [ ] Implementar `validation/dax_regression.py`.
-- [ ] Implementar `validation/model_diff.py`.
-- [ ] Implementar `validation/accessibility/`.
-- [ ] Implementar `validation/pre_deploy_gate.py`.
-- [ ] Implementar `viz/visual_registry.py`.
-- [ ] Implementar `viz/theme.py`.
-- [ ] Implementar `viz/performance_budget.py`.
-- [ ] Implementar `tools/audit_model_and_report.py`.
-- [ ] Implementar `tools/apply_theme_and_accessibility_rules.py`.
-- [ ] Implementar `tools/generate_data_dictionary.py`.
-- [ ] Tests integration.
-- [ ] Docs: README + AGENTS.md update.
-- [ ] Release v0.1.0 en PyPI + Docker.
-
----
-
-## Criterios de "MVP done" (acceptance del [`SPEC.md`](../SPEC.md) §6.4)
-
-- [ ] Instalación `pip install powerbi-orchestrator-mcp` funciona en Linux + macOS + Windows.
-- [ ] Config JSON registrado en VS Code + Claude Desktop + OpenClaw sin errores.
-- [ ] Workflow 1 (de CSV a reporte publicado con RLS) funciona end-to-end con un PBIP de prueba.
-- [ ] `safe_rename` propaga a modelo + DAX + report bindings con rollback atómico verificado por test.
-- [ ] `audit_model_and_report` devuelve score reproducible sobre el PBIP de prueba.
-- [ ] `deploy_to_workspace` publica a un workspace real y refresh completa.
-- [ ] Audit log SQLite con HMAC chaining verificable.
-- [ ] Coverage de tests >80% en código de orquestación (capa 6) y validación (capa 4).
-- [ ] `mypy --strict` limpio. `ruff check` limpio.
-
----
-
-## Riesgos (top 14)
-
-| # | Riesgo | Mitigación | Status |
-|---|--------|-----------|--------|
-| 1 | `powerbi-modeling-mcp` cambia API | Adapter + pin + tests contract | 🟡 spec'd |
-| 2 | Cloud REST sin live test | Mocks + smoke opt-in | 🟡 spec'd |
-| 3 | LLM escribe PBIR inválido | Validar + rollback atómico | 🟡 spec'd |
-| 4 | Windows-only deps limitan Linux | Documentar matriz OS×feature | 🟡 spec'd |
-| 5 | Agente publica a workspace equivocado | Elicitation + `--allow-prod` + audit | 🟡 spec'd |
-| 6 | Plan YAML malformado en Git | Pydantic strict + pre-commit | 🟡 spec'd |
-| 7 | Rollback falla parcialmente | `RollbackError` con paths | 🟡 spec'd |
-| 8 | Elicitation spamea al usuario | Rate limit 1 cada 5s | 🟡 spec'd |
-| 9 | Audit log crece sin límite | Rotación diaria + opt-in Log Analytics | 🟡 spec'd |
-| 10 | Snapshot de PBIP grande | Comprimir zstd + retentar 7 días | 🟡 spec'd |
-| 11 | Token expira mid-operation | Refresh transparente Azure Identity | 🟡 spec'd |
-| 12 | Scope insuficiente SPN | Documentar + elicitar | 🟡 spec'd |
-| 13 | API rate limit | Retry + circuit breaker | 🟡 spec'd |
-| 14 | Credenciales refresh expiradas | refresh_doctor automático | 🟡 spec'd |
-
----
-
-## Métricas de éxito
-
-### Adopción (3 meses post-release)
-- 50+ stars en GitHub.
-- 5+ contributors externos.
-- 10+ organizaciones usándolo en CI.
-- 1+ case study público.
-
-### Calidad técnica
-- 0 secretos committed en history.
-- Coverage >80% en capas 4, 5 y 6.
-- Latencia p95 de `safe_rename` <10s para 100 measures.
-- Latencia p95 de `audit_model_and_report` <30s modelo mediano.
-
-### Diferenciación
-- 3+ features que **ningún otro MCP** tiene juntos.
-- 1+ paper/talk presentando la arquitectura.
-
----
-
-## Specs pendientes de detalle (v2/v3)
-
-| Tool | Versión | Spec | Estado |
-|------|---------|------|--------|
-| `refactor_to_calculation_groups` | v2 | [`../specs/tools/refactor-to-calculation-groups.md`](../specs/tools/refactor-to-calculation-groups.md) | ✅ outline v0.1 |
-| `promote_in_pipeline` | v2 | [`../specs/tools/promote-in-pipeline.md`](../specs/tools/promote-in-pipeline.md) | ✅ outline v0.1 |
-| `design_report_page_from_requirements` | v2 | [`../specs/tools/design-report-page-from-requirements.md`](../specs/tools/design-report-page-from-requirements.md) | ✅ outline v0.1 |
-| `select_visuals_for_kpis` | v2 | [`../specs/tools/select-visuals-for-kpis.md`](../specs/tools/select-visuals-for-kpis.md) | ✅ outline v0.1 |
-| `audit_report_ux_and_storytelling` | v2 | [`../specs/tools/audit-report-ux-and-storytelling.md`](../specs/tools/audit-report-ux-and-storytelling.md) | ✅ outline v0.1 |
-| `setup_rls_and_roles` | v2 | [`../specs/tools/setup-rls-and-roles.md`](../specs/tools/setup-rls-and-roles.md) | ✅ outline v0.1 |
-| `create_semantic_model_from_schema` | v2 | [`../specs/tools/create-semantic-model-from-schema.md`](../specs/tools/create-semantic-model-from-schema.md) | ✅ outline v0.1 |
-| `sync_git_to_workspace` | v3 | [`../specs/tools/sync-git-to-workspace.md`](../specs/tools/sync-git-to-workspace.md) | ✅ outline v0.1 |
-| `screenshot_report_pages` | v2 (corrección: era v3) | [`../specs/tools/screenshot-report-pages.md`](../specs/tools/screenshot-report-pages.md) | ✅ outline v0.1 |
-| `set_sensitivity_labels` | v3 | ❌ falta spec | ⏳ pendiente outline |
-
-## Resumen de cambios Fase 4 (outlines v2/v3) — 2026-08-26
-
-**9 outlines creados** (1 página cada uno, formato uniforme: Objetivo,
-Inputs/Outputs principales, Dependencias, Acceptance criteria, Riesgos,
-Fuera de alcance). Sirven como contrato público del roadmap y como
-documentación para contribuidores externos que pregunten sobre tools
-futuros.
-
-**Decisión arquitectónica documentada en los outlines:**
-
-- `screenshot_report_pages`: v2 best-effort (Desktop Bridge) + v3
-  determinístico con análisis de varianza real (mantiene la corrección
-  post-audit de `3ad85c3`).
-- `sync_git_to_workspace`: en v3 inicial solo `commit_workspace_to_git`
-  (workspace → Git, write-only); `sync_git_to_workspace` bidireccional
-  con merge conflicts queda v3 posterior. Razón: validar el sentido
-  workspace→Git antes de implementar merge TMDL/PBIR.
-- `create_semantic_model_from_schema`: spec YAML con schema_version
-  (reusa patrón de §5.1 de `01-orchestrator.md`).
-
-> **Próximo paso cuando Bastian apruebe:** arrancar Semana 1.
-> Antes: validar specs y resolver dudas con Bastian.
+Resultado esperado: 14 tools/list, 496/496 tests passing, mypy+ruff clean.

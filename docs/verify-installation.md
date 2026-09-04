@@ -39,13 +39,33 @@ Spawning MCP server over stdio...
 
 [2] tools/list — verify MVP tools are exposed
   ✓ Response received
-  ✓ Got 3 tools — names=['apply_plan', 'connect_target', 'plan_change']
-  ✓ All 3 MVP tools present
+  ✓ Got 14 tools — names=['add_measure_with_validation', 'apply_plan',
+    'apply_theme_and_accessibility_rules', 'audit_model_and_report',
+    'connect_target', 'create_report_from_dataset', 'deploy_to_workspace',
+    'diff_models', 'generate_data_dictionary', 'plan_change',
+    'pre_deploy_check', 'run_dax_regression', 'run_refresh']
+  ✓ All 14 MVP tools present
 
 [3] Each MVP tool has a non-empty input schema
   ✓   connect_target.inputSchema present
   ✓   plan_change.inputSchema present
   ✓   apply_plan.inputSchema present
+  ✓   audit_model_and_report.inputSchema present
+  ✓   deploy_to_workspace.inputSchema present
+  ✓   run_refresh.inputSchema present
+  ✓   run_dax_regression.inputSchema present
+  ✓   diff_models.inputSchema present
+  ✓   pre_deploy_check.inputSchema present
+  ✓   generate_data_dictionary.inputSchema present
+  ✓   apply_theme_and_accessibility_rules.inputSchema present
+
+[3b] tools/call — pre_deploy_check with findings
+  ✓ pre_deploy_check returned a response
+  ✓ pre_deploy_check has some structured content or content
+
+[3c] tools/call — apply_theme_and_accessibility_rules on a PBIP
+  ✓ apply_theme_and_accessibility_rules returned a response
+  ✓ theme_written is True
 
 [4] tools/call — connect_target with valid PBIP path
   ✓ connect_target returned a response
@@ -70,13 +90,16 @@ Cursor, etc.) and confirms the server responds correctly to:
 | Check | What it proves |
 |-------|---------------|
 | **JSON-RPC initialize** | Server speaks MCP protocol 2024-11-05, identifies itself, returns server info. |
-| **tools/list** | All 3 MVP tools (`connect_target`, `plan_change`, `apply_plan`) are registered. |
+| **tools/list** | All 14 tools (12 MVP + 3 v1.1, of which 14 are exposed; safe_rename is via plan_change template) are registered. |
 | **inputSchema** | Each tool exposes a valid JSON Schema (FastMCP auto-generates from Pydantic models). |
-| **tools/call** | `connect_target` actually executes end-to-end: creates a PBIP folder, detects missing engines, returns a session_id and engines_available list. |
+| **tools/call (connect_target)** | `connect_target` actually executes end-to-end: creates a PBIP folder, detects missing engines, returns a session_id and engines_available list. |
+| **tools/call (pre_deploy_check)** | Non-orchestrator tool path works over JSON-RPC. |
+| **tools/call (apply_theme_and_accessibility_rules)** | End-to-end theme.json write + WCAG re-audit on a real PBIP folder. |
 | **Clean shutdown** | The server responds to SIGTERM without hanging (uses stdio JSON-RPC, so process cleanup is important). |
 
-If all 5 checks pass, the orchestrator is **fully usable** as an MCP
-server — plug it into any MCP client and the LLM will see the 3 tools.
+If all checks pass, the orchestrator is **fully usable** as an MCP
+server — plug it into any MCP client and the LLM will see all 14 tools
+plus `safe_rename` via the `plan_change` template.
 
 ---
 
@@ -92,7 +115,9 @@ server — plug it into any MCP client and the LLM will see the 3 tools.
   installed; see [`docs/engines-setup.md`](./engines-setup.md).
 - **Plan change + apply** beyond `connect_target` — they require an
   active session and proper plan execution; covered by the unit test
-  suite (`tests/unit/test_server.py`, 31 tests).
+  suite (`tests/unit/test_server.py`).
+- **v2 / v3 tools** — 9 v2 + 2 v3 tools outlined but not implemented
+  (Sprints 9-12 roadmap).
 
 ---
 

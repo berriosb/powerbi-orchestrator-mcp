@@ -384,7 +384,7 @@ def main() -> int:
     if all_passed:
         print("✓ All checks passed — powerbi-orchestrator-mcp works as an MCP server.")
         print("  Someone can clone this repo, run `pip install -e .`, configure")
-        print("  their MCP client, and immediately use all 11 MVP tools from their LLM.")
+        print("  their MCP client, and immediately use all 14 MVP+v1.1 tools from their LLM.")
         return 0
     print("✗ One or more checks FAILED — see output above.")
     return 1

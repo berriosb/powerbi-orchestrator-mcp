@@ -5,8 +5,8 @@
 > [`docs/architecture.md`](./docs/architecture.md) y los specs modulares en
 > [`specs/`](./specs/README.md).
 
-**Status:** v0.1 (specs only)
-**Fecha:** 2026-08-21
+**Status:** v1.0.0 released (2026-08-26). MVP done — 15/15 tools (12 MVP + 3 v1.1). Ver [`RELEASE-NOTES-v1.0.0.md`](./RELEASE-NOTES-v1.0.0.md) y [`docs/MVP-STATUS.md`](./docs/MVP-STATUS.md).
+**Fecha:** 2026-08-21 (spec original); v1.0.0 released 2026-08-26
 **Owner:** Bastian Berrios (@berriosb)
 **Licencia:** MIT
 
