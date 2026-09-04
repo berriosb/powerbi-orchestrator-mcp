@@ -60,16 +60,25 @@ from powerbi_orchestrator_mcp.orchestrator.rollback import (
 from powerbi_orchestrator_mcp.orchestrator.step_executor import (
     get_default_registry,
 )
+from powerbi_orchestrator_mcp.tools.add_measure_with_validation import (
+    add_measure_with_validation as _add_measure,
+)
 from powerbi_orchestrator_mcp.tools.apply_theme_and_accessibility_rules import (
     apply_theme_and_accessibility_rules as _apply_theme,
 )
 from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
     audit_model_and_report as _audit,
 )
+from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
+    create_report_from_dataset as _create_report,
+)
 from powerbi_orchestrator_mcp.tools.deploy_to_workspace import (
     deploy_to_workspace as _deploy,
 )
 from powerbi_orchestrator_mcp.tools.diff_models import diff_models as _diff
+from powerbi_orchestrator_mcp.tools.edit_report_visual import (
+    edit_report_visual as _edit_visual,
+)
 from powerbi_orchestrator_mcp.tools.generate_data_dictionary import (
     generate_data_dictionary as _data_dict,
 )
@@ -736,6 +745,102 @@ async def apply_theme_and_accessibility_rules(
         alt_text_template=alt_text_template,
     )
     return result.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Sprint 8: v1.1 tools (SPEC §6.3)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def add_measure_with_validation(
+    target: str,
+    measure_name: str,
+    table: str,
+    expression: str,
+    format_string: str | None = None,
+    description: str | None = None,
+    is_hidden: bool = False,
+    fail_on_severity: str = "warning",
+    dry_run: bool = False,
+    runtime_check: bool = False,
+    measure_writer: Any = None,
+) -> dict[str, Any]:
+    """Add a DAX measure with mandatory lint validation.
+
+    Lint gate blocks writes if any finding has severity ≥ fail_on_severity
+    (default: warning). dry_run=True returns findings without writing.
+    """
+    result = _add_measure(
+        target=target,
+        measure_name=measure_name,
+        table=table,
+        expression=expression,
+        format_string=format_string,
+        description=description,
+        is_hidden=is_hidden,
+        fail_on_severity=fail_on_severity,
+        dry_run=dry_run,
+        runtime_check=runtime_check,
+        measure_writer=measure_writer,
+    )
+    return result
+
+
+@mcp.tool()
+async def create_report_from_dataset(
+    pbip_path: str,
+    page_name: str = "Overview",
+    visual_count: int = 2,
+    theme: str = "okabe_ito",
+    include_card: bool = True,
+    inspector: Any = None,
+) -> dict[str, Any]:
+    """Scaffold a PBIR folder from an existing dataset.
+
+    Creates <name>.Report/, theme.json, report.json, and a sample page.
+    Never overwrites existing files (returns warnings instead).
+    """
+    result = _create_report(
+        pbip_path=pbip_path,
+        page_name=page_name,
+        visual_count=visual_count,
+        theme=theme,
+        include_card=include_card,
+        inspector=inspector,
+    )
+    return result
+
+
+@mcp.tool()
+async def edit_report_visual(
+    pbip_path: str,
+    page_name: str,
+    visual_id: str,
+    type: str | None = None,
+    fields_json: str | None = None,
+    format_json: str | None = None,
+    position_json: str | None = None,
+    alt_text: str | None = None,
+    is_hidden: bool | None = None,
+) -> dict[str, Any]:
+    """Deterministic edit on a single visualContainer in a PBIR page.
+
+    Field-level merge: only the fields in the input change; unspecified
+    fields are preserved. Atomic write via temp-then-rename.
+    """
+    result = _edit_visual(
+        pbip_path=pbip_path,
+        page_name=page_name,
+        visual_id=visual_id,
+        type=type,
+        fields_json=fields_json,
+        format_json=format_json,
+        position_json=position_json,
+        alt_text=alt_text,
+        is_hidden=is_hidden,
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
