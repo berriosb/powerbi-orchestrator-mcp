@@ -58,6 +58,12 @@ EXPECTED_TOOLS = {
     "pre_deploy_check",
     "generate_data_dictionary",
     "apply_theme_and_accessibility_rules",
+    "add_measure_with_validation",
+    "create_report_from_dataset",
+    "edit_report_visual",
+    "refactor_to_calculation_groups",
+    "select_visuals_for_kpis",
+    "design_report_page_from_requirements",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -384,7 +390,7 @@ def main() -> int:
     if all_passed:
         print("✓ All checks passed — powerbi-orchestrator-mcp works as an MCP server.")
         print("  Someone can clone this repo, run `pip install -e .`, configure")
-        print("  their MCP client, and immediately use all 14 MVP+v1.1 tools from their LLM.")
+        print("  their MCP client, and immediately use all 17 MVP+v1.1+v2 tools from their LLM.")
         return 0
     print("✗ One or more checks FAILED — see output above.")
     return 1

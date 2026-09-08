@@ -75,6 +75,9 @@ from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
 from powerbi_orchestrator_mcp.tools.deploy_to_workspace import (
     deploy_to_workspace as _deploy,
 )
+from powerbi_orchestrator_mcp.tools.design_report_page_from_requirements import (
+    design_report_page_from_requirements as _design_page,
+)
 from powerbi_orchestrator_mcp.tools.diff_models import diff_models as _diff
 from powerbi_orchestrator_mcp.tools.edit_report_visual import (
     edit_report_visual as _edit_visual,
@@ -82,10 +85,19 @@ from powerbi_orchestrator_mcp.tools.edit_report_visual import (
 from powerbi_orchestrator_mcp.tools.generate_data_dictionary import (
     generate_data_dictionary as _data_dict,
 )
+from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
+    pre_deploy_check as _pre_deploy,
+)
+from powerbi_orchestrator_mcp.tools.refactor_to_calculation_groups import (
+    refactor_to_calculation_groups as _refactor,
+)
 from powerbi_orchestrator_mcp.tools.run_dax_regression import (
     run_dax_regression as _dax_regress,
 )
 from powerbi_orchestrator_mcp.tools.run_refresh import run_refresh as _refresh
+from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
+    select_visuals_for_kpis as _select_visuals,
+)
 
 # ---------------------------------------------------------------------------
 # Output schemas (spec sections 3.1-3.3)
@@ -705,13 +717,7 @@ async def pre_deploy_check(
         findings = _json.loads(findings_json)
     except _json.JSONDecodeError:
         findings = []
-    result = _pre_deploy_check  # type: ignore[name-defined]  # noqa: F821
-    # Use the imported name instead of the underscore-prefixed one.
-    from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
-        pre_deploy_check as _gate,
-    )
-
-    result = _gate(findings, profile=profile)
+    result = _pre_deploy(findings, profile=profile)
     return result.model_dump(mode="json")
 
 
@@ -841,6 +847,85 @@ async def edit_report_visual(
         is_hidden=is_hidden,
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Sprint 9: v2 tools (SPEC §6.2)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def refactor_to_calculation_groups(
+    target: str,
+    min_candidates: int = 3,
+    reconcile_strategy: str = "strict",
+    preserve_originals: bool = False,
+    auto_apply: bool = False,
+    *,
+    inspector: Any = None,
+    measure_writer: Any = None,
+) -> dict[str, Any]:
+    """Detect measures that share structure (e.g. `X YTD/QTD/MTD`) and
+    consolidate into a calculation group.
+
+    Returns the plan + (optionally) writes the calc group if auto_apply=True.
+    """
+    result = _refactor(
+        target=target,
+        min_candidates=min_candidates,
+        reconcile_strategy=reconcile_strategy,
+        preserve_originals=preserve_originals,
+        auto_apply=auto_apply,
+        inspector=inspector,
+        measure_writer=measure_writer,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def select_visuals_for_kpis(
+    kpis_json: str,
+    audience: str = "executive",
+    max_results: int = 3,
+    *,
+    inspector: Any = None,
+) -> dict[str, Any]:
+    """For each KPI in the JSON list, return a primary visual + alternatives.
+
+    Uses the viz/visual_suggester for recommendation logic.
+    """
+    result = _select_visuals(
+        kpis_json=kpis_json,
+        audience=audience,
+        max_results=max_results,
+        inspector=inspector,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def design_report_page_from_requirements(
+    pbip_path: str,
+    brief: str,
+    page_name: str = "Overview",
+    audience: str = "executive",
+    palette: str = "okabe_ito",
+    *,
+    inspector: Any = None,
+) -> dict[str, Any]:
+    """Synthesize a PBIR page from an NL brief.
+
+    Composes viz/visual_suggester + python_report for actual file I/O.
+    """
+    result = _design_page(
+        pbip_path=pbip_path,
+        brief=brief,
+        page_name=page_name,
+        audience=audience,
+        palette=palette,
+        inspector=inspector,
+    )
+    return result.model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------

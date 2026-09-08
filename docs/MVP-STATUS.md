@@ -1,7 +1,8 @@
 # MVP STATUS — powerbi-orchestrator-mcp
 
-> Estado de implementación vs specs. **MVP done = 15/15 tools** (12 MVP + 3
-> v1.1) per SPEC §6.3 decisión 2026-08-26. Tag [`v1.0.0`](../git) creado.
+> Estado de implementación vs specs. **Post-Sprint 9 = 18/18 tools**
+> (12 MVP + 3 v1.1 + 3 v2) per SPEC §6.1+§6.2+§6.3. Tag [`v1.0.0`](../git)
+> creado; [`v1.1.0`](../RELEASE-NOTES-v1.1.0.md) pendiente de tag al cerrar Sprint 9.
 
 **Leyenda:**
 - ❌ No implementado
@@ -16,11 +17,11 @@
 | Capa | Cobertura | Estado |
 |------|-----------|--------|
 | 6 · Orquestación | 100% | ✅ completa |
-| 1 · Modeling | 50% | ✅ `powerbi-modeling-mcp` wired (mock-tested); `te` adapter pendiente Week 2 |
-| 2 · Report | 70% | ✅ `python_report` (built-in) + `superbi_mcp` (wired, mock-tested) |
+| 1 · Modeling | 55% | ✅ `powerbi-modeling-mcp` wired (mock-tested) + `refactor_to_calculation_groups` pattern detector; `te` adapter pendiente Sprint 9+ |
+| 2 · Report | 70% | ✅ `python_report` (built-in) + `superbi_mcp` (wired, mock-tested) + `design_report_page_from_requirements` |
 | 3 · Cloud | 85% | ✅ `fabric_client`, `refresh`, `audit_cloud` con redacción obligatoria |
 | 4 · Validación | 95% | ✅ `bpa_runner`, `dax_linter` (7 patterns), `dax_regression`, `model_diff`, `pre_deploy_gate` |
-| 5 · Viz/UX | 30% | ⚠️ `WcagAuditor` (en `validation/`) + `apply_theme_and_accessibility_rules`. Módulos `visual_registry`/`suggester`/`layout`/`storytelling`/`performance_budget` son **v2**. |
+| 5 · Viz/UX | 50% | ✅ `WcagAuditor` + `apply_theme_and_accessibility_rules` + `viz/visual_registry` (8 visual types) + `viz/visual_suggester` (deterministic ranking) + `select_visuals_for_kpis`. Módulos `layout`/`storytelling`/`performance_budget` siguen v2 pendientes. |
 
 ---
 
@@ -77,22 +78,22 @@
 
 ## Sprint 9-11 (roadmap v2)
 
-Sprints 9-11 cubrirán los 9 tools v2 (todos con outline de 1 página
+Sprints 9-11 cubren los 9 tools v2 (todos con outline de 1 página
 en [`specs/tools/`](../specs/tools/)):
 
-- `refactor_to_calculation_groups` con reconciliación total.
-- `promote_in_pipeline` (dev→test→prod gates).
-- `design_report_page_from_requirements` con selector de visuales (necesita
-  `viz/visual_registry.py` + `viz/suggester.py`).
-- `select_visuals_for_kpis` (recomendador; usa visual_registry).
-- `audit_report_ux_and_storytelling` (heurístico, sin screenshots en v2).
-- `optimize_report_performance` (análisis heurístico).
-- `setup_rls_and_roles` (automatización de roles + matriz de prueba).
-- `create_semantic_model_from_schema` (scaffold desde spec).
-- `screenshot_report_pages` (best-effort via Desktop Bridge básico).
+**Sprint 9 — ✅ DONE (release v1.1.0)**
+- `refactor_to_calculation_groups` ✅ regex-based skeleton detector (YTD/QTD/MTD/PY/YOY/MOM/QOQ/WOW/...) con `min_candidates` filter + dry-run.
+- `select_visuals_for_kpis` ✅ rankea visuales via `viz/visual_suggester` (cardinality + audience + anti-recommendations).
+- `design_report_page_from_requirements` ✅ NL brief → KPI extraction (regex, 4 patrones) → F-pattern layout → atomic write de `page.json` + theme.
+- **Foundation nueva:** `viz/visual_registry.py` (8 visual types nativos estilo SQLBI) + `viz/visual_suggester.py` (algoritmo determinístico).
 
-Cada sprint cierra 3 tools. Estimado: 3 sprints × 2-3 días = 1-2 semanas
-de trabajo de dev senior.
+**Sprint 10 — pendiente** (`audit_report_ux_and_storytelling`, `optimize_report_performance`, `screenshot_report_pages`; ~3 días de dev senior).
+
+**Sprint 11 — pendiente** (`promote_in_pipeline`, `setup_rls_and_roles`, `create_semantic_model_from_schema`; ~3 días).
+
+> ℹ️ `optimize_report_performance` no tiene spec dedicado en `specs/tools/` todavía — outline pendiente de crear antes de implementar.
+
+Total restante v2: **6 tools** después de cerrar Sprint 9. Estimado 1-1.5 semanas de dev senior.
 
 ## Sprint 12+ (roadmap v3)
 
@@ -112,11 +113,11 @@ de trabajo de dev senior.
 ## Cómo verificar localmente
 
 ```bash
-pip install powerbi-orchestrator-mcp==1.0.0
-python scripts/verify_mcp_server.py    # fresh-install e2e check
-pytest tests/                          # 496 unit + integration tests
+pip install -e .
+python scripts/verify_mcp_server.py    # fresh-install e2e check (17 tools)
+pytest tests/                          # 526 unit + integration tests
 mypy --strict src/powerbi_orchestrator_mcp
 ruff check src/powerbi_orchestrator_mcp
 ```
 
-Resultado esperado: 14 tools/list, 496/496 tests passing, mypy+ruff clean.
+Resultado esperado: 17 tools/list, 526/526 tests passing, mypy+ruff clean, exit code 0.

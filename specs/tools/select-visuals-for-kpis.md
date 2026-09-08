@@ -1,81 +1,89 @@
-# Spec: Tool `select_visuals_for_kpis` (v2) — OUTLINE
+# Tool: `select_visuals_for_kpis` (v2)
 
-> Recomienda el visual primario + alternativas para un KPI dado,
-> considerando el data shape del modelo, la audiencia y las best-practices
-> de PBI/SQLBI.
+> Recommend the best visual type for a given KPI based on its semantic
+> type, data shape, and target audience. Returns a primary
+> recommendation + 2-3 alternatives + justification grounded in
+> established PBI / SQLBI guidelines.
 
-**Status:** v0.1 (outline — sem 6-8 de implementación)
-**Versión:** v2
-**Capa:** 5 (Viz/UX)
-
----
-
-## Objetivo
-
-Dado un KPI (medida o measure a crear) + el contexto del modelo +
-audiencia, recomendar:
-1. **Visual primario** (la mejor opción).
-2. **2-3 alternativas** ranked con justificación.
-3. **Anti-recomendaciones explícitas** ("no uses pie chart aquí porque
-   tienes >7 categorías").
-
-Diferencia con `design_report_page_from_requirements`: este tool es
-**atómico y enfocado** (un KPI = una recomendación); el otro diseña la
-página completa.
-
-## Inputs principales
-
-- `target`: PBIP/workspace con el modelo.
-- `kpi`: descriptor de la medida o measure a crear. Estructura:
-  - `measure_name`: opcional (si ya existe en el modelo).
-  - `dax_expression`: opcional (si se está creando).
-  - `semantic_type`: `single_value | comparison | trend | composition | distribution | correlation`.
-  - `cardinality`: estimado del resultado (single, low <10, medium <100, high >100).
-- `audience`: `executive | analyst | operational`.
-- `context`: opcional — páginas existentes, theme actual, etc.
-- `exclude_visuals`: lista de tipos a excluir (ej. la org prohíbe pie charts).
-
-## Outputs principales
-
-- `primary`: `VisualSpec` con `type`, `justification`, `expected_config`.
-- `alternatives`: lista de 2-3 `VisualSpec` ranked.
-- `anti_recommendations`: lista con `type` + razón.
-- `reasoning`: explicación textual de la decisión.
-- `examples`: 1-2 referencias de SQLBI / Microsoft docs que soportan la recomendación.
-
-## Dependencias
-
-- [`../01-orchestrator.md`](../01-orchestrator.md) — para ejecutarse dentro de un plan si el agente lo desea.
-- [`../04-viz-ux.md`](../04-viz-ux.md) — `VisualRegistry` + `VisualSuggester` ya especificados.
-- [`../05-engines-adapters.md`](../05-engines-adapters.md) — `powerbi-modeling-mcp` para introspeccionar el modelo (cardinalidades reales, relationships).
-
-## Acceptance criteria
-
-- [ ] Para KPI con `semantic_type=single_value` + audience=executive → recomienda `card` o `kpi` (no `pieChart`).
-- [ ] Para KPI con cardinalidad >100 → NO recomienda `pieChart` ni `donutChart`.
-- [ ] Para trend sobre 24+ meses → recomienda `lineChart` sobre `barChart`.
-- [ ] Justificaciones referencian el data shape real (cardinalidad medida, no estimada).
-- [ ] Anti-recomendaciones son accionables: incluyen qué hacer en su lugar.
-- [ ] Output es estable: mismo input → mismo output (sin LLM randomness).
-
-## Riesgos / open questions
-
-- **Best-practices source of truth**: las reglas se hardcodean en `VisualSuggester` o se cargan de un YAML externo actualizable? Decisión propuesta: YAML externo versionado, permite a la org customizar sin fork.
-- **Custom visuals certified**: ¿se incluyen en el ranking? Propuesta: como alternativa explícita, no en el top-3 default.
-- **LLM-as-judge opcional**: ¿un paso de "explain like I'm 5" sobre la recomendación usando LLM local? Propuesta v3.
-- **Performance**: introspeccionar el modelo puede ser lento (>10s para modelos grandes). Sampling opcional.
-- **Idioma de las justificaciones**: español / inglés / seguir locale del report.
-
-## Fuera de alcance (v2)
-
-- ❌ Ranking con LLM (la decisión es determinística).
-- ❌ Soporte para visual hierarchies complejas (ej. small multiples).
-- ❌ Drill-through automático entre visuales.
-- ❌ Recomendación de slicers (eso es parte de `design_report_page_from_requirements`).
+**Status:** v2 outline → implementation (Sprint 9)
+**Layer:** 5 (Viz/UX)
 
 ---
 
-## Spec completo
+## 1. Inputs
 
-Detalle (árbol de decisión del suggester, YAML de best-practices,
-heurísticas de anti-recommendation) en Semana 6-8.
+| Name | Type | Required | Default | Notes |
+|------|------|----------|---------|-------|
+| `kpis` | list[KPI] | ✅ | — | Each: name, semantic_type, fields, data_shape, audience |
+| `audience` | string | ❌ | `"executive"` | `executive` / `analyst` / `operational` |
+| `palette` | string | ❌ | `"okabe_ito"` | Colorblind-safe palette hint |
+| `include_alternatives` | bool | ❌ | `true` | Return 2-3 alternatives or just the primary |
+| `max_results` | int | ❌ | `3` | How many alternatives to return (1-5) |
+
+```python
+class KPI(BaseModel):
+    name: str
+    semantic_type: str  # single_value | comparison | trend | composition | distribution | correlation
+    fields: list[str]  # column references to be visualized
+    data_shape: dict[str, Any] = Field(default_factory=dict)  # e.g. {"cardinality": 10, "time_span": "5y"}
+```
+
+---
+
+## 2. Outputs
+
+| Name | Type | Notes |
+|------|------|-------|
+| `primary` | VisualRecommendation | Type, justification, expected fields, sample SQLBI reference |
+| `alternatives` | list[VisualRecommendation] | 2-3 ranked alternatives |
+| `rationale` | string | Full explanation (markdown) |
+| `warnings` | list[string] | E.g. "cardinality > 10000 → avoid pie/donut" |
+
+```python
+class VisualRecommendation(BaseModel):
+    type: str  # "card" | "barChart" | "lineChart" | etc.
+    justification: str
+    expected_fields: list[str]
+    sqlbi_reference: str | None
+    color_safe: bool
+```
+
+---
+
+## 3. Workflow
+
+1. **For each KPI**: compute features (cardinality, time-span, has
+   hierarchy, etc.).
+2. **Lookup**: query `viz.visual_registry` for candidates matching
+   the semantic type + features.
+3. **Score** each candidate against (in order):
+   - Data shape match (cardinality, time span).
+   - Audience preference (executives → simple visuals; analysts →
+     detailed).
+   - Anti-recommendations (e.g. pie chart with >7 categories).
+4. **Rank**: highest score = primary; next N = alternatives.
+5. **Annotate** with SQLBI / PBI docs reference.
+
+---
+
+## 4. Acceptance criteria
+
+- [ ] Returns a primary visual for every KPI.
+- [ ] Anti-recommendations are surfaced (e.g. pie chart with >7 slices).
+- [ ] Colorblind-safe palette referenced in `color_safe=True`.
+- [ ] Justification cites established guidelines (SQLBI / PBI docs).
+
+---
+
+## 5. Failure modes
+
+- **Unknown semantic_type:** fall back to `barChart` with a warning.
+- **No fields provided:** return error explaining the KPI needs at least
+  one column reference.
+
+---
+
+## 6. Cross-references
+
+- [`../../src/viz/visual_registry.py`](../../src/viz/visual_registry.py) — backing data
+- [`../04-viz-ux.md`](../04-viz-ux.md) §2 — recommendation algorithm spec
