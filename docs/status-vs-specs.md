@@ -98,17 +98,18 @@ Capa 6 (Orquestación): 100%
 | 8 | Test coverage >80% in layers 4 + 6 | ✅ |
 | 9 | `mypy --strict` + `ruff check` clean | ✅ |
 
-## 7. Quality metrics (post-Sprint 13)
+## 7. Quality metrics (post-Sprint 14)
 
 | Metric | Value |
 |--------|-------|
-| Test count | 637 (+12 new for Sprint 13 hardening) |
-| Coverage | ~94% |
-| mypy --strict | clean (62 source files) |
+| Test count | 665 (+28 new for Sprint 14 backlog closure) |
+| Coverage | ~95% |
+| mypy --strict | clean (64 source files) |
 | ruff | clean |
 | MCP tools registered | 26 (27 with safe_rename via template) |
 | Specs written | 14 |
 | Spec outlines (v2/v3) | 9 (all implemented) |
+| Hardening backlog | 2 items → **0 items** ✅ |
 
 ## 8. What's NOT in v1.5.0 (deferred, not blockers)
 
@@ -131,10 +132,11 @@ Capa 6 (Orquestación): 100%
 | Sprint 10 ✅ done | optimize_perf, audit_ux, screenshot | v1.2.0 + v1.3.0 |
 | Sprint 11 ✅ done | create_semantic_model, setup_rls, promote | v1.4.0 |
 | Sprint 12 ✅ done | commit_workspace_to_git, sync_git_to_workspace, set_sensitivity_labels | v1.5.0 |
-| **Sprint 13** ✅ done | hardening: 3-way merge mode + Dataflow Gen2 + pure-stdlib PNG renderer | **v1.6.0** |
-| Sprint 14+ (optional more hardening) | TE/TOM modeling adapter, story variance, multi-tenant transport | TBD |
+| Sprint 13 ✅ done | hardening: 3-way merge mode + Dataflow Gen2 + pure-stdlib PNG renderer | v1.6.0 |
+| **Sprint 14** ✅ done | TE/TOM modeling adapter + story variance regression analysis | **v1.7.0** |
+| Future (optional) | Real-binary integration tests, multi-tenant transport, more hardening | TBD |
 
-**v3 milestone (3/3) closed in Sprint 12. Sprint 13 closed hardening sprint.**
+**Backlog emptied in Sprint 14: TE adapter + story variance now DONE.**
 
 ---
 

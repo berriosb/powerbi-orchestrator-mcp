@@ -199,21 +199,61 @@ def refactor_to_calculation_groups(
                 "auto_apply=True but no measure_writer; cannot persist"
             )
         else:
-            # Persist each plan's items.
-            for plan in plans:
+            # Optional seam: if measure_writer is a TE adapter (i.e.
+            # implements ``refactor_to_calculation_groups``),
+            # delegate the persist step to TE and use the engine's
+            # returned remappings.
+            if hasattr(measure_writer, "refactor_to_calculation_groups"):
+                import asyncio
+
+                from powerbi_orchestrator_mcp.engines.te_adapter import (
+                    CalcGroupSpec,
+                )
+
+                te_spec = [
+                    CalcGroupSpec(
+                        skeleton=plan.template_measure,
+                        items=[
+                            {"name": it["name"], "expression": it["expression"]}
+                            for it in plan.items
+                        ],
+                    )
+                    for plan in plans
+                ]
                 try:
-                    write_result = measure_writer(
-                        target=target,
-                        plan_name=plan.name,
-                        items=list(plan.items),
+                    te_result = asyncio.run(
+                        measure_writer.refactor_to_calculation_groups(
+                            pbip_path=target,
+                            spec=te_spec,
+                            auto_apply=True,
+                        )
                     )
-                    changed_files.extend(
-                        write_result.get("changed_files", [])
-                    )
+                    if te_result.success:
+                        changed_files.extend(te_result.changed_files)
+                        # Merge engine remappings into measures_remapped
+                        # (the regulator of caller-visible dedup).
+                        for k, v in te_result.measure_remappings.items():
+                            measures_remapped.setdefault(k, v)
                 except Exception as exc:  # noqa: BLE001
                     warnings.append(
-                        f"failed to create calc group {plan.name}: {exc}"
+                        f"TE refactor_to_calculation_groups failed: {exc}"
                     )
+            else:
+                # Plain callable path (legacy contract).
+                for plan in plans:
+                    try:
+                        write_result = measure_writer(
+                            target=target,
+                            plan_name=plan.name,
+                            items=list(plan.items),
+                        )
+                        changed_files.extend(
+                            write_result.get("changed_files", [])
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        warnings.append(
+                            f"failed to create calc group {plan.name}: {exc}"
+                        )
 
     return RefactorResult(
         groups_created=plans,

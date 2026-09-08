@@ -507,7 +507,40 @@ def create_semantic_model_from_schema(
 
     pbip = Path(output_pbip_path)
     tmdl = render_tmdl(spec)
-    _write_pbip(pbip, spec.name, tmdl)
+
+    # Optional seam: if a TE/TOM-compatible modeling_engine is
+    # injected, delegate the actual write to it. Otherwise fall back
+    # to the deterministic string-template renderer.
+    if modeling_engine is not None and hasattr(
+        modeling_engine, "apply_model_spec"
+    ):
+        import asyncio
+
+        try:
+            apply_result = asyncio.run(
+                modeling_engine.apply_model_spec(
+                    pbip_path=output_pbip_path,
+                    tmdl_body=tmdl,
+                    model_name=spec.name,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return CreateSemanticModelResult(
+                validation_passed=False,
+                dry_run=dry_run,
+                warnings=[f"modeling_engine.apply_model_spec failed: {exc}"],
+            )
+        if not apply_result.success:
+            return CreateSemanticModelResult(
+                validation_passed=False,
+                dry_run=dry_run,
+                warnings=[
+                    apply_result.error_message
+                    or "modeling_engine reported failure"
+                ],
+            )
+    else:
+        _write_pbip(pbip, spec.name, tmdl)
     return result
 
 
