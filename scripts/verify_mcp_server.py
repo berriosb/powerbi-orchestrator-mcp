@@ -67,6 +67,9 @@ EXPECTED_TOOLS = {
     "optimize_report_performance",
     "audit_report_ux_and_storytelling",
     "screenshot_report_pages",
+    "create_semantic_model_from_schema",
+    "setup_rls_and_roles",
+    "promote_in_pipeline",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 

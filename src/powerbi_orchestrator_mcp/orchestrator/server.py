@@ -75,6 +75,9 @@ from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
 from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
     create_report_from_dataset as _create_report,
 )
+from powerbi_orchestrator_mcp.tools.create_semantic_model_from_schema import (
+    create_semantic_model_from_schema as _create_model,
+)
 from powerbi_orchestrator_mcp.tools.deploy_to_workspace import (
     deploy_to_workspace as _deploy,
 )
@@ -94,6 +97,9 @@ from powerbi_orchestrator_mcp.tools.optimize_report_performance import (
 from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
     pre_deploy_check as _pre_deploy,
 )
+from powerbi_orchestrator_mcp.tools.promote_in_pipeline import (
+    promote_in_pipeline as _promote,
+)
 from powerbi_orchestrator_mcp.tools.refactor_to_calculation_groups import (
     refactor_to_calculation_groups as _refactor,
 )
@@ -106,6 +112,9 @@ from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
 )
 from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
     select_visuals_for_kpis as _select_visuals,
+)
+from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
+    setup_rls_and_roles as _setup_rls,
 )
 
 # ---------------------------------------------------------------------------
@@ -1005,6 +1014,85 @@ async def screenshot_report_pages(
         resolution=resolution,
         output_dir=output_dir,
         wait_ms=wait_ms,
+    )
+    return result.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Sprint 11: v2 tools — model authoring (SPEC §6.2 + 02-cloud-fabric §3)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def create_semantic_model_from_schema(
+    spec_yaml: str | None = None,
+    spec_json: str | None = None,
+    output_pbip_path: str = "",
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Generate a TMDL semantic model from a declarative spec.
+
+    Validates the spec (Pydantic + dangling-reference check + basic DAX
+    lint) and either returns the validation result (dry_run=True) or
+    atomically writes the PBIP layout (dry_run=False). Output contains
+    ``tables_created``, ``relationships_created``, ``hierarchies_created``
+    and any ``lint_findings``.
+    """
+    result = _create_model(
+        spec_yaml=spec_yaml,
+        spec_json=spec_json,
+        output_pbip_path=output_pbip_path,
+        dry_run=dry_run,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def setup_rls_and_roles(
+    target: str,
+    spec_yaml: str | None = None,
+    spec_json: str | None = None,
+    dry_run: bool = True,
+    rollback_on_test_failure: bool = True,
+) -> dict[str, Any]:
+    """Apply RLS roles + members + run a test matrix against a TMDL model.
+
+    Validates the role spec, writes ``role <Name>`` blocks into
+    ``definition.tmdl`` (atomic), and runs each ``test_query`` through
+    the (injected) ``test_engine`` callable. Failures can roll back
+    edits when ``rollback_on_test_failure`` is True.
+    """
+    result = _setup_rls(
+        target=target,
+        spec_yaml=spec_yaml,
+        spec_json=spec_json,
+        dry_run=dry_run,
+        rollback_on_test_failure=rollback_on_test_failure,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def promote_in_pipeline(
+    pipeline_id: str,
+    source_stage: str = "dev",
+    target_stage: str = "test",
+    items: list[str] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Promote items between Fabric Deployment Pipeline stages.
+
+    Built-in gates (``pre_deploy_check`` / ``audit_model_and_report`` /
+    ``run_dax_regression``) wrap the corresponding tools; plug custom
+    gates via injected ``custom_gates``. ``fabric_client`` is the
+    injected REST adapter; absent it the tool runs in dry-run.
+    """
+    result = _promote(
+        pipeline_id=pipeline_id,
+        source_stage=source_stage,
+        target_stage=target_stage,
+        items=items,
+        dry_run=dry_run,
     )
     return result.model_dump(mode="json")
 

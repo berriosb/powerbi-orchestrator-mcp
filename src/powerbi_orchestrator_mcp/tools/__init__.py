@@ -10,6 +10,8 @@ Sprint 9: 3 v2 tools (SPEC §6.2: refactor_to_calculation_groups,
         select_visuals_for_kpis, design_report_page_from_requirements).
 Sprint 10: 3 v2 tools (SPEC §6.2: optimize_report_performance,
         audit_report_ux_and_storytelling, screenshot_report_pages).
+Sprint 11: 3 v2 tools (SPEC §6.2: create_semantic_model_from_schema,
+        setup_rls_and_roles, promote_in_pipeline).
 """
 
 from powerbi_orchestrator_mcp.tools.add_measure_with_validation import (
@@ -37,6 +39,20 @@ from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
 from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
     CreateReportFromDataset,
     create_report_from_dataset,
+)
+from powerbi_orchestrator_mcp.tools.create_semantic_model_from_schema import (
+    ColumnSpec,
+    CreateSemanticModelFromSchema,
+    CreateSemanticModelResult,
+    HierarchySpec,
+    MeasureSpec,
+    ModelSpec,
+    RelationshipCreated,
+    RelationshipSpec,
+    TableCreated,
+    TableSpec,
+    create_semantic_model_from_schema,
+    render_tmdl,
 )
 from powerbi_orchestrator_mcp.tools.deploy_to_workspace import (
     DeployResult,
@@ -72,6 +88,14 @@ from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
     PreDeployCheck,
     pre_deploy_check,
 )
+from powerbi_orchestrator_mcp.tools.promote_in_pipeline import (
+    GateExecuted,
+    PromotedItem,
+    PromoteInPipeline,
+    PromoteInPipelineResult,
+    QualityGate,
+    promote_in_pipeline,
+)
 from powerbi_orchestrator_mcp.tools.refactor_to_calculation_groups import (
     CalcGroupPlan,
     RefactorResult,
@@ -99,6 +123,16 @@ from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
     VisualRecommendation,
     select_visuals_for_kpis,
 )
+from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
+    RlsTestQuery,
+    RoleCreated,
+    RoleMember,
+    RoleSpec,
+    SetupRlsAndRoles,
+    SetupRlsAndRolesResult,
+    TestResult,
+    setup_rls_and_roles,
+)
 
 __all__ = [
     "AccessibilityResult",
@@ -111,6 +145,8 @@ __all__ = [
     "AuditResult",
     "CalcGroupPlan",
     "CreateReportFromDataset",
+    "CreateSemanticModelFromSchema",
+    "CreateSemanticModelResult",
     "DataDictionaryResult",
     "DeployResult",
     "DeployToWorkspace",
@@ -120,28 +156,50 @@ __all__ = [
     "DiffModels",
     "EditReportVisual",
     "GenerateDataDictionary",
+    "GateExecuted",
+    "HierarchySpec",
+    "MeasureSpec",
+    "ModelSpec",
     "OKABE_ITO_PALETTE",
     "OptimizeReportPerformance",
     "OptimizeReportPerformanceResult",
     "PageScreenshot",
     "PerformanceHotspot",
     "PreDeployCheck",
+    "PromoteInPipeline",
+    "PromoteInPipelineResult",
+    "PromotedItem",
+    "QualityGate",
     "RefactorResult",
     "RefactorToCalculationGroups",
+    "RelationshipCreated",
+    "RelationshipSpec",
+    "RoleCreated",
+    "RoleMember",
+    "RoleSpec",
     "RunDaxRegression",
     "RunRefresh",
+    "RlsTestQuery",
+    "SetupRlsAndRoles",
+    "SetupRlsAndRolesResult",
+    "TestResult",
     "ScreenshotComparisonFinding",
     "ScreenshotReportPages",
     "ScreenshotReportPagesResult",
     "SelectVisualsForKpis",
     "SelectVisualsResult",
+    "TableCreated",
+    "TableSpec",
     "UxFinding",
     "VisualRecommendation",
+    "ColumnSpec",
+    "render_tmdl",
     "add_measure_with_validation",
     "apply_theme_and_accessibility_rules",
     "audit_model_and_report",
     "audit_report_ux_and_storytelling",
     "create_report_from_dataset",
+    "create_semantic_model_from_schema",
     "deploy_to_workspace",
     "design_report_page_from_requirements",
     "diff_models",
@@ -149,9 +207,11 @@ __all__ = [
     "generate_data_dictionary",
     "optimize_report_performance",
     "pre_deploy_check",
+    "promote_in_pipeline",
     "refactor_to_calculation_groups",
     "run_dax_regression",
     "run_refresh",
     "screenshot_report_pages",
     "select_visuals_for_kpis",
+    "setup_rls_and_roles",
 ]
