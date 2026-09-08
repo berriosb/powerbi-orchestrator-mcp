@@ -8,6 +8,8 @@ Sprint 7: 8 MVP tools (SPEC §6.1).
 Sprint 8: 3 v1.1 tools (SPEC §6.3).
 Sprint 9: 3 v2 tools (SPEC §6.2: refactor_to_calculation_groups,
         select_visuals_for_kpis, design_report_page_from_requirements).
+Sprint 10: 3 v2 tools (SPEC §6.2: optimize_report_performance,
+        audit_report_ux_and_storytelling, screenshot_report_pages).
 """
 
 from powerbi_orchestrator_mcp.tools.add_measure_with_validation import (
@@ -25,6 +27,12 @@ from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
     AuditModelAndReport,
     AuditResult,
     audit_model_and_report,
+)
+from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
+    AuditReportUxAndStorytelling,
+    AuditReportUxAndStorytellingResult,
+    UxFinding,
+    audit_report_ux_and_storytelling,
 )
 from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
     CreateReportFromDataset,
@@ -78,6 +86,13 @@ from powerbi_orchestrator_mcp.tools.run_refresh import (
     RunRefresh,
     run_refresh,
 )
+from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
+    PageScreenshot,
+    ScreenshotComparisonFinding,
+    ScreenshotReportPages,
+    ScreenshotReportPagesResult,
+    screenshot_report_pages,
+)
 from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
     SelectVisualsForKpis,
     SelectVisualsResult,
@@ -91,6 +106,8 @@ __all__ = [
     "ApplyThemeAndAccessibilityRules",
     "AuditCheck",
     "AuditModelAndReport",
+    "AuditReportUxAndStorytelling",
+    "AuditReportUxAndStorytellingResult",
     "AuditResult",
     "CalcGroupPlan",
     "CreateReportFromDataset",
@@ -106,18 +123,24 @@ __all__ = [
     "OKABE_ITO_PALETTE",
     "OptimizeReportPerformance",
     "OptimizeReportPerformanceResult",
+    "PageScreenshot",
     "PerformanceHotspot",
     "PreDeployCheck",
     "RefactorResult",
     "RefactorToCalculationGroups",
     "RunDaxRegression",
     "RunRefresh",
+    "ScreenshotComparisonFinding",
+    "ScreenshotReportPages",
+    "ScreenshotReportPagesResult",
     "SelectVisualsForKpis",
     "SelectVisualsResult",
+    "UxFinding",
     "VisualRecommendation",
     "add_measure_with_validation",
     "apply_theme_and_accessibility_rules",
     "audit_model_and_report",
+    "audit_report_ux_and_storytelling",
     "create_report_from_dataset",
     "deploy_to_workspace",
     "design_report_page_from_requirements",
@@ -129,5 +152,6 @@ __all__ = [
     "refactor_to_calculation_groups",
     "run_dax_regression",
     "run_refresh",
+    "screenshot_report_pages",
     "select_visuals_for_kpis",
 ]

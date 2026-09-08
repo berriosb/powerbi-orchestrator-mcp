@@ -65,6 +65,8 @@ EXPECTED_TOOLS = {
     "select_visuals_for_kpis",
     "design_report_page_from_requirements",
     "optimize_report_performance",
+    "audit_report_ux_and_storytelling",
+    "screenshot_report_pages",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 

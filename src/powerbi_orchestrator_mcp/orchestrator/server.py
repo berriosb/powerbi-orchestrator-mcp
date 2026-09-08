@@ -69,6 +69,9 @@ from powerbi_orchestrator_mcp.tools.apply_theme_and_accessibility_rules import (
 from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
     audit_model_and_report as _audit,
 )
+from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
+    audit_report_ux_and_storytelling as _audit_ux,
+)
 from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
     create_report_from_dataset as _create_report,
 )
@@ -98,6 +101,9 @@ from powerbi_orchestrator_mcp.tools.run_dax_regression import (
     run_dax_regression as _dax_regress,
 )
 from powerbi_orchestrator_mcp.tools.run_refresh import run_refresh as _refresh
+from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
+    screenshot_report_pages as _screenshot,
+)
 from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
     select_visuals_for_kpis as _select_visuals,
 )
@@ -952,6 +958,53 @@ async def optimize_report_performance(
     result = _optimize_perf(
         pbip_path=pbip_path,
         target_load_ms=target_load_ms,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def audit_report_ux_and_storytelling(
+    pbip_path: str,
+    page_name: str | None = None,
+    audience_assumed: str | None = None,
+    strictness: str = "standard",
+) -> dict[str, Any]:
+    """Heuristic qualitative auditor (hierarchy/density/narrative/mobile/cohesion).
+
+    Reads PBIR pages and scores 0-100 with category breakdown + per-finding
+    suggestions. Strictness adjustable (lenient|standard|strict).
+    """
+    result = _audit_ux(
+        pbip_path=pbip_path,
+        page_name=page_name,
+        audience_assumed=audience_assumed,
+        strictness=strictness,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def screenshot_report_pages(
+    pbip_path: str,
+    pages: list[str] | None = None,
+    format: str = "png",
+    resolution: str = "desktop",
+    output_dir: str = "./screenshots",
+    wait_ms: int = 2000,
+) -> dict[str, Any]:
+    """Best-effort screenshot capture of PBIR pages.
+
+    Without Power BI Desktop Bridge this emits SVG wireframes + JSON
+    manifests (deterministic for regression diff). Real PNG/PDF needs
+    superbi-mcp on Windows; absence is reported via rendering_warnings.
+    """
+    result = _screenshot(
+        pbip_path=pbip_path,
+        pages=pages,
+        format=format,
+        resolution=resolution,
+        output_dir=output_dir,
+        wait_ms=wait_ms,
     )
     return result.model_dump(mode="json")
 
