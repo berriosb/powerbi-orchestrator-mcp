@@ -64,6 +64,7 @@ EXPECTED_TOOLS = {
     "refactor_to_calculation_groups",
     "select_visuals_for_kpis",
     "design_report_page_from_requirements",
+    "optimize_report_performance",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 

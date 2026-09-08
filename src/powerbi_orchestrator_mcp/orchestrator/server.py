@@ -85,6 +85,9 @@ from powerbi_orchestrator_mcp.tools.edit_report_visual import (
 from powerbi_orchestrator_mcp.tools.generate_data_dictionary import (
     generate_data_dictionary as _data_dict,
 )
+from powerbi_orchestrator_mcp.tools.optimize_report_performance import (
+    optimize_report_performance as _optimize_perf,
+)
 from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
     pre_deploy_check as _pre_deploy,
 )
@@ -924,6 +927,31 @@ async def design_report_page_from_requirements(
         audience=audience,
         palette=palette,
         inspector=inspector,
+    )
+    return result.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Sprint 10: v2 tools — performance audit (spec: 04-viz-ux.md §4)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def optimize_report_performance(
+    pbip_path: str,
+    target_load_ms: int = 5000,
+) -> dict[str, Any]:
+    """Heuristic performance analyzer for PBIR pages.
+
+    Reads ``pages/*/page.json`` and detects anti-patterns that impact
+    perceived load (visual density, pie/donut, custom visuals,
+    conditional-formatting). Returns a 0-100 score, estimated load in
+    ms, and a per-page list of hotspots with low/medium/high cost
+    classification and fix suggestions.
+    """
+    result = _optimize_perf(
+        pbip_path=pbip_path,
+        target_load_ms=target_load_ms,
     )
     return result.model_dump(mode="json")
 

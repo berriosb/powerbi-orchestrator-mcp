@@ -54,6 +54,12 @@ from powerbi_orchestrator_mcp.tools.generate_data_dictionary import (
     GenerateDataDictionary,
     generate_data_dictionary,
 )
+from powerbi_orchestrator_mcp.tools.optimize_report_performance import (
+    OptimizeReportPerformance,
+    OptimizeReportPerformanceResult,
+    PerformanceHotspot,
+    optimize_report_performance,
+)
 from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
     PreDeployCheck,
     pre_deploy_check,
@@ -98,6 +104,9 @@ __all__ = [
     "EditReportVisual",
     "GenerateDataDictionary",
     "OKABE_ITO_PALETTE",
+    "OptimizeReportPerformance",
+    "OptimizeReportPerformanceResult",
+    "PerformanceHotspot",
     "PreDeployCheck",
     "RefactorResult",
     "RefactorToCalculationGroups",
@@ -115,6 +124,7 @@ __all__ = [
     "diff_models",
     "edit_report_visual",
     "generate_data_dictionary",
+    "optimize_report_performance",
     "pre_deploy_check",
     "refactor_to_calculation_groups",
     "run_dax_regression",
