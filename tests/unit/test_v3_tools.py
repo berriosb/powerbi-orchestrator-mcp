@@ -13,6 +13,9 @@ from powerbi_orchestrator_mcp.tools.create_semantic_model_from_schema import (
     create_semantic_model_from_schema,
     render_tmdl,
 )
+from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
+    screenshot_report_pages,
+)
 
 YAML_SPEC = """\
 name: sales_v1
@@ -305,3 +308,153 @@ tables: []
         dataset = (tmp_path / "demo.pbip") / "sales_v1.Dataset"
         temps = list(dataset.glob(".tmp.*"))
         assert temps == []
+
+
+# ---------------------------------------------------------------------------
+# Sprint 13: pure-stdlib PNG rendering in screenshot_report_pages
+# ---------------------------------------------------------------------------
+
+
+class TestScreenshotPngRendering:
+    def test_png_returns_png_file(self, pbip_v3, tmp_path):
+        _v3_write_page(
+            pbip_v3,
+            "Overview",
+            [_v3_visual("v1", "card")],
+        )
+        out = tmp_path / "out"
+        result = screenshot_report_pages(
+            pbip_path=str(pbip_v3),
+            output_dir=str(out),
+            format="png",
+        )
+        png_path = out / "Overview.png"
+        assert png_path.exists()
+        assert result.screenshots[0].format == "png"
+        # Validate the PNG signature.
+        data = png_path.read_bytes()
+        assert data.startswith(b"\x89PNG\r\n\x1a\n")
+        # Should contain IHDR + IDAT + IEND.
+        assert b"IHDR" in data
+        assert b"IDAT" in data
+        assert b"IEND" in data
+
+    def test_png_with_multiple_visuals(
+        self, pbip_v3, tmp_path
+    ):
+        _v3_write_page(
+            pbip_v3,
+            "Overview",
+            [
+                _v3_visual("v1", "card"),
+                _v3_visual("v2", "lineChart"),
+                _v3_visual("v3", "pieChart"),
+            ],
+        )
+        out = tmp_path / "out"
+        screenshot_report_pages(
+            pbip_path=str(pbip_v3),
+            output_dir=str(out),
+            format="png",
+        )
+        png = out / "Overview.png"
+        assert png.exists()
+        # Validate IHDR dimensions match viewport.
+        # IHDR is at offset 8 (signature) + 4 (length) + 4 (type)
+        # = 16. Width is 4 bytes (big-endian).
+        width = int.from_bytes(png.read_bytes()[16:20], "big")
+        assert width == 1280  # desktop viewport
+
+    def test_png_manifest_records_format(
+        self, pbip_v3, tmp_path
+    ):
+        _v3_write_page(
+            pbip_v3,
+            "Overview",
+            [_v3_visual("v1", "card")],
+        )
+        out = tmp_path / "out"
+        screenshot_report_pages(
+            pbip_path=str(pbip_v3),
+            output_dir=str(out),
+            format="png",
+        )
+        manifest = json.loads(
+            (out / "Overview.manifest.json").read_text()
+        )
+        assert manifest["format"] == "png"
+
+    def test_svg_when_format_unsupported(
+        self, pbip_v3, tmp_path
+    ):
+        # If format is "pdf" we still fall back to SVG; the PNG path
+        # only triggers when format == "png".
+        _v3_write_page(
+            pbip_v3,
+            "Overview",
+            [_v3_visual("v1", "card")],
+        )
+        out = tmp_path / "out"
+        result = screenshot_report_pages(
+            pbip_path=str(pbip_v3),
+            output_dir=str(out),
+            format="pdf",
+        )
+        # No .png produced when format is "pdf".
+        assert not (out / "Overview.png").exists()
+        assert result.screenshots[0].format == "svg"
+
+    def test_png_module_pure_stlib(self) -> None:
+        # Verify the PNG helper directly produces valid bytes for an
+        # empty bundle (just a white rectangle of viewport size).
+        from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
+            _PageBundle,
+            _render_png,
+        )
+
+        bundle = _PageBundle(
+            page_name="Empty",
+            width=10,
+            height=10,
+            visuals=[],
+        )
+        png_bytes = _render_png(bundle, (10, 10))
+        assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        # Sanity: contains an IDAT chunk.
+        assert b"IDAT" in png_bytes
+
+
+# ---------------------------------------------------------------------------
+# Test helpers for screenshot_report_pages
+# ---------------------------------------------------------------------------
+
+
+def _v3_visual(vid: str, vtype: str, **extra: object) -> dict:
+    v: dict = {"id": vid, "visual": {"$type": vtype}}
+    v.update(extra)
+    return v
+
+
+def _v3_write_page(pbip: Path, page_name: str, visual_containers: list[dict]) -> None:
+    page_dir = pbip / "demo.Report" / "pages" / page_name
+    page_dir.mkdir(parents=True, exist_ok=True)
+    (page_dir / "page.json").write_text(
+        json.dumps(
+            {
+                "width": 1280,
+                "height": 720,
+                "visualContainers": visual_containers,
+            }
+        )
+    )
+
+
+# Reuse pbip_with_pages fixture from earlier? No — define our own.
+@pytest.fixture()
+def pbip_v3(tmp_path: Path) -> Path:
+    pbip = tmp_path / "demo.pbip"
+    pbip.mkdir()
+    (pbip / "demo.pbip").write_text("{}")
+    (pbip / "demo.Dataset").mkdir()
+    (pbip / "demo.Report").mkdir()
+    return pbip

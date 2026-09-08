@@ -98,17 +98,17 @@ Capa 6 (Orquestación): 100%
 | 8 | Test coverage >80% in layers 4 + 6 | ✅ |
 | 9 | `mypy --strict` + `ruff check` clean | ✅ |
 
-## 7. Quality metrics (post-Sprint 12)
+## 7. Quality metrics (post-Sprint 13)
 
 | Metric | Value |
 |--------|-------|
-| Test count | 625 (+41 new for Sprint 12 tools) |
-| Coverage | ~93% |
+| Test count | 637 (+12 new for Sprint 13 hardening) |
+| Coverage | ~94% |
 | mypy --strict | clean (62 source files) |
 | ruff | clean |
 | MCP tools registered | 26 (27 with safe_rename via template) |
-| Specs written | 14 (5 Tier-A + 4 Tier-B + 2 Tier-C + 2 cross-cutting + 1 new v3 set_labels) |
-| Spec outlines (v2/v3) | 9 (all implemented: 6/9 v2 already shipped; 3/3 v3 shipped this sprint) |
+| Specs written | 14 |
+| Spec outlines (v2/v3) | 9 (all implemented) |
 
 ## 8. What's NOT in v1.5.0 (deferred, not blockers)
 
@@ -130,10 +130,11 @@ Capa 6 (Orquestación): 100%
 | Sprint 9 ✅ done | refactor_to_calc, select_visuals, design_page | v1.1.0 |
 | Sprint 10 ✅ done | optimize_perf, audit_ux, screenshot | v1.2.0 + v1.3.0 |
 | Sprint 11 ✅ done | create_semantic_model, setup_rls, promote | v1.4.0 |
-| **Sprint 12** ✅ done | commit_workspace_to_git, sync_git_to_workspace, set_sensitivity_labels | **v1.5.0** |
-| Sprint 13+ (optional hardening) | git conflict auto-resolve (3-way merge), Dataflow Gen2 sync, real PNG renderer, story script variance | TBD |
+| Sprint 12 ✅ done | commit_workspace_to_git, sync_git_to_workspace, set_sensitivity_labels | v1.5.0 |
+| **Sprint 13** ✅ done | hardening: 3-way merge mode + Dataflow Gen2 + pure-stdlib PNG renderer | **v1.6.0** |
+| Sprint 14+ (optional more hardening) | TE/TOM modeling adapter, story variance, multi-tenant transport | TBD |
 
-**v3 milestone (3/3) closed in Sprint 12.**
+**v3 milestone (3/3) closed in Sprint 12. Sprint 13 closed hardening sprint.**
 
 ---
 

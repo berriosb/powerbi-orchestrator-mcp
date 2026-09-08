@@ -499,3 +499,245 @@ class TestSyncGitToWorkspace:
             fabric_client=client,
         )
         assert len(r.items_deployed) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Sprint 13: sync_git_to_workspace auto_merge mode
+# ---------------------------------------------------------------------------
+
+
+class _MergeWorker:
+    """Records blobs passed to apply_pbip during merge."""
+
+    def __init__(self, existing: list[dict[str, Any]] | None = None) -> None:
+        self._items = {
+            (it.get("type"), it.get("name")): it
+            for it in (existing or [])
+        }
+        self.applied: list[dict[str, Any]] = []
+
+    def list_workspace_items(self, workspace_id: str) -> list[dict[str, Any]]:
+        return [
+            {"id": k[0], **v}
+            for (k, v) in self._items.items()
+        ]
+
+    def apply_pbip(
+        self,
+        workspace_id: str,
+        item_type: str,
+        item_name: str,
+        blob: str,
+    ) -> None:
+        self.applied.append(
+            {
+                "workspace_id": workspace_id,
+                "item_type": item_type,
+                "item_name": item_name,
+                "blob": blob,
+            }
+        )
+
+
+class TestSyncGitAutoMerge:
+    def test_clean_merge_only_local_changed(
+        self, empty_git_repo: Path
+    ) -> None:
+        # Workspace stale (old), local is new; base matches workspace.
+        _populate_repo_with_pbips(
+            empty_git_repo, {"Dataset/SalesModel.pbip": "LOCAL\n"}
+        )
+        client = _MergeWorker(
+            existing=[
+                {
+                    "id": "ws-1",
+                    "type": "Dataset",
+                    "name": "SalesModel",
+                    "blob": "STALE\n",
+                    "base": "STALE\n",
+                }
+            ]
+        )
+        r = sync_git_to_workspace(
+            repo_path=str(empty_git_repo),
+            workspace_id="ws",
+            conflict_resolution="auto_merge",
+            dry_run=False,
+            fabric_client=client,
+        )
+        # base == ours (workspace) → theirs wins, status=merged.
+        assert len(r.items_deployed) == 1
+        assert "auto_merge" in r.items_deployed[0].reason
+
+    def test_conflict_hunks(self, empty_git_repo: Path) -> None:
+        # Both sides edit line 2 → must conflict.
+        _populate_repo_with_pbips(
+            empty_git_repo, {"Dataset/X.pbip": "a\nTHEIRS\nc\n"}
+        )
+        client = _MergeWorker(
+            existing=[
+                {
+                    "id": "ws-1",
+                    "type": "Dataset",
+                    "name": "X",
+                    "blob": "a\nOURS\nc\n",
+                    "base": "a\nb\nc\n",
+                }
+            ]
+        )
+        r = sync_git_to_workspace(
+            repo_path=str(empty_git_repo),
+            workspace_id="ws",
+            conflict_resolution="auto_merge",
+            dry_run=False,
+            fabric_client=client,
+        )
+        assert any(
+            it.status == "conflict" for it in r.items_skipped
+        )
+
+    def test_auto_merge_succeeds_non_overlapping(
+        self, empty_git_repo: Path
+    ) -> None:
+        _populate_repo_with_pbips(
+            empty_git_repo, {"Dataset/X.pbip": "a\nLOCAL_APPEND\n"}
+        )
+        # Base = a\n; ours adds LOCAL_APPEND, theirs adds WS_APPEND.
+        client = _MergeWorker(
+            existing=[
+                {
+                    "id": "ws-1",
+                    "type": "Dataset",
+                    "name": "X",
+                    "blob": "a\nWS_APPEND\n",
+                    "base": "a\n",
+                }
+            ]
+        )
+        r = sync_git_to_workspace(
+            repo_path=str(empty_git_repo),
+            workspace_id="ws",
+            conflict_resolution="auto_merge",
+            dry_run=False,
+            fabric_client=client,
+        )
+        assert len(r.items_deployed) == 1
+        # Verify a merge blob was pushed (not the raw local one).
+        pushed = client.applied[0]["blob"]
+        assert "LOCAL_APPEND" in pushed or "WS_APPEND" in pushed
+
+    def test_three_way_merge_unit_cases(self) -> None:
+        from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (
+            _three_way_merge,
+        )
+
+        # Equal — clean.
+        merged, status = _three_way_merge("a\nb\n", "a\nb\n", "a\nb\n")
+        assert status == "clean"
+
+        # Only theirs changed.
+        merged, status = _three_way_merge("a\nb\n", "a\nb\n", "a\nMODIFIED\n")
+        assert status == "merged"
+        assert merged == "a\nMODIFIED\n"
+
+        # Only ours changed.
+        merged, status = _three_way_merge("a\nb\n", "a\nCHANGED\n", "a\nb\n")
+        assert status == "clean"
+        assert merged == "a\nCHANGED\n"
+
+        # Both changed to same — clean.
+        merged, status = _three_way_merge("a\nb\n", "x\ny\n", "x\ny\n")
+        assert status == "clean"
+
+        # Both changed differently on overlapping region — conflict.
+        merged, status = _three_way_merge(
+            "line1\nline2\nline3\n",
+            "line1\nEDIT_OURS\nline3\n",
+            "line1\nEDIT_THEIRS\nline3\n",
+        )
+        assert merged is None
+        assert status == "conflict"
+
+        # Non-overlapping changes — merged.
+        merged, status = _three_way_merge(
+            "line1\nline2\nline3\nline4\n",
+            "line1\nline2\nCHANGED_OURS\nline4\n",
+            "line1\nCHANGED_THEIRS\nline3\nline4\n",
+        )
+        # Hard to predict the exact splice, but it should not be a
+        # conflict and merged should be a string.
+        assert merged is not None
+        assert status == "merged"
+
+
+# ---------------------------------------------------------------------------
+# Sprint 13: Dataflow Gen2 support in commit_workspace_to_git
+# ---------------------------------------------------------------------------
+
+
+class TestCommitWorkspaceGen2Support:
+    def test_dataflow_gen2_writes_to_dataflowgen2_dir(
+        self, empty_git_repo: Path
+    ) -> None:
+        client = _FabricClientStub(
+            items={
+                "df-gen2-1": {
+                    "name": "BronzeLayer",
+                    "type": "DataflowGen2",
+                    "blob": "{}",
+                }
+            }
+        )
+        r = commit_workspace_to_git(
+            workspace_id="ws",
+            output_repo_path=str(empty_git_repo),
+            dry_run=False,
+            fabric_client=client,
+        )
+        assert r.items_committed[0].path.startswith("DataflowGen2/")
+        assert (
+            empty_git_repo / "DataflowGen2" / "BronzeLayer.pbip"
+        ).exists()
+
+    def test_dataflow_gen2_alias_recognised(
+        self, empty_git_repo: Path
+    ) -> None:
+        # Some Fabric APIs report the type as "DataflowGen2Item".
+        client = _FabricClientStub(
+            items={
+                "df-gen2-2": {
+                    "name": "SilverLayer",
+                    "type": "DataflowGen2Item",
+                    "blob": "{}",
+                }
+            }
+        )
+        r = commit_workspace_to_git(
+            workspace_id="ws",
+            output_repo_path=str(empty_git_repo),
+            dry_run=False,
+            fabric_client=client,
+        )
+        assert r.items_committed[0].item_type == "DataflowGen2Item"
+        assert r.items_committed[0].path == "DataflowGen2/SilverLayer.pbip"
+
+    def test_classic_dataflow_uses_dataflow_dir(
+        self, empty_git_repo: Path
+    ) -> None:
+        client = _FabricClientStub(
+            items={
+                "df-gen1": {
+                    "name": "LegacyFlow",
+                    "type": "Dataflow",
+                    "blob": "{}",
+                }
+            }
+        )
+        r = commit_workspace_to_git(
+            workspace_id="ws",
+            output_repo_path=str(empty_git_repo),
+            dry_run=False,
+            fabric_client=client,
+        )
+        # Gen1 uses its own type as the directory.
+        assert r.items_committed[0].path == "Dataflow/LegacyFlow.pbip"

@@ -276,8 +276,12 @@ def commit_workspace_to_git(
             continue
         item_name = str(item.get("name", item_id))
         item_type = str(item.get("type", "Dataset"))
+        # Gen2 Dataflows live in their own subtree.
+        if item_type in {"DataflowGen2", "DataflowGen2Item"}:
+            target = repo_path / "DataflowGen2" / f"{item_name}.pbip"
+        else:
+            target = repo_path / item_type / f"{item_name}.pbip"
         blob = str(item.get("blob", _render_pbip(item)))
-        target = repo_path / item_type / f"{item_name}.pbip"
         target.parent.mkdir(parents=True, exist_ok=True)
 
         if _detect_target_conflict(repo_path, target, local.dirty_paths):

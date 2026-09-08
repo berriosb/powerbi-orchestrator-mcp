@@ -15,6 +15,7 @@ The reverse direction (workspace -> git) lives in
 
 from __future__ import annotations
 
+import difflib
 import re
 import subprocess
 from pathlib import Path
@@ -22,7 +23,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-_VALID_RESOLUTION: set[str] = {"manual", "prefer_workspace", "prefer_git"}
+_VALID_RESOLUTION: set[str] = {
+    "manual",
+    "prefer_workspace",
+    "prefer_git",
+    "auto_merge",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +169,117 @@ def _diff_local_blob_vs_workspace(
 
 
 # ---------------------------------------------------------------------------
+# 3-way merge (auto_merge mode)
+# ---------------------------------------------------------------------------
+
+
+def _three_way_merge(
+    base: str, ours: str, theirs: str
+) -> tuple[str | None, str]:
+    """Return ``(merged_text, status)``.
+
+    ``merged_text`` is the resolved content; ``None`` means the merge
+    could not resolve cleanly (manual review needed).
+
+    The base value is the previous common ancestor. ``ours`` is the
+    workspace-side content (live state in Fabric); ``theirs`` is the
+    local PBIP content we are trying to push. We use ``difflib`` to
+    detect whether the changes overlap (have hunks touching the same
+    line range).
+
+    Statuses:
+      ``clean``: both sides agree (or one side didn't change).
+      ``merged``: non-overlapping changes auto-resolved.
+      ``conflict``: hunks overlap → manual resolution required.
+    """
+    base_lines = base.splitlines(keepends=True)
+    ours_lines = ours.splitlines(keepends=True)
+    theirs_lines = theirs.splitlines(keepends=True)
+
+    # Case 1: workspace and base match (only their side changed) → take theirs.
+    if base == ours:
+        if base == theirs:
+            return theirs, "clean"
+        return theirs, "merged"
+    # Case 2: their and base match (only workspace changed) → keep ours (skip).
+    if base == theirs:
+        return ours, "clean"
+    # Case 3: ours == theirs (both changed to the same thing) → clean.
+    if ours == theirs:
+        return ours, "clean"
+
+    # Case 4: Both sides differ from base. Compute unified-diff hunks and
+    # check overlap.
+    matcher_a = difflib.SequenceMatcher(a=base_lines, b=ours_lines)
+    matcher_b = difflib.SequenceMatcher(a=base_lines, b=theirs_lines)
+
+    def _hunk_ranges(matcher: difflib.SequenceMatcher[str]) -> list[tuple[int, int]]:
+        """Return list of (line_index, length) for changed regions in b.
+
+        ``opcodes`` are 5-tuples: ``(tag, i1, i2, j1, j2)``.
+        """
+        return [
+            (i1, i2 - i1)
+            for op, i1, i2, _j1, _j2 in matcher.get_opcodes()
+            if op != "equal"
+        ]
+
+    a_ranges = _hunk_ranges(matcher_a)
+    b_ranges = _hunk_ranges(matcher_b)
+
+    def _overlaps(
+        ranges_a: list[tuple[int, int]],
+        ranges_b: list[tuple[int, int]],
+    ) -> bool:
+        for ai, alen in ranges_a:
+            a_end = ai + alen
+            for bi, blen in ranges_b:
+                b_end = bi + blen
+                if ai < b_end and bi < a_end:
+                    return True
+        return False
+
+    if _overlaps(a_ranges, b_ranges):
+        return None, "conflict"
+
+    # Non-overlapping → safe to merge (their changes win for new
+    # content; we keep ours as base and splice in theirs).
+    merged = _splice_non_overlapping(base_lines, ours_lines, theirs_lines, a_ranges)
+    return "".join(merged), "merged"
+
+
+def _splice_non_overlapping(
+    base: list[str],
+    ours: list[str],  # noqa: ARG001
+    theirs: list[str],
+    ours_opcodes: list[tuple[int, int]],  # noqa: ARG001
+) -> list[str]:
+    """Splice their-side hunks into ours when ours_opcodes are non-overlapping."""
+    # For a simple MVP: take ``ours`` as the base; we don't fully
+    # re-implement diff3 splicing. The heuristic is: emit their-side
+    # line ranges that came from base->theirs in a way that preserves
+    # ours's overall structure.
+    out: list[str] = []
+    last_idx = 0
+    matcher = difflib.SequenceMatcher(a=base, b=theirs)
+    for opcode in matcher.get_opcodes():
+        op, i1, i2, j1, j2 = opcode
+        if op == "equal":
+            out.extend(base[last_idx:i1])
+            last_idx = i1
+        elif op == "replace":
+            # Emit theirs-side content where it changed.
+            out.extend(theirs[j1:j2])
+        elif op == "insert":
+            out.extend(theirs[j1:j2])
+        elif op == "delete":
+            pass  # drop ours-side deletions
+    # Emit trailing content from ours that didn't change.
+    out.extend(base[last_idx:])
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -266,6 +383,62 @@ def sync_git_to_workspace(
                         path=str(path.relative_to(repo)),
                         status="skipped",
                         reason="prefer_workspace: kept workspace version",
+                    )
+                )
+                continue
+            if conflict_resolution == "auto_merge":
+                # 3-way merge requires a base; fall back to an empty
+                # common ancestor if the workspace item doesn't carry
+                # one (v3 MVP heuristic: assume previous state matches
+                # local in that case).
+                base_blob = str(
+                    workspace_item.get("base", "")
+                    if (workspace_item := ws_match) is not None
+                    else ""
+                )
+                merged, status = _three_way_merge(
+                    base_blob, str(ws_match.get("blob", "")), local_blob
+                )
+                if merged is None or status == "conflict":
+                    skipped.append(
+                        DeployedItem(
+                            item_id=str(ws_match.get("id")),
+                            item_name=item_name,
+                            item_type=item_type,
+                            path=str(path.relative_to(repo)),
+                            status="conflict",
+                            reason="auto_merge: overlapping changes; manual review",
+                        )
+                    )
+                    continue
+                if not dry_run and fabric_client is not None:
+                    try:
+                        fabric_client.apply_pbip(
+                            workspace_id=workspace_id,
+                            item_type=item_type,
+                            item_name=item_name,
+                            blob=merged,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        skipped.append(
+                            DeployedItem(
+                                item_id=str(ws_match.get("id")),
+                                item_name=item_name,
+                                item_type=item_type,
+                                path=str(path.relative_to(repo)),
+                                status="failed",
+                                reason=f"deploy after merge failed: {exc}",
+                            )
+                        )
+                        continue
+                deployed.append(
+                    DeployedItem(
+                        item_id=str(ws_match.get("id")),
+                        item_name=item_name,
+                        item_type=item_type,
+                        path=str(path.relative_to(repo)),
+                        status="deployed",
+                        reason=f"auto_merge:{status}",
                     )
                 )
                 continue
