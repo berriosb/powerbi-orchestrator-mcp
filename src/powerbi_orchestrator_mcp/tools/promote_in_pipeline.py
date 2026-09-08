@@ -22,7 +22,6 @@ Quality gates are pluggable via ``custom_gates`` (list of callables).
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
@@ -388,4 +387,3 @@ __all__ = [
 
 
 # Re-export the gate types so callers can construct them.
-_ = json

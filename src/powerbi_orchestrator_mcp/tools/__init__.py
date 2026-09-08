@@ -12,6 +12,8 @@ Sprint 10: 3 v2 tools (SPEC §6.2: optimize_report_performance,
         audit_report_ux_and_storytelling, screenshot_report_pages).
 Sprint 11: 3 v2 tools (SPEC §6.2: create_semantic_model_from_schema,
         setup_rls_and_roles, promote_in_pipeline).
+Sprint 12: 3 v3 tools (SPEC §6.2: commit_workspace_to_git,
+        sync_git_to_workspace, set_sensitivity_labels).
 """
 
 from powerbi_orchestrator_mcp.tools.add_measure_with_validation import (
@@ -35,6 +37,12 @@ from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
     AuditReportUxAndStorytellingResult,
     UxFinding,
     audit_report_ux_and_storytelling,
+)
+from powerbi_orchestrator_mcp.tools.commit_workspace_to_git import (
+    CommittedItem,
+    CommitWorkspaceToGit,
+    CommitWorkspaceToGitResult,
+    commit_workspace_to_git,
 )
 from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
     CreateReportFromDataset,
@@ -123,6 +131,13 @@ from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
     VisualRecommendation,
     select_visuals_for_kpis,
 )
+from powerbi_orchestrator_mcp.tools.set_sensitivity_labels import (
+    LabeledItem,
+    LabelTarget,
+    SetSensitivityLabels,
+    SetSensitivityLabelsResult,
+    set_sensitivity_labels,
+)
 from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
     RlsTestQuery,
     RoleCreated,
@@ -133,10 +148,20 @@ from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
     TestResult,
     setup_rls_and_roles,
 )
+from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (
+    DeployedItem,
+    SyncGitToWorkspace,
+    SyncGitToWorkspaceResult,
+    sync_git_to_workspace,
+)
 
 __all__ = [
     "AccessibilityResult",
     "AddMeasureWithValidation",
+    "CommitWorkspaceToGit",
+    "CommitWorkspaceToGitResult",
+    "CommittedItem",
+    "DeployedItem",
     "ApplyThemeAndAccessibilityRules",
     "AuditCheck",
     "AuditModelAndReport",
@@ -158,6 +183,8 @@ __all__ = [
     "GenerateDataDictionary",
     "GateExecuted",
     "HierarchySpec",
+    "LabelTarget",
+    "LabeledItem",
     "MeasureSpec",
     "ModelSpec",
     "OKABE_ITO_PALETTE",
@@ -182,6 +209,10 @@ __all__ = [
     "RlsTestQuery",
     "SetupRlsAndRoles",
     "SetupRlsAndRolesResult",
+    "SetSensitivityLabels",
+    "SetSensitivityLabelsResult",
+    "SyncGitToWorkspace",
+    "SyncGitToWorkspaceResult",
     "TestResult",
     "ScreenshotComparisonFinding",
     "ScreenshotReportPages",
@@ -213,5 +244,8 @@ __all__ = [
     "run_refresh",
     "screenshot_report_pages",
     "select_visuals_for_kpis",
+    "commit_workspace_to_git",
+    "set_sensitivity_labels",
     "setup_rls_and_roles",
+    "sync_git_to_workspace",
 ]

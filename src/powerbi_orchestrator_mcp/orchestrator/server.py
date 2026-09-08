@@ -72,6 +72,9 @@ from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
 from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
     audit_report_ux_and_storytelling as _audit_ux,
 )
+from powerbi_orchestrator_mcp.tools.commit_workspace_to_git import (
+    commit_workspace_to_git as _commit_ws,
+)
 from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
     create_report_from_dataset as _create_report,
 )
@@ -113,8 +116,14 @@ from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
 from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
     select_visuals_for_kpis as _select_visuals,
 )
+from powerbi_orchestrator_mcp.tools.set_sensitivity_labels import (
+    set_sensitivity_labels as _set_labels,
+)
 from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
     setup_rls_and_roles as _setup_rls,
+)
+from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (
+    sync_git_to_workspace as _sync_git,
 )
 
 # ---------------------------------------------------------------------------
@@ -1092,6 +1101,91 @@ async def promote_in_pipeline(
         source_stage=source_stage,
         target_stage=target_stage,
         items=items,
+        dry_run=dry_run,
+    )
+    return result.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Sprint 12: v3 tools (governance + Git sync)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def commit_workspace_to_git(
+    workspace_id: str,
+    output_repo_path: str,
+    branch: str | None = None,
+    commit_message: str | None = None,
+    exclude_items: list[str] | None = None,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Snapshot a Fabric workspace into a local Git repo.
+
+    Reads workspace state via ``fabric_client.snapshot_workspace`` and
+    commits each item as ``<type>/<name>.pbip``. Warns on local
+    uncommitted changes or large files (>50MB by default). ``dry_run``
+    skips the commit.
+    """
+    result = _commit_ws(
+        workspace_id=workspace_id,
+        output_repo_path=output_repo_path,
+        branch=branch,
+        commit_message=commit_message,
+        exclude_items=exclude_items,
+        dry_run=dry_run,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def sync_git_to_workspace(
+    repo_path: str,
+    workspace_id: str,
+    branch_or_commit: str = "HEAD",
+    conflict_resolution: str = "manual",
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Deploy a local Git PBIP tree to a Fabric workspace.
+
+    For v3 inicial the only conflict-resolution mode is ``manual``:
+    conflicts are surfaced in ``items_skipped`` for human review. The
+    optional ``pre_deploy_profile`` + ``pre_deploy_findings`` arguments
+    can be passed via the input schema when you add them to the MCP
+    wrapper.
+    """
+    result = _sync_git(
+        repo_path=repo_path,
+        workspace_id=workspace_id,
+        branch_or_commit=branch_or_commit,
+        conflict_resolution=conflict_resolution,
+        dry_run=dry_run,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def set_sensitivity_labels(
+    items: list[dict[str, str]],
+    label_id: str,
+    label_name: str,
+    admin_scopes: list[str] | None = None,
+    redact_names: bool = True,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Apply a Microsoft Purview sensitivity label to one or more items.
+
+    Batched via ``POST /admin/items/labels/bulkSet``. Gated by an
+    explicit ``*.Admin.*`` (or ``InformationProtectionPolicy.Apply.All``)
+    scope; missing scope elicits remediation. Names are SHA-256 redacted
+    in outputs (toggle via ``redact_names``).
+    """
+    result = _set_labels(
+        items=items,
+        label_id=label_id,
+        label_name=label_name,
+        admin_scopes=admin_scopes,
+        redact_names=redact_names,
         dry_run=dry_run,
     )
     return result.model_dump(mode="json")

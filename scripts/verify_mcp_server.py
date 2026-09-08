@@ -70,6 +70,9 @@ EXPECTED_TOOLS = {
     "create_semantic_model_from_schema",
     "setup_rls_and_roles",
     "promote_in_pipeline",
+    "commit_workspace_to_git",
+    "sync_git_to_workspace",
+    "set_sensitivity_labels",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
