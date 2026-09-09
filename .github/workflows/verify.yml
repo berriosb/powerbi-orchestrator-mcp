@@ -86,13 +86,13 @@ jobs:
           pip install pytest-cov
 
       - name: Run pytest with coverage
-        run: |
-          pytest tests/ \
-            --cov=powerbi_orchestrator_mcp \
-            --cov-report=term-missing \
-            --cov-report=xml:coverage.xml \
-            --cov-fail-under=80 \
-            -q
+        run: >-
+          pytest tests/
+          --cov=powerbi_orchestrator_mcp
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+          --cov-fail-under=80
+          -q
 
       - name: Fresh-install e2e (Linux only — bash subprocess needed)
         if: matrix.os == 'ubuntu-latest'
