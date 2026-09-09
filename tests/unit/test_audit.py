@@ -399,7 +399,14 @@ class TestVerifyCli:
             ],
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": "src"},
+            env={
+                **os.environ,
+                "PYTHONPATH": "src",
+                # Force UTF-8 on Windows; otherwise subprocess stdout
+                # crashes with 'charmap' codec errors on \u2713.
+                "PYTHONIOENCODING": "utf-8",
+                "PYTHONUTF8": "1",
+            },
         )
         # Note: this subprocess uses the real AUDIT_DIR, not the temp one,
         # so we can't assert on its contents. We assert the script ran
