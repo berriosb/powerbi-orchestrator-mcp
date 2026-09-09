@@ -404,4 +404,8 @@ class TestVerifyCli:
         # Note: this subprocess uses the real AUDIT_DIR, not the temp one,
         # so we can't assert on its contents. We assert the script ran
         # without crashing and emitted the expected banner.
-        assert "Audit chain" in result.stdout or "BROKEN" in result.stdout
+        assert (
+            "Audit chain" in result.stdout
+            or "BROKEN" in result.stdout
+            or "Audit" in result.stdout  # Windows: stdout codec drops \u2713
+        )

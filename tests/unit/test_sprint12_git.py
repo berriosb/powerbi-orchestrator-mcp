@@ -694,7 +694,10 @@ class TestCommitWorkspaceGen2Support:
             dry_run=False,
             fabric_client=client,
         )
-        assert r.items_committed[0].path.startswith("DataflowGen2/")
+        # Use Path.parts for cross-platform check (Windows uses '\\').
+        path_parts = Path(r.items_committed[0].path).parts
+        assert path_parts[0] == "DataflowGen2"
+        assert path_parts[1] == "BronzeLayer.pbip"
         assert (
             empty_git_repo / "DataflowGen2" / "BronzeLayer.pbip"
         ).exists()
@@ -719,7 +722,8 @@ class TestCommitWorkspaceGen2Support:
             fabric_client=client,
         )
         assert r.items_committed[0].item_type == "DataflowGen2Item"
-        assert r.items_committed[0].path == "DataflowGen2/SilverLayer.pbip"
+        path_parts = Path(r.items_committed[0].path).parts
+        assert path_parts == ("DataflowGen2", "SilverLayer.pbip")
 
     def test_classic_dataflow_uses_dataflow_dir(
         self, empty_git_repo: Path
@@ -740,4 +744,5 @@ class TestCommitWorkspaceGen2Support:
             fabric_client=client,
         )
         # Gen1 uses its own type as the directory.
-        assert r.items_committed[0].path == "Dataflow/LegacyFlow.pbip"
+        path_parts = Path(r.items_committed[0].path).parts
+        assert path_parts == ("Dataflow", "LegacyFlow.pbip")
