@@ -42,10 +42,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install dev tools only
+      - name: Install package + dev tools
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy types-PyYAML
+          # mypy needs the package importable to validate the
+          # @mcp.tool() decorator return types.
+          pip install -e ".[dev]"
 
       - name: Run ruff
         run: ruff check src/powerbi_orchestrator_mcp
