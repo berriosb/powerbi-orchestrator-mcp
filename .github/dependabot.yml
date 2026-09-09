@@ -1,0 +1,53 @@
+# Dependabot configuration for powerbi-orchestrator-mcp
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # Runtime + dev dependencies tracked in pyproject.toml.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+    # Group all production deps into one weekly PR to avoid noise.
+    groups:
+      runtime-deps:
+        patterns:
+          - "azure-*"
+          - "mcp"
+          - "pydantic*"
+          - "httpx"
+          - "structlog"
+          - "pyyaml"
+          - "rich"
+      dev-deps:
+        patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy"
+          - "types-*"
+    # Don't open PRs for major version bumps of pinned deps — surface
+    # them as issues via the version-update feature instead.
+    ignore:
+      - dependency-name: "pydantic*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
+    # Limit to 5 open PRs at a time to avoid PR pile-up.
+    open-pull-requests-limit: 5
+    # Auto-merge patch updates; let a human review minor/major.
+    # (Disabled by default — uncomment to enable auto-merge.)
+    # automerge: true
+
+  # GitHub Actions workflows (lint + test + Dependabot itself).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions-deps:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 3

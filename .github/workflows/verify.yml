@@ -3,50 +3,112 @@ name: verify
 on:
   push:
     branches: [main]
+    tags-ignore: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
+# Cancel stale runs on the same branch to save CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimal GITHUB_TOKEN permissions; the workflow only needs to read
+# the repo and upload coverage artifacts.
+permissions:
+  contents: read
+
 jobs:
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # ---------------------------------------------------------------
+  # Job 1: lint (fast, no Python deps install). Splits fail-fast:
+  # if lint fails the test job is skipped on the same commit.
+  # ---------------------------------------------------------------
+  lint:
+    name: lint (py${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11", "3.12"]
+        os: [ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install dependencies
+      - name: Install dev tools only
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy types-PyYAML
+
+      - name: Run ruff
+        run: ruff check src/powerbi_orchestrator_mcp
+
+      - name: Run mypy --strict
+        run: mypy --strict src/powerbi_orchestrator_mcp
+
+  # ---------------------------------------------------------------
+  # Job 2: test (full pytest + coverage + fresh-install e2e).
+  # Depends on `lint` so we don't run tests when lint is broken.
+  # ---------------------------------------------------------------
+  test:
+    name: test (py${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package + dev extras
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-
-      - name: Verify MCP server end-to-end (fresh install)
-        run: |
-          python -m venv /tmp/verify_venv
-          /tmp/verify_venv/bin/pip install --upgrade pip
-          /tmp/verify_venv/bin/pip install . || pip install .
-          # verify_mcp_server.py uses the venv's python to find the
-          # installed binary automatically.
-          /tmp/verify_venv/bin/python scripts/verify_mcp_server.py
+          pip install pytest-cov
 
       - name: Run pytest with coverage
         run: |
-          pytest tests/ --cov=powerbi_orchestrator_mcp --cov-report=term-missing
+          pytest tests/ \
+            --cov=powerbi_orchestrator_mcp \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=80 \
+            -q
 
-      - name: Run mypy --strict
+      - name: Fresh-install e2e (Linux only — bash subprocess needed)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          mypy --strict src/powerbi_orchestrator_mcp
-
-      - name: Run ruff check
-        run: |
-          ruff check src/powerbi_orchestrator_mcp
+          python -m venv /tmp/verify_venv
+          /tmp/verify_venv/bin/pip install --upgrade pip
+          /tmp/verify_venv/bin/pip install .
+          /tmp/verify_venv/bin/python scripts/verify_mcp_server.py
 
       - name: Sanity-check no __pycache__ in tree
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          git status --porcelain | grep -E '__pycache__|\.pyc$' && exit 1 || true
+          ! git status --porcelain | grep -E '__pycache__|\.pyc$'
+
+      - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          retention-days: 14
