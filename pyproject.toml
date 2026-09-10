@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "powerbi-orchestrator-mcp"
-version = "0.1.0"
+version = "1.7.0"
 description = "High-level orchestration MCP server for Power BI and Microsoft Fabric"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ authors = [
     { name = "Bastian Berrios" }
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
