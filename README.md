@@ -7,7 +7,8 @@
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-**Status:** v1.0.0 released ([release notes](./RELEASE-NOTES-v1.0.0.md)) — MVP done (15/15 tools: 12 MVP + 3 v1.1).
+**Status:** v1.7.0 — Beta. 26 tools implementadas, backlog de hardening
+cerrado ([release notes](./RELEASE-NOTES-v1.7.0.md)).
 
 ---
 
@@ -77,7 +78,7 @@ Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
 ## Quick links
 
 - [`SPEC.md`](./SPEC.md) — visión, arquitectura 6 capas, MVP ambicioso.
-- [`RELEASE-NOTES-v0.1.0.md`](./RELEASE-NOTES-v0.1.0.md) — qué incluye v0.1.0.
+- [`RELEASE-NOTES-v1.7.0.md`](./RELEASE-NOTES-v1.7.0.md) — última release.
 - [`docs/architecture.md`](./docs/architecture.md) — arquitectura detallada.
 - [`docs/engines-setup.md`](./docs/engines-setup.md) — instalar engines opcionales.
 - [`docs/connect-target.md`](./docs/connect-target.md) — uso del entry-point tool.
@@ -88,9 +89,23 @@ Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
 
 ### 1. Instalar el orquestrador (Python)
 
+> **Nota:** el paquete todavía **no está publicado en PyPI**. Instalar
+> desde el repositorio:
+
 ```bash
-pip install powerbi-orchestrator-mcp
+pip install git+https://github.com/berriosb/powerbi-orchestrator-mcp.git
 ```
+
+O para desarrollo local:
+
+```bash
+git clone https://github.com/berriosb/powerbi-orchestrator-mcp.git
+cd powerbi-orchestrator-mcp
+pip install -e ".[dev]"
+```
+
+Cuando se publique en PyPI, la instalación será
+`pip install powerbi-orchestrator-mcp`.
 
 El comando `powerbi-orchestrator-mcp` queda disponible en el PATH.
 
@@ -140,28 +155,51 @@ Claude Code, Cursor** y cualquier cliente MCP stdio.
 
 ### 4. Probar
 
-En tu cliente MCP, el LLM ahora ve 3 tools (MVP):
+En tu cliente MCP, el LLM ve **26 tools de alto nivel**, agrupadas por capa:
+
+**Sesión y planificación**
 - `connect_target` — abrir sesión contra un PBIP / Fabric workspace / PBI Desktop
 - `plan_change` — crear un plan versionable
 - `apply_plan` — ejecutar el plan con rollback
 
-Con esos 3, el LLM puede hacer safe_rename, audit, deploy, y regression
-sobre cualquier PBIP local (sin engines externos) o cualquier Fabric
-workspace (con `powerbi-modeling-mcp` instalado).
+**Modelado semántico**
+- `create_semantic_model_from_schema`, `add_measure_with_validation`,
+  `refactor_to_calculation_groups`, `diff_models`, `generate_data_dictionary`
 
-## Estado actual (v0.1.0)
+**Autoría de reportes**
+- `create_report_from_dataset`, `edit_report_visual`,
+  `design_report_page_from_requirements`, `select_visuals_for_kpis`,
+  `screenshot_report_pages`, `optimize_report_performance`
 
-- ✅ 3 tools MVP funcionando (connect/plan/apply)
+**Nube Fabric / Power BI Service**
+- `deploy_to_workspace`, `run_refresh`, `promote_in_pipeline`,
+  `setup_rls_and_roles`, `set_sensitivity_labels`,
+  `commit_workspace_to_git`, `sync_git_to_workspace`, `pre_deploy_check`
+
+**Auditoría y calidad**
+- `audit_model_and_report`, `audit_report_ux_and_storytelling`,
+  `apply_theme_and_accessibility_rules`, `run_dax_regression`
+
+Con `connect_target` + `plan_change` + `apply_plan` solos, el LLM ya puede
+hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
+(sin engines externos) o cualquier Fabric workspace (con
+`powerbi-modeling-mcp` instalado).
+
+## Estado actual (v1.7.0)
+
+- ✅ 26 tools implementadas (modelado, reportes, nube, auditoría, UX)
 - ✅ Cross-engine rollback
 - ✅ Audit log con HMAC chain
-- ✅ PlanBuilder con 4 templates MVP
+- ✅ PlanBuilder con templates versionables
 - ✅ Engine adapters: `python_report` (built-in), `powerbi-modeling-mcp`,
-  `superbi-mcp` (mock-tested)
-- ✅ 374 tests, 89% coverage, mypy --strict clean, ruff clean
-- ⏳ Pendiente Week 2: `te`, `dscmd`, `pbip-validator` adapters
-- ⏳ Pendiente: tests con binaries reales
+  `superbi-mcp`, `te` (Tabular Editor)
+- ✅ Story variance analysis (detección de regresiones visuales)
+- ✅ mypy --strict clean, ruff clean, CI matrix Linux/macOS/Windows
+- ✅ Backlog de hardening cerrado (0 items pendientes)
+- ⏳ Pendiente: publicación en PyPI
+- ⏳ Pendiente: tests E2E con binaries reales (`te`, `dscmd`)
 
-Ver [`RELEASE-NOTES-v0.1.0.md`](./RELEASE-NOTES-v0.1.0.md) para detalles completos.
+Ver [`RELEASE-NOTES-v1.7.0.md`](./RELEASE-NOTES-v1.7.0.md) para detalles completos.
 
 ## Licencia
 

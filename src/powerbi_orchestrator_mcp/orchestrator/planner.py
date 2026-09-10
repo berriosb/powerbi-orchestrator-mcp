@@ -14,6 +14,7 @@ from typing import Any, ClassVar
 
 import yaml
 
+from powerbi_orchestrator_mcp import __version__
 from powerbi_orchestrator_mcp.orchestrator.identifiers import new_plan_id
 from powerbi_orchestrator_mcp.orchestrator.plan_models import (
     EstimatedChanges,
@@ -45,7 +46,9 @@ class PlanBuilder:
     serializable, Git-friendly, and consumable by ``apply_plan``.
     """
 
-    GENERATED_BY: ClassVar[str] = "powerbi-orchestrator-mcp v0.1.0"
+    GENERATED_BY: ClassVar[str] = f"powerbi-orchestrator-mcp v{__version__}"
+    # NOTE: plan file schema version, intentionally decoupled from the
+    # package version. Bump only when the serialized plan shape changes.
     PLAN_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
 
     TEMPLATES: ClassVar[frozenset[str]] = frozenset(
