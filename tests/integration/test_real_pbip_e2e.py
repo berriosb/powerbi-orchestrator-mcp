@@ -225,6 +225,21 @@ class TestPropagateRenameOnRealFixture:
         assert "[YTD Sales]" not in json.dumps(page_data)
 
 
+# Skip subprocess-based CLI tests on Windows: WinError 10106 in the
+# GitHub Actions Windows runner (asyncio event loop fails to initialize
+# inside a subprocess spawned from inside pytest). The unit tests in
+# tests/unit/test_cli.py cover the CLI in-process and run on all
+# platforms.
+_SKIP_CLI_ON_WINDOWS = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "WinError 10106: subprocess-based CLI tests fail in CI Windows "
+        "runner. Covered by tests/unit/test_cli.py in-process."
+    ),
+)
+
+
+@_SKIP_CLI_ON_WINDOWS
 class TestCliOnRealFixture:
     def test_cli_version(self) -> None:
         result = subprocess.run(
