@@ -13,7 +13,6 @@ from powerbi_orchestrator_mcp.tools.set_sensitivity_labels import (
     set_sensitivity_labels,
 )
 
-
 VALID_GUID = "00000000-0000-0000-0000-000000000001"
 VALID_LABEL_GUID = "11111111-1111-1111-1111-111111111111"
 

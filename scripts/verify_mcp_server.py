@@ -73,6 +73,7 @@ EXPECTED_TOOLS = {
     "commit_workspace_to_git",
     "sync_git_to_workspace",
     "set_sensitivity_labels",
+    "powerbi_health",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -364,6 +365,41 @@ def main() -> int:
                 isinstance(structured, dict)
                 and "engines_available" in structured,
             )
+
+        # ---- 4b. tools/call: powerbi_health (Sprint 16) ----
+        print("\n[4b] tools/call — powerbi_health diagnostic snapshot")
+        _send_message(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "powerbi_health",
+                    "arguments": {"include_engine_details": False},
+                },
+            },
+        )
+        resp = _read_message(proc, timeout=15.0)
+        result = resp.get("result", {})
+        structured = result.get("structuredContent", {})
+        all_passed &= _check(
+            "powerbi_health returned a response",
+            "result" in resp,
+            f"keys={list(result.keys())}",
+        )
+        all_passed &= _check(
+            "powerbi_health structuredContent has server_version",
+            isinstance(structured, dict) and "server_version" in structured,
+        )
+        all_passed &= _check(
+            "powerbi_health structuredContent has uptime_seconds",
+            isinstance(structured, dict) and "uptime_seconds" in structured,
+        )
+        all_passed &= _check(
+            "powerbi_health structuredContent has checks",
+            isinstance(structured, dict) and "checks" in structured,
+        )
 
     except Exception as exc:
         all_passed = False

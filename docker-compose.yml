@@ -1,0 +1,41 @@
+# docker-compose for local development of the orchestrator.
+#
+# Brings up:
+# - The orchestrator MCP server (stdio).
+# - A scratch volume for the persistent state (plan DB, execution DB,
+#   audit log).
+#
+# Usage:
+#   docker compose up                  # interactive stdio (MCP client)
+#   docker compose run --rm orchestrator version
+#   docker compose run --rm orchestrator validate /workspace/sample.pbip
+#
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: powerbi-orchestrator-mcp:1.8.0
+    container_name: powerbi-orchestrator-mcp
+    environment:
+      # Set auth mode + credentials via .env or environment override.
+      - PBI_AUTH_MODE=${PBI_AUTH_MODE:-interactive}
+      - PBI_TENANT_ID=${PBI_TENANT_ID:-}
+      - PBI_CLIENT_ID=${PBI_CLIENT_ID:-}
+      - PBI_CLIENT_SECRET=${PBI_CLIENT_SECRET:-}
+      - PBI_LOG_LEVEL=${PBI_LOG_LEVEL:-INFO}
+    volumes:
+      # Persistent state (audit log, plan DB, execution DB).
+      - orchestrator-state:/home/orchestrator/.powerbi-orchestrator-mcp
+      # Mount PBIPs to validate / inspect from the host.
+      - ./examples:/workspace/examples:ro
+    stdin_open: true
+    tty: true
+    # For stdio MCP transport, expose no ports. The MCP client launches
+    # the container directly with stdio attached.
+    entrypoint: ["/app/.venv/bin/powerbi-orchestrator-mcp"]
+    command: ["--start"]
+
+volumes:
+  orchestrator-state:

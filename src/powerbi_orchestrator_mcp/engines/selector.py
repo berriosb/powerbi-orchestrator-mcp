@@ -9,10 +9,11 @@ Selection rules (for both Modeling and Report engines):
 4. Cache the picked engine per (operation, target) so we don't
    re-probe on every call.
 
-For MVP:
-- ``ModelingEngine`` chain: ``powerbi-modeling-mcp`` only (te fallback planned).
-- ``ReportEngine`` chain: ``python_report`` (default, no external dep) →
-  ``superbi-mcp`` (Windows only, Week 2).
+As of v1.8.0:
+- ``ModelingEngine`` chain: ``powerbi-modeling-mcp`` (preferred) →
+  ``te`` (fallback via the Tabular Editor adapter, Sprint 14A).
+- ``ReportEngine`` chain: ``python_report`` (built-in, cross-platform) →
+  ``superbi-mcp`` (Windows-only, FSL).
 """
 
 from __future__ import annotations
@@ -38,14 +39,14 @@ _E = TypeVar("_E", bound=Any)
 # Each entry: (preferred_engine_name, [fallback_engine_names]).
 DEFAULT_MODELING_CHAIN: tuple[str, tuple[str, ...]] = (
     # Order matters: first available in the chain wins.
-    # Currently only modeling_mcp; fallbacks would be te (CLI fallback)
-    # when the model lives in a PBIP we can read directly.
+    # Sprint 14A: te CLI is the documented fallback when
+    # powerbi-modeling-mcp is not installed.
     "powerbi-modeling-mcp",
-    (),  # no fallback in MVP; this is where te would go in Week 2
+    ("te",),
 )
 
-# Report chain: Python fallback first (cross-platform, always available),
-# then superbi-mcp (Windows-only) when added in Week 2.
+# Report chain: python_report first (cross-platform, always available),
+# then superbi-mcp (Windows-only, FSL) for richer operations.
 DEFAULT_REPORT_CHAIN: tuple[str, tuple[str, ...]] = (
     "python_report",
     ("superbi-mcp",),

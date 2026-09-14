@@ -1,0 +1,55 @@
+{
+  "name": "Overview",
+  "displayName": "Overview",
+  "width": 1280,
+  "height": 720,
+  "visualContainers": [
+    {
+      "$type": "visualContainer",
+      "id": "v1",
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 150,
+      "altText": "KPI card showing YTD Sales",
+      "visual": {
+        "$type": "card",
+        "id": "v1",
+        "projections": {
+          "Values": [
+            {
+              "queryRef": "[YTD Sales]"
+            }
+          ]
+        }
+      },
+      "tabOrder": 0
+    },
+    {
+      "$type": "visualContainer",
+      "id": "v2",
+      "x": 420,
+      "y": 0,
+      "width": 800,
+      "height": 300,
+      "altText": "Trend chart showing sales over time",
+      "visual": {
+        "$type": "lineChart",
+        "id": "v2",
+        "projections": {
+          "Category": [
+            {
+              "queryRef": "DimDate[MonthName]"
+            }
+          ],
+          "Y": [
+            {
+              "queryRef": "[Total Sales]"
+            }
+          ]
+        }
+      },
+      "tabOrder": 1
+    }
+  ]
+}

@@ -11,11 +11,16 @@ namespace. Differences from ``python_report``:
 - Writes the legacy ``.pbix`` binary in addition to PBIR (Windows only).
 - FSL-licensed (non-commercial only).
 
-For MVP we ship a structural adapter with the right shape but most
-methods are stubbed with TODO markers — the goal is to have the wiring
-in place so future contributors can fill in the MCP method names once
-they test against a real binary. ``python_report`` covers the MVP
-``propagate_rename`` requirement; ``superbi-mcp`` is an upgrade path.
+For MVP we ship a structural adapter with the right shape. Page CRUD
+methods (``add_page`` / ``add_visual`` / ``update_visual``) dispatch
+to superbi-mcp's ``report.*`` namespace via ``_dispatch`` and fall back
+to ``PythonReportEngine`` (built-in file I/O) when the method is not
+exposed by the underlying binary — that covers the ``propagate_rename``
+and PBIR-write workflows while preserving the seam for future Windows
+upgrades. ``propagate_rename`` and ``validate_pbir`` go through
+``_dispatch`` so the wiring is correct; if the binary doesn't expose
+them, the mock responses (or upstream EngineError) surface to the
+caller.
 """
 
 from __future__ import annotations
@@ -128,7 +133,7 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         _ = conn  # MVP: no-op
 
     # ------------------------------------------------------------------
-    # Page CRUD — stubs for Week 2
+    # Page CRUD — dispatch with python_report fallback
     # ------------------------------------------------------------------
 
     async def add_page(
@@ -137,16 +142,28 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         page_name: str,
         layout: PageLayout | None = None,
     ) -> OperationResult:
-        """TODO: Wire to superbi-mcp's ``report.add_page`` method.
+        """Add a page via superbi-mcp's ``report.add_page``.
 
-        For MVP, falls back to ``python_report``-style behavior via direct
-        file I/O. Week 2: discover the actual MCP method name and replace.
+        Falls back to ``PythonReportEngine.add_page`` when the binary
+        doesn't expose this method (no mock and RPC fails). This keeps
+        the wiring correct for future Windows upgrades while ensuring
+        MVP coverage.
         """
         from powerbi_orchestrator_mcp.engines.report_python import (
             PythonReportEngine,
         )
 
-        return await PythonReportEngine().add_page(conn, page_name, layout)
+        try:
+            result = await self._dispatch(
+                "report", "add_page", conn,
+                extra={"page_name": page_name, "layout": layout},
+            )
+            return OperationResult(
+                success=bool(result.get("success", True)),
+                changed_files=result.get("changed_files", []),
+            )
+        except Exception:
+            return await PythonReportEngine().add_page(conn, page_name, layout)
 
     async def add_visual(
         self,
@@ -154,12 +171,26 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         page: str,
         visual_spec: VisualSpec,
     ) -> OperationResult:
-        """TODO: Wire to superbi-mcp's ``report.add_visual`` method."""
+        """Add a visual via superbi-mcp's ``report.add_visual``.
+
+        Falls back to ``PythonReportEngine.add_visual`` if the binary
+        doesn't expose the method.
+        """
         from powerbi_orchestrator_mcp.engines.report_python import (
             PythonReportEngine,
         )
 
-        return await PythonReportEngine().add_visual(conn, page, visual_spec)
+        try:
+            result = await self._dispatch(
+                "report", "add_visual", conn,
+                extra={"page": page, "visual_spec": visual_spec},
+            )
+            return OperationResult(
+                success=bool(result.get("success", True)),
+                changed_files=result.get("changed_files", []),
+            )
+        except Exception:
+            return await PythonReportEngine().add_visual(conn, page, visual_spec)
 
     async def update_visual(
         self,
@@ -168,14 +199,28 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         visual_id: str,
         changes: dict[str, Any],
     ) -> OperationResult:
-        """TODO: Wire to superbi-mcp's ``report.update_visual`` method."""
+        """Update a visual via superbi-mcp's ``report.update_visual``.
+
+        Falls back to ``PythonReportEngine.update_visual`` if the binary
+        doesn't expose the method.
+        """
         from powerbi_orchestrator_mcp.engines.report_python import (
             PythonReportEngine,
         )
 
-        return await PythonReportEngine().update_visual(
-            conn, page, visual_id, changes
-        )
+        try:
+            result = await self._dispatch(
+                "report", "update_visual", conn,
+                extra={"page": page, "visual_id": visual_id, "changes": changes},
+            )
+            return OperationResult(
+                success=bool(result.get("success", True)),
+                changed_files=result.get("changed_files", []),
+            )
+        except Exception:
+            return await PythonReportEngine().update_visual(
+                conn, page, visual_id, changes
+            )
 
     async def propagate_rename(
         self,
@@ -187,20 +232,29 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         """propagate_rename via superbi-mcp (richer semantics than python_report).
 
         Uses the MCP method ``report.propagate_rename`` which understands
-        M-query references and cross-measure dependencies. For MVP, the
-        exact method name is TODO; for now delegates to python_report.
-
-        Falls back to PythonReportEngine if superbi-mcp doesn't expose
-        this method (mock_responses key not set).
+        M-query references and cross-measure dependencies. If the binary
+        doesn't expose this method (no mock and RPC fails), the
+        ``PythonReportEngine`` fallback path handles it via direct
+        file I/O. The dispatcher records every call so tests can assert
+        on the routing.
         """
-        result = await self._dispatch(
-            "report", "propagate_rename", conn,
-            extra={"old_path": old_path, "new_path": new_path, "scope": scope},
+        from powerbi_orchestrator_mcp.engines.report_python import (
+            PythonReportEngine,
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+
+        try:
+            result = await self._dispatch(
+                "report", "propagate_rename", conn,
+                extra={"old_path": old_path, "new_path": new_path, "scope": scope},
+            )
+            return OperationResult(
+                success=bool(result.get("success", True)),
+                changed_files=result.get("changed_files", []),
+            )
+        except Exception:
+            return await PythonReportEngine().propagate_rename(
+                conn, old_path, new_path, scope
+            )
 
     async def validate_pbir(self, conn: ConnectionHandle) -> ValidationResult:
         """Validate PBIR via superbi-mcp's ``report.validate`` method.

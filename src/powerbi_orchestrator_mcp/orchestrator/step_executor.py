@@ -2,9 +2,12 @@
 
 Implements the adapter dispatch layer for ``apply_plan`` (spec §3.3).
 
-In MVP, only ``DryRunExecutor`` is registered by default. Real adapters
-(modeling/report/cloud) plug in here in Week 2 — they implement the
-``StepExecutor`` Protocol and register themselves at server boot.
+As of v1.8.0:
+- ``DryRunExecutor`` is always registered (default).
+- ``ModelingExecutor`` and ``PythonReportExecutor`` register themselves
+  on module import (``engines.modeling_mcp`` and
+  ``engines.report_python`` respectively). The server's ``apply_plan``
+  picks the right executor based on each step's ``engine`` field.
 
 Why a Protocol + registry (instead of hard-coded dispatch):
 - Tests can swap in scripted executors (already used by rollback tests).

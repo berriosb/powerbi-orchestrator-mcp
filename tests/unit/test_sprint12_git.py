@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 
 from powerbi_orchestrator_mcp.tools.commit_workspace_to_git import (
-    CommitWorkspaceToGit,
     commit_workspace_to_git,
 )
 from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (

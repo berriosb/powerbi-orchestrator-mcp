@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 
 from powerbi_orchestrator_mcp.tools.promote_in_pipeline import (
-    PromoteInPipeline,
     QualityGate,
     promote_in_pipeline,
 )

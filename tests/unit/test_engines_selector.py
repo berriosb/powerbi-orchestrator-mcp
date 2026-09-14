@@ -328,10 +328,12 @@ class TestDefaultChain:
         # If the chain config changes, update tests + ADR.
         assert DEFAULT_MODELING_CHAIN[0] == "powerbi-modeling-mcp"
 
-    def test_default_chain_has_no_fallbacks_in_mvp(self) -> None:
+    def test_default_chain_falls_back_to_te(self) -> None:
+        # As of Sprint 14A, Tabular Editor is the documented fallback
+        # for powerbi-modeling-mcp.
         preferred, fallbacks = DEFAULT_MODELING_CHAIN
         assert preferred == "powerbi-modeling-mcp"
-        assert fallbacks == ()
+        assert "te" in fallbacks
 
     def test_default_report_chain_prefers_python_report(self) -> None:
         assert DEFAULT_REPORT_CHAIN[0] == "python_report"

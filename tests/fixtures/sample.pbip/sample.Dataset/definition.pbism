@@ -1,0 +1,131 @@
+{
+  "model": {
+    "tables": [
+      {
+        "name": "FactSales",
+        "columns": [
+          {
+            "name": "SaleKey",
+            "dataType": "int64"
+          },
+          {
+            "name": "DateKey",
+            "dataType": "int64"
+          },
+          {
+            "name": "ProductKey",
+            "dataType": "int64"
+          },
+          {
+            "name": "RegionKey",
+            "dataType": "int64"
+          },
+          {
+            "name": "Units",
+            "dataType": "int64"
+          },
+          {
+            "name": "UnitPrice",
+            "dataType": "decimal"
+          },
+          {
+            "name": "Discount",
+            "dataType": "decimal"
+          },
+          {
+            "name": "TotalAmount",
+            "dataType": "decimal"
+          }
+        ],
+        "measures": [
+          {
+            "name": "Total Sales",
+            "table": "FactSales",
+            "expression": "SUM(FactSales[TotalAmount])"
+          },
+          {
+            "name": "YTD Sales",
+            "table": "FactSales",
+            "expression": "TOTALYTD([Total Sales], DimDate[Date])"
+          },
+          {
+            "name": "Prior Month Sales",
+            "table": "FactSales",
+            "expression": "CALCULATE([Total Sales], DATEADD(DimDate[Date], -1, MONTH))"
+          },
+          {
+            "name": "Order Count",
+            "table": "FactSales",
+            "expression": "COUNTROWS(FactSales)"
+          },
+          {
+            "name": "Avg Price",
+            "table": "FactSales",
+            "expression": "DIVIDE(SUM(FactSales[UnitPrice]), SUM(FactSales[Units]))"
+          },
+          {
+            "name": "Avg Price Bad",
+            "table": "FactSales",
+            "expression": "SUM(FactSales[UnitPrice]) / SUM(FactSales[Units])"
+          }
+        ]
+      },
+      {
+        "name": "DimDate",
+        "columns": [
+          {
+            "name": "Date",
+            "dataType": "dateTime"
+          },
+          {
+            "name": "Year",
+            "dataType": "int64"
+          },
+          {
+            "name": "Month",
+            "dataType": "int64"
+          },
+          {
+            "name": "MonthName",
+            "dataType": "string"
+          }
+        ]
+      },
+      {
+        "name": "DimProduct",
+        "columns": [
+          {
+            "name": "ProductKey",
+            "dataType": "int64"
+          },
+          {
+            "name": "ProductName",
+            "dataType": "string"
+          },
+          {
+            "name": "Category",
+            "dataType": "string"
+          }
+        ]
+      },
+      {
+        "name": "DimRegion",
+        "columns": [
+          {
+            "name": "RegionKey",
+            "dataType": "int64"
+          },
+          {
+            "name": "Region",
+            "dataType": "string"
+          },
+          {
+            "name": "ManagerEmail",
+            "dataType": "string",
+            "description": "PII: email del gerente regional"
+          }
+        ]
+      }
+    ]
+  }
+}

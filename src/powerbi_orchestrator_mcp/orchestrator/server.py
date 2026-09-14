@@ -97,6 +97,9 @@ from powerbi_orchestrator_mcp.tools.generate_data_dictionary import (
 from powerbi_orchestrator_mcp.tools.optimize_report_performance import (
     optimize_report_performance as _optimize_perf,
 )
+from powerbi_orchestrator_mcp.tools.powerbi_health import (
+    powerbi_health as _powerbi_health,
+)
 from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
     pre_deploy_check as _pre_deploy,
 )
@@ -1189,6 +1192,32 @@ async def set_sensitivity_labels(
         dry_run=dry_run,
     )
     return result.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Sprint 16: diagnostics + observability
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def powerbi_health(
+    include_engine_details: bool = True,
+) -> dict[str, Any]:
+    """Return a diagnostic snapshot of the orchestrator.
+
+    Surfaces:
+    - Engine availability (powerbi-modeling-mcp, te, dscmd, ...).
+    - Plan + execution store counts (persistence working?).
+    - Audit log row count (forensic trail working?).
+    - Per-engine remediation hints when something is missing.
+
+    Designed for the LLM to surface "the orchestrator says X is missing,
+    here's how to install it" instead of letting the user hit a brick wall
+    on the first workflow.
+    """
+    return await _powerbi_health(
+        include_engine_details=include_engine_details,
+    )
 
 
 # ---------------------------------------------------------------------------
