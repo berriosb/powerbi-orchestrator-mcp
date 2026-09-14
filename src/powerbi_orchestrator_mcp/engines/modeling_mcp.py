@@ -15,9 +15,11 @@ For MVP this implementation focuses on the operations needed by
 
 Other operations (``create_measure``, ``update_measure``,
 ``delete_measure``, ``list_measures``, ``list_relationships``) are
-implemented but flagged with TODO comments where the MCP tool name is
-not yet pinned — they will need mapping once we have a real binary
-to test against.
+also wired through ``_dispatch``; the MCP method names are
+discoverable via ``_MCP_METHOD_NAMES`` below — they will need to be
+verified against a real binary before the v2 E2E test runs land
+(see ``tests/integration/`` when the CI gets a Windows runner with
+the package installed).
 """
 
 from __future__ import annotations

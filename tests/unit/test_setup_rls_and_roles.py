@@ -7,14 +7,13 @@ from pathlib import Path
 import pytest
 
 from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
+    RlsTestQuery,
     RoleMember,
     RoleSpec,
-    RlsTestQuery,
     merge_roles_into_tmdl,
     render_tmdl_role,
     setup_rls_and_roles,
 )
-
 
 VALID_YAML = """\
 - role_name: Region-West

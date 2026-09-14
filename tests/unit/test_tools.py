@@ -446,3 +446,122 @@ class TestDeployToWorkspace:
         assert result.publish_ok is True
         assert result.schedule_ok is True
         assert result.refresh_id == "mock-refresh-id"
+        assert result.item_id == "mock-item-id"
+        assert result.dataset_id == "test"
+
+    async def test_real_path_calls_create_item_schedule_and_refresh(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Non-mock path must call create_item + update_refresh_schedule +
+        refresh_dataset (no TODOs / fake successes)."""
+        import importlib
+
+        dt_module = importlib.import_module(
+            "powerbi_orchestrator_mcp.tools.deploy_to_workspace"
+        )
+        deploy_to_workspace = dt_module.deploy_to_workspace
+
+        captured: dict[str, Any] = {}
+
+        class FakeClient:
+            def __init__(self, *_a: Any, **_kw: Any) -> None:
+                pass
+
+            async def create_item(self, ws_id, display_name, item_type):
+                captured["create"] = {
+                    "ws": ws_id,
+                    "name": display_name,
+                    "type": item_type,
+                }
+                return {"id": "item-real-1"}
+
+            async def update_refresh_schedule(self, ws_id, ds_id, *, schedule):
+                captured["schedule"] = {"ws_id": ws_id, "ds_id": ds_id, "schedule": schedule}
+                return {}
+
+            async def refresh_dataset(self, ws_id, ds_id, **_kw):
+                captured["refresh"] = {"ws_id": ws_id, "ds_id": ds_id}
+                return {"refreshId": "rf-99"}
+
+            async def aclose(self) -> None:
+                captured["closed"] = True
+
+        monkeypatch.setattr(dt_module, "FabricClient", FakeClient)
+        monkeypatch.setattr(
+            dt_module, "FabricCredential", lambda *_a, **_kw: object()
+        )
+
+        pbip = tmp_path / "sales.pbip"
+        pbip.mkdir()
+        (pbip / "sales.pbip").write_text("{}")
+
+        result = await deploy_to_workspace(
+            pbip_path=str(pbip),
+            workspace_id="ws-real",
+            refresh_daily_hour=7,
+            findings=[],
+            gate_profile="standard",
+            mock=False,
+            client_id="cid",
+            client_secret="sec",
+            tenant_id="tid",
+        )
+        assert result.publish_ok is True
+        assert result.item_id == "item-real-1"
+        assert result.schedule_ok is True
+        assert result.refresh_id == "rf-99"
+        assert captured["create"]["type"] == "PowerBIDataset"
+        # refresh_daily_hour=7 → times[0] == "07:00"
+        assert captured["schedule"]["schedule"]["value"]["times"] == ["07:00"]
+        assert captured["schedule"]["schedule"]["enabled"] is True
+        assert captured["closed"] is True
+
+    async def test_real_path_surfaces_publish_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failing create_item must surface in ``errors`` without losing
+        schedule + refresh (which may still succeed)."""
+        import importlib
+
+        dt_module = importlib.import_module(
+            "powerbi_orchestrator_mcp.tools.deploy_to_workspace"
+        )
+        deploy_to_workspace = dt_module.deploy_to_workspace
+
+        class FakeClient:
+            def __init__(self, *_a: Any, **_kw: Any) -> None:
+                pass
+
+            async def create_item(self, *_a: Any, **_kw: Any) -> dict[str, Any]:
+                raise RuntimeError("403 forbidden")
+
+            async def update_refresh_schedule(self, *_a: Any, **_kw: Any) -> dict[str, Any]:
+                return {}
+
+            async def refresh_dataset(self, *_a: Any, **_kw: Any) -> dict[str, Any]:
+                return {"refreshId": "rf-1"}
+
+            async def aclose(self) -> None:
+                pass
+
+        monkeypatch.setattr(dt_module, "FabricClient", FakeClient)
+        monkeypatch.setattr(
+            dt_module, "FabricCredential", lambda *_a, **_kw: object()
+        )
+
+        pbip = tmp_path / "sales.pbip"
+        pbip.mkdir()
+        (pbip / "sales.pbip").write_text("{}")
+
+        result = await deploy_to_workspace(
+            pbip_path=str(pbip),
+            workspace_id="ws-real",
+            findings=[],
+            gate_profile="standard",
+            mock=False,
+        )
+        assert result.publish_ok is False
+        assert any("publish_failed" in e for e in result.errors)
+        # schedule + refresh should still have run
+        assert result.schedule_ok is True
+        assert result.refresh_id == "rf-1"

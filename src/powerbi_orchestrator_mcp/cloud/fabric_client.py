@@ -174,16 +174,20 @@ class TokenBucket:
 class FabricClient:
     """Async REST client for Microsoft Fabric / Power BI Service.
 
-    Endpoints follow the spec's path scheme: ``/v1/workspaces/{id}/...``.
-    Authentication via the injected ``FabricCredential`` (handles token
-    refresh transparently).
+    Two base URLs are exposed:
+    - ``fabric_base_url`` — Fabric Items API (``/v1/workspaces/{id}/items``).
+    - ``pbi_service_base_url`` — Power BI Service REST (``/v1.0/myorg/...``),
+      which hosts dataset refresh schedules, take-over, refresh history,
+      data-source updates and DAX query execution (per spec §2.3).
 
-    Long-running operations (refresh, deploy) bypass the main token
-    bucket per Tier-B §6 — they use ``long_running_op()`` which has
-    its own polling logic.
+    Authentication via the injected ``FabricCredential`` (handles token
+    refresh transparently). Long-running operations (refresh, deploy)
+    bypass the main token bucket per Tier-B §6 — they use ``long_running_op()``
+    which has its own polling logic.
     """
 
     BASE_URL = "https://api.fabric.microsoft.com/v1"
+    PBI_SERVICE_BASE_URL = "https://api.powerbi.com/v1.0/myorg"
     DEFAULT_TIMEOUT = 30.0
 
     def __init__(
@@ -193,6 +197,8 @@ class FabricClient:
         rpm: int = 200,
         burst: int = 30,
         long_running_rpm: int = 5,
+        fabric_base_url: str = BASE_URL,
+        pbi_service_base_url: str = PBI_SERVICE_BASE_URL,
     ) -> None:
         self._credential = credential
         self._bucket = TokenBucket(rpm=rpm, burst=burst)
@@ -200,19 +206,32 @@ class FabricClient:
             rpm=long_running_rpm, burst=long_running_rpm
         )
         self._breaker = CircuitBreaker()
-        self._client = httpx.AsyncClient(
-            base_url=self.BASE_URL,
+        self._fabric_client = httpx.AsyncClient(
+            base_url=fabric_base_url,
+            timeout=httpx.Timeout(self.DEFAULT_TIMEOUT, connect=5.0),
+        )
+        self._pbi_client = httpx.AsyncClient(
+            base_url=pbi_service_base_url,
             timeout=httpx.Timeout(self.DEFAULT_TIMEOUT, connect=5.0),
         )
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        await self._fabric_client.aclose()
+        await self._pbi_client.aclose()
 
     async def __aenter__(self) -> FabricClient:
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
         await self.aclose()
+
+    def _select_client(self, service: str) -> httpx.AsyncClient:
+        """Return the httpx client for ``service`` (``"fabric"`` or ``"pbi"``)."""
+        if service == "fabric":
+            return self._fabric_client
+        if service == "pbi":
+            return self._pbi_client
+        raise ValueError(f"unknown service {service!r}")
 
     # ------------------------------------------------------------------
     # Core HTTP verbs with retry + circuit breaker
@@ -227,14 +246,18 @@ class FabricClient:
         params: dict[str, Any] | None = None,
         long_running: bool = False,
         max_retries: int = 3,
+        service: str = "fabric",
     ) -> dict[str, Any]:
         """Send an authenticated request with retries + circuit breaker.
 
+        ``service`` selects the base URL: ``"fabric"`` (default, Fabric Items
+        API) or ``"pbi"`` (Power BI Service REST, datasets/refresh).
         Retries per Tier-B §3: 429 (with Retry-After backoff), 502, 503, 504.
         Other status codes surface as FabricAPIError (per spec §2.3).
         """
         bucket = self._long_running_bucket if long_running else self._bucket
         await self._breaker.check()
+        http_client = self._select_client(service)
 
         for attempt in range(max_retries + 1):
             acquired = await bucket.acquire()
@@ -245,7 +268,7 @@ class FabricClient:
 
             token = await self._credential.get_token()
             try:
-                response = await self._client.request(
+                response = await http_client.request(
                     method,
                     path,
                     json=json,
@@ -294,22 +317,38 @@ class FabricClient:
             response_body="rate limit exceeded",
         )
 
-    async def get(
-        self, path: str, *, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        return await self._request("GET", path, params=params)
-
     async def post(
         self,
         path: str,
         json: dict[str, Any] | None = None,
         *,
         long_running: bool = False,
+        service: str = "fabric",
     ) -> dict[str, Any]:
-        return await self._request("POST", path, json=json, long_running=long_running)
+        return await self._request(
+            "POST", path, json=json, long_running=long_running, service=service
+        )
 
-    async def delete(self, path: str) -> None:
-        await self._request("DELETE", path)
+    async def patch(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+        *,
+        service: str = "fabric",
+    ) -> dict[str, Any]:
+        return await self._request("PATCH", path, json=json, service=service)
+
+    async def delete(self, path: str, *, service: str = "fabric") -> None:
+        await self._request("DELETE", path, service=service)
+
+    async def get(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        service: str = "fabric",
+    ) -> dict[str, Any]:
+        return await self._request("GET", path, params=params, service=service)
 
     # ------------------------------------------------------------------
     # High-level operations (per spec §2.2)
@@ -317,18 +356,80 @@ class FabricClient:
 
     async def list_workspaces(self) -> list[dict[str, Any]]:
         """List all workspaces accessible to the principal."""
-        resp = await self.get("/workspaces")
+        resp = await self.get("/workspaces", service="fabric")
         return resp.get("value", [])  # type: ignore[no-any-return]
 
     async def get_workspace(self, workspace_id: str) -> dict[str, Any]:
-        return await self.get(f"/workspaces/{workspace_id}")
+        return await self.get(f"/workspaces/{workspace_id}", service="fabric")
+
+    async def list_items(
+        self, workspace_id: str, *, item_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List Fabric items in a workspace, optionally filtered by type.
+
+        Per spec §2.3. ``item_type`` e.g. ``"PowerBIDataset"``,
+        ``"PowerBIReport"``, ``"Lakehouse"``.
+        """
+        params: dict[str, Any] | None = (
+            {"type": item_type} if item_type else None
+        )
+        resp = await self.get(
+            f"/workspaces/{workspace_id}/items",
+            params=params,
+            service="fabric",
+        )
+        return resp.get("value", [])  # type: ignore[no-any-return]
+
+    async def get_item(
+        self, workspace_id: str, item_id: str
+    ) -> dict[str, Any]:
+        return await self.get(
+            f"/workspaces/{workspace_id}/items/{item_id}", service="fabric"
+        )
+
+    async def create_item(
+        self,
+        workspace_id: str,
+        display_name: str,
+        item_type: str,
+        definition: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a Fabric item (e.g. PowerBIDataset) in a workspace.
+
+        Used by ``deploy_to_workspace`` after the pre-deploy gate passes.
+        ``definition`` is optional; for PowerBIDataset the orchestrator
+        typically passes a minimal ``defaultDatasetStorageFormat`` payload
+        and lets Power BI Desktop / superbi-mcp populate the TMDL/PBIR
+        schema afterwards. Returns the created item (with ``id``).
+        """
+        body: dict[str, Any] = {
+            "displayName": display_name,
+            "type": item_type,
+        }
+        if definition:
+            body["definition"] = definition
+        return await self.post(
+            f"/workspaces/{workspace_id}/items", json=body, service="fabric"
+        )
+
+    async def delete_item(
+        self, workspace_id: str, item_id: str
+    ) -> None:
+        """Delete a Fabric item. Requires WRITE scope + elicitation."""
+        await self.delete(
+            f"/workspaces/{workspace_id}/items/{item_id}", service="fabric"
+        )
 
     async def list_datasets(self, workspace_id: str) -> list[dict[str, Any]]:
-        resp = await self.get(f"/workspaces/{workspace_id}/datasets")
+        resp = await self.get(
+            f"/groups/{workspace_id}/datasets", service="pbi"
+        )
         return resp.get("value", [])  # type: ignore[no-any-return]
 
     async def get_dataset(self, workspace_id: str, dataset_id: str) -> dict[str, Any]:
-        return await self.get(f"/workspaces/{workspace_id}/datasets/{dataset_id}")
+        return await self.get(
+            f"/groups/{workspace_id}/datasets/{dataset_id}", service="pbi"
+        )
 
     async def refresh_dataset(
         self,
@@ -341,7 +442,7 @@ class FabricClient:
         wait: bool = False,  # noqa: ARG002
         timeout_ms: int = 1_800_000,  # noqa: ARG002
     ) -> dict[str, Any]:
-        """Trigger a dataset refresh.
+        """Trigger a dataset refresh (Power BI Service REST endpoint).
 
         ``refresh_type`` per spec §3: full | automatic | data_only |
         calculate | clearValues. ``commit_mode``: transactional | partialBatch.
@@ -354,9 +455,116 @@ class FabricClient:
                 {"table": t, "partition": None} for t in tables
             ]
         return await self.post(
-            f"/workspaces/{workspace_id}/datasets/{dataset_id}/refreshes",
+            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes",
             json=body,
             long_running=True,
+            service="pbi",
+        )
+
+    async def cancel_refresh(
+        self, workspace_id: str, dataset_id: str
+    ) -> None:
+        """Cancel an in-progress dataset refresh (per spec §2.3)."""
+        await self.post(
+            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes/cancel",
+            service="pbi",
+        )
+
+    async def get_refresh_history(
+        self,
+        workspace_id: str,
+        dataset_id: str,
+        *,
+        top: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Return the most recent refreshes for a dataset."""
+        resp = await self.get(
+            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes",
+            params={"$top": top},
+            service="pbi",
+        )
+        return resp.get("value", [])  # type: ignore[no-any-return]
+
+    async def update_refresh_schedule(
+        self,
+        workspace_id: str,
+        dataset_id: str,
+        *,
+        schedule: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Configure the dataset's refresh schedule (per spec §2.3).
+
+        ``schedule`` is the JSON body documented by Power BI for
+        ``PATCH /groups/{groupId}/datasets/{datasetId}/refreshSchedule``:
+        at minimum ``{"value": {...}, "enabled": true}``. Typical body
+        for daily refresh::
+
+            {
+                "value": {
+                    "days": ["Monday", "Tuesday", ...],
+                    "times": ["06:00"],
+                    "localTimeZoneId": "UTC"
+                },
+                "enabled": True
+            }
+        """
+        return await self.patch(
+            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshSchedule",
+            json=schedule,
+            service="pbi",
+        )
+
+    async def take_over_dataset(
+        self, workspace_id: str, dataset_id: str
+    ) -> dict[str, Any]:
+        """Take over ownership of a dataset (per spec §2.3).
+
+        Useful when an upstream owner leaves the org or when the
+        orchestrator needs to become the dataset's admin to update
+        the refresh schedule.
+        """
+        return await self.post(
+            f"/groups/{workspace_id}/datasets/{dataset_id}/takeover",
+            service="pbi",
+        )
+
+    async def update_datasource(
+        self,
+        workspace_id: str,
+        dataset_id: str,
+        datasource_id: str,
+        *,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Update a dataset data-source (server / gateway mapping)."""
+        return await self.patch(
+            f"/groups/{workspace_id}/datasets/{dataset_id}"
+            f"/datasources/{datasource_id}",
+            json=body,
+            service="pbi",
+        )
+
+    async def execute_queries(
+        self,
+        workspace_id: str,
+        dataset_id: str,
+        *,
+        queries: list[dict[str, Any]],
+        impersonated_user_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Run DAX queries against a dataset (per spec §2.3).
+
+        ``queries`` is the JSON body expected by Power BI: a list of
+        ``{"query": "EVALUATE ..."}`` items. Used by ``run_dax_regression``
+        (with injected ``query_executor`` in tests; real path here).
+        """
+        payload: dict[str, Any] = {"queries": queries}
+        if impersonated_user_name:
+            payload["impersonatedUserName"] = impersonated_user_name
+        return await self.post(
+            f"/groups/{workspace_id}/datasets/{dataset_id}/queries",
+            json=payload,
+            service="pbi",
         )
 
 
