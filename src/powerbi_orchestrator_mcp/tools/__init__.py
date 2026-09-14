@@ -92,6 +92,11 @@ from powerbi_orchestrator_mcp.tools.optimize_report_performance import (
     PerformanceHotspot,
     optimize_report_performance,
 )
+from powerbi_orchestrator_mcp.tools.powerbi_health import (
+    PowerbiHealth,
+    PowerbiHealthResult,
+    powerbi_health,
+)
 from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
     PreDeployCheck,
     pre_deploy_check,
@@ -192,6 +197,8 @@ __all__ = [
     "OptimizeReportPerformanceResult",
     "PageScreenshot",
     "PerformanceHotspot",
+    "PowerbiHealth",
+    "PowerbiHealthResult",
     "PreDeployCheck",
     "PromoteInPipeline",
     "PromoteInPipelineResult",
@@ -237,6 +244,7 @@ __all__ = [
     "edit_report_visual",
     "generate_data_dictionary",
     "optimize_report_performance",
+    "powerbi_health",
     "pre_deploy_check",
     "promote_in_pipeline",
     "refactor_to_calculation_groups",

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "powerbi-orchestrator-mcp"
-version = "1.7.0"
+version = "1.9.0"
 description = "High-level orchestration MCP server for Power BI and Microsoft Fabric"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,6 +47,7 @@ dev = [
 
 [project.scripts]
 powerbi-orchestrator-mcp = "powerbi_orchestrator_mcp.orchestrator.server:main"
+powerbi-orchestrator = "powerbi_orchestrator_mcp.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/powerbi_orchestrator_mcp"]

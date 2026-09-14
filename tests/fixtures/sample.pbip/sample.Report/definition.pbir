@@ -1,0 +1,5 @@
+{
+  "$type": "powerbi-desktop-report",
+  "version": "1.0",
+  "name": "Sample"
+}

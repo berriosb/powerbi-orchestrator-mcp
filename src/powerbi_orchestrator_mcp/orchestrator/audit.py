@@ -1,4 +1,10 @@
-"""Audit log with HMAC chain - tamper-evident logging."""
+"""Audit log with HMAC chain - tamper-evident logging.
+
+Public API:
+- ``AuditLog`` class for write + verify.
+- ``count_entries()`` for diagnostic / health-check usage.
+- ``AUDIT_DB`` for path introspection (used by ``powerbi_health`` tool).
+"""
 
 from __future__ import annotations
 
@@ -265,6 +271,23 @@ class AuditLog:
             return AuditVerifyResult(valid=True, total_rows=len(rows))
         finally:
             conn.close()
+
+
+def count_entries(db_path: Path | None = None) -> int:
+    """Return the number of rows in the audit log (0 if it doesn't exist).
+
+    Used by ``powerbi_health`` for diagnostics. Cheap: O(1) COUNT(*).
+    Does not create the DB or the parent directory.
+    """
+    path = db_path or AUDIT_DB
+    if not path.exists():
+        return 0
+    try:
+        with sqlite3.connect(str(path)) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
+            return int(row[0]) if row else 0
+    except sqlite3.DatabaseError:
+        return 0
 
 
 # ---------------------------------------------------------------------------
