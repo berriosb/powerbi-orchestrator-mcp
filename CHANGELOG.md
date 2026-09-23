@@ -10,19 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.9.0] — 2026-09-14
 
 ### Added
 
-- **Phase 1 (Sprint 16)** — Distribution & onboarding:
-  - `examples/` directory: 3 reproducible workflows (`01-safe-rename`,
-    `02-deploy-pbip`, `03-audit-then-fix`).
-  - `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md` at repo root.
-  - `docs/troubleshooting.md` — common errors with remediation.
-- **Phase 2 (Sprint 16)** — Reliability & observability:
-  - `powerbi_health` MCP tool (engine status, plan store stats, audit log size).
-  - SQLite-backed `PlanExecutionStore` (replaces in-memory dict; survives restarts).
-  - Structured logging via `structlog` for `apply_plan` + `_request` paths.
+- **Sprint 16 — product-readiness pass:**
+  - **Phase 1 (distribution + onboarding)**: `examples/` directory with 3 reproducible workflows (`01-safe-rename`, `02-deploy-pbip`, `03-audit-then-fix`); `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md` at repo root; `docs/troubleshooting.md` with common errors and remediation.
+  - **Phase 2 (reliability + observability)**: `powerbi_health` MCP tool (engine status, plan store stats, audit log size); SQLite-backed `PlanExecutionStore` (replaces in-memory dict, survives restarts); structured logging via `structlog` for `apply_plan` + `_request` paths.
+
+See [`RELEASE-NOTES-v1.9.0.md`](./RELEASE-NOTES-v1.9.0.md) for full details, decisions, and rationale.
 
 ---
 
