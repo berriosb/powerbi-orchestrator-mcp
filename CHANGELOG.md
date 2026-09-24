@@ -10,6 +10,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.0] — 2026-09-24
+
+### Added
+
+- **HTTP transport (opt-in).** New `--transport http` flag and env var
+  `PBI_TRANSPORT=http` enable Streamable HTTP (MCP spec 2025-06+).
+  Authentication via Entra ID JWT bearer tokens, validated against the
+  tenant JWKS. New module `orchestrator/transport.py` exposes
+  `validate_entra_token`, `parse_transport_args`, and
+  `auth_middleware_factory`. Backward-compatible: stdio default
+  unchanged. See [`RELEASE-NOTES-v1.10.0.md`](./RELEASE-NOTES-v1.10.0.md)
+  and `specs/architecture/07-http-transport.md`.
+- **Dependency:** `pyjwt[crypto]>=2.8.0` (~50KB) required by the HTTP
+  transport auth path.
+- **PyPI `project_urls`:** Homepage, Repository, Issues, Changelog,
+  Releases — visible in the project page sidebar.
+- **Release infrastructure (CI, not user-facing):**
+  - `.github/workflows/publish.yml` — automated publish on tag push or
+    manual dispatch; TestPyPI gate; `pypi-production` environment with
+    required reviewers. Secrets (`PYPI_API_TOKEN`,
+    `TEST_PYPI_API_TOKEN`) not yet configured.
+  - `.github/workflows/e2e-nightly.yml` — nightly + on-PR E2E tests
+    with real engine binaries pinned by SHA256. Placeholder hashes
+    until first real run; self-skips while placeholders are in place.
+- **E2E test scaffold:** `tests/e2e/` with 5 scenarios across 2 test
+  files. Tests skip gracefully when engines are absent.
+
+### Changed
+
+- **Docs:** 4 new cross-cutting specs land as part of the v0.3 audit —
+  `specs/release/supersede-policy.md`, `specs/ci/publish-workflow.md`,
+  `specs/qa/e2e-testing-strategy.md`, `specs/architecture/07-http-transport.md`.
+  See `specs/README.md` "Cambios v0.3 (audit 2026-09-24)".
+- **README:** tool count drift fix "26 → 27" across 5 places
+  (including `examples/README.md`).
+- **Test suite:** 903 passed (+21 from `test_http_transport.py`),
+  11 skipped (e2e binaries absent). Coverage 90.85%.
+
+### Notes
+
+- No breaking changes. `pip install --upgrade` is a no-op at the
+  binary level for stdio users.
+- The HTTP transport middleware isn't yet wired into FastMCP's
+  request lifecycle — the validation function is exported and tested,
+  but unauthenticated HTTP requests are not yet rejected by the
+  server itself. Custom deployment adapters can call
+  `auth_middleware_factory` directly. Wiring lands in v1.11.
+- This release was made via the v1.9.x manual `twine upload` pattern.
+  Future releases should use the new `publish.yml` once secrets are
+  configured.
+
 ## [1.9.1] — 2026-09-24
 
 ### Changed
