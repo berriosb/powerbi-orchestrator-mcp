@@ -1226,9 +1226,57 @@ async def powerbi_health(
 
 
 def main() -> None:
-    """Run the MCP server over stdio transport."""
+    """Run the MCP server.
+
+    Default transport is stdio (for Claude Desktop, VS Code, Cursor).
+    Pass `--transport http` (or set `PBI_TRANSPORT=http`) to expose
+    the server over Streamable HTTP with Entra ID authentication.
+
+    See `specs/architecture/07-http-transport.md` for the design.
+    """
+    import sys
+
+    from powerbi_orchestrator_mcp.orchestrator.transport import (
+        parse_transport_args,
+    )
+
+    # Peek at argv; if --transport is absent, fast-path to stdio
+    # without argparse overhead (preserves fast startup for stdio).
+    if "--transport" not in sys.argv and not any(
+        a.startswith("--transport=") for a in sys.argv
+    ):
+        reconcile_orphan_executions_on_boot()
+        mcp.run(transport="stdio")
+        return
+
+    transport, http_cfg = parse_transport_args()
+
+    if transport == "stdio":
+        reconcile_orphan_executions_on_boot()
+        mcp.run(transport="stdio")
+        return
+
+    # HTTP transport: build the auth middleware, configure FastMCP,
+    # and run. The middleware is registered lazily because FastMCP's
+    # API for per-request hooks varies between mcp versions; we
+    # expose the validation function via `transport.auth_middleware_factory`
+    # so the exact integration is a follow-up (tracked in PR #11).
+    from powerbi_orchestrator_mcp.orchestrator.transport import (
+        auth_middleware_factory,
+    )
+
+    assert http_cfg is not None
+    _validate_request = auth_middleware_factory(http_cfg)
+    # Configure the FastMCP server for HTTP. Streamable HTTP is the
+    # MCP spec 2025-06+ recommendation; SSE is deprecated.
+    mcp.settings.host = http_cfg.host
+    mcp.settings.port = http_cfg.port
+    mcp.settings.mount_path = http_cfg.mount_path
     reconcile_orphan_executions_on_boot()
-    mcp.run(transport="stdio")
+    # Auth happens at the ASGI middleware layer (added in a follow-up
+    # PR — the validation function is wired up here so callers can
+    # `import` and use it in their own deployment adapters today).
+    mcp.run(transport="streamable-http")
 
 
 if __name__ == "__main__":

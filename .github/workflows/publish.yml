@@ -1,0 +1,236 @@
+name: publish
+
+# Publishes the wheel + sdist to PyPI. Triggered by:
+# 1. Push of a tag matching vX.Y.Z (e.g., v1.10.0).
+# 2. Manual workflow_dispatch with a `version` input (for re-promotion
+#    or skip-TestPyPI publishes).
+#
+# Pipeline:
+#   build → test-pypi → pypi → github-release
+#
+# See specs/ci/publish-workflow.md for full design rationale.
+# See CONTRIBUTING.md §"Release process" for the user-facing steps
+# that trigger this workflow.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.9.1). Defaults to the tag from the ref.'
+        required: false
+      promote:
+        description: 'Skip TestPyPI gate and publish directly to PyPI.'
+        type: boolean
+        default: false
+      ref:
+        description: 'Git ref to build from (branch/tag/sha). Defaults to the pushed tag.'
+        required: false
+
+concurrency:
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # create GitHub Release, push tag-driven commits
+  id-token: write        # trusted publishing (OIDC) — alternative to API token
+
+jobs:
+  # -------------------------------------------------------------------------
+  # 1. Build wheel + sdist. Verify metadata.
+  # -------------------------------------------------------------------------
+  build:
+    name: build (py${{ matrix.python-version }} / ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade build twine
+
+      - name: Verify version matches ref
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          fi
+          PKG_VERSION="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ "$VERSION" != "v$PKG_VERSION" ] && [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Version mismatch: ref=$VERSION but pyproject.toml=$PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Twine metadata check
+        run: python -m twine check dist/*
+
+      - name: Compute SHA256 checksums
+        run: sha256sum dist/* > SHA256SUMS
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/*
+            SHA256SUMS
+          retention-days: 14
+
+  # -------------------------------------------------------------------------
+  # 2. TestPyPI gate. Publish to test index, smoke-install, then move on.
+  #    Skipped if `promote=true` (caller asserts they want to skip the gate).
+  # -------------------------------------------------------------------------
+  test-pypi:
+    name: test-pypi (smoke install)
+    needs: build
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.promote != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to TestPyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine upload --skip-existing dist/*.whl dist/*.tar.gz
+
+      - name: Smoke install from TestPyPI
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          fi
+          VERSION="${VERSION#v}"  # strip leading 'v' for PEP 440
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --upgrade pip
+          # TestPyPI doesn't mirror all transitive deps; use PyPI as fallback.
+          /tmp/smoke/bin/pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "powerbi-orchestrator-mcp==${VERSION}"
+          /tmp/smoke/bin/python -c "import powerbi_orchestrator_mcp; print('imported:', powerbi_orchestrator_mcp.__version__)"
+          /tmp/smoke/bin/pip uninstall -y powerbi-orchestrator-mcp
+
+  # -------------------------------------------------------------------------
+  # 3. Production PyPI publish. Requires approval on `pypi-production`
+  #    environment (set up in repo settings > Environments).
+  # -------------------------------------------------------------------------
+  pypi:
+    name: pypi (production)
+    needs: [build, test-pypi]
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.promote == 'true')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-production
+      url: https://pypi.org/project/powerbi-orchestrator-mcp/
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine upload --skip-existing dist/*.whl dist/*.tar.gz
+
+      - name: Verify on PyPI
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          fi
+          VERSION="${VERSION#v}"
+          # Give PyPI's CDN ~30s to propagate after upload.
+          sleep 30
+          curl --fail --silent --show-error \
+            "https://pypi.org/pypi/powerbi-orchestrator-mcp/${VERSION}/json" \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d['info']['version']=='${VERSION}', 'version mismatch'; print('verified version:', d['info']['version'])"
+
+  # -------------------------------------------------------------------------
+  # 4. Create GitHub Release with attached artifacts + release notes from
+  #    RELEASE-NOTES-vX.Y.Z.md (if present in the repo).
+  # -------------------------------------------------------------------------
+  github-release:
+    name: github-release
+    needs: pypi
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release notes from RELEASE-NOTES-vX.Y.Z.md
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          fi
+          VERSION="${VERSION#v}"
+          NOTES_FILE="RELEASE-NOTES-v${VERSION}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            # Strip the leading H1 (already in the Release title).
+            tail -n +3 "$NOTES_FILE" > /tmp/release-body.md
+            echo "Using $NOTES_FILE as release body"
+          else
+            # Fallback: generate from commit log since the previous tag.
+            PREVIOUS_TAG="$(git tag --sort=-version:refname | sed -n '2p')"
+            git log "${PREVIOUS_TAG}..HEAD" --pretty=format:"- %s" > /tmp/release-body.md || true
+            echo "::warning::No $NOTES_FILE found; falling back to commit log"
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          fi
+          gh release create "$VERSION" \
+            --title "Release $VERSION" \
+            --notes-file /tmp/release-body.md \
+            --target "${{ github.sha }}" \
+            dist/*.whl \
+            dist/*.tar.gz \
+            SHA256SUMS
