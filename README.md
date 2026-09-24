@@ -22,8 +22,8 @@ See [release notes](./RELEASE-NOTES-v1.9.0.md) · [changelog](./CHANGELOG.md).
 ## Quickstart (60 segundos)
 
 ```bash
-# 1. Install (dev mode for now; PyPI publication in progress).
-pip install git+https://github.com/berriosb/powerbi-orchestrator-mcp.git
+# 1. Install from PyPI (v1.9.0).
+pip install powerbi-orchestrator-mcp
 
 # 2. Configure your MCP client (Claude Desktop shown).
 #    Edit claude_desktop_config.json:
@@ -131,23 +131,19 @@ Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
 
 ### 1. Instalar el orquestrador (Python)
 
-> **Nota:** el paquete todavía **no está publicado en PyPI**. Instalar
-> desde el repositorio:
-
 ```bash
-pip install git+https://github.com/berriosb/powerbi-orchestrator-mcp.git
+pip install powerbi-orchestrator-mcp
 ```
 
-O para desarrollo local:
+El paquete está publicado en PyPI: https://pypi.org/project/powerbi-orchestrator-mcp/
+
+Para desarrollo local (con tests y dev dependencies):
 
 ```bash
 git clone https://github.com/berriosb/powerbi-orchestrator-mcp.git
 cd powerbi-orchestrator-mcp
 pip install -e ".[dev]"
 ```
-
-Cuando se publique en PyPI, la instalación será
-`pip install powerbi-orchestrator-mcp`.
 
 El comando `powerbi-orchestrator-mcp` queda disponible en el PATH.
 
