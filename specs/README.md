@@ -2,7 +2,7 @@
 
 > Specs modulares por capa y por tool. Cada spec es un entregable implementable.
 >
-> **Última actualización:** 2026-08-21 (specs v0.1, MVP ambicioso)
+> **Última actualización:** 2026-09-24 (specs v0.3, post-PyPI-publication)
 
 > Las casillas de esta lista indican que existe la spec, no que todos sus
 > criterios estén verificados. Para estado de implementación consultar
@@ -17,6 +17,7 @@
 - **Specs por capa (`0X-*.md`)** — cómo se implementa cada capa del servidor.
 - **Specs por tool (`tools/*.md`)** — herramientas individuales de alto nivel.
 - **Specs por workflow (`workflows/*.md`)** — flujos end-to-end compuestos.
+- **Specs de release / CI / QA (`release/`, `ci/`, `qa/`)** — proceso de publicación, política de PyPI, estrategia de tests E2E.
 - **[`docs/MVP-STATUS.md`](../docs/MVP-STATUS.md)** — qué está implementado vs qué es spec.
 - **[`docs/IMPLEMENTATION-PLAN-v1.0.md`](../docs/IMPLEMENTATION-PLAN-v1.0.md)** — roadmap.
 
@@ -29,11 +30,15 @@
 - [x] `03-validation.md` — Capa 4: BPA, DAX linter, regression runner, accessibility, pre-deploy gate.
 - [x] `04-viz-ux.md` — Capa 5: visual registry, suggester, layout, theme, storytelling.
 - [x] `05-engines-adapters.md` — Cómo se delega a `powerbi-modeling-mcp`, `superbi-mcp`, `te`, `dscmd`, `pbip-validator`, **integración `pbip-validator` (§10)**, **matriz `connect_target` (§11)**.
+- [x] [`architecture/07-http-transport.md`](./architecture/07-http-transport.md) — **Capa 0 (transport)**: Streamable HTTP + Entra ID OAuth, scopes, audience validation, threat model, migration strategy (stdio default, HTTP opt-in). Capa nueva — habilita deployments remotos (creado 2026-09-24, post-v1.9.1).
 
 ## Specs cross-cutting
 
 - [x] `06-engine-error-contracts.md` — Jerarquía de errores, timeouts y exit codes canónicos para todos los subprocess engines (creado 2026-08-26, pre-Semana 2).
 - [x] [`../tests/fixtures/README.md`](../tests/fixtures/README.md) — Especificación del fixture PBIP load-bearing (4 tablas, ~15 medidas, 4 visuales, RLS) usado por todos los tests e2e (creado 2026-08-26, pre-Semana 4).
+- [x] [`release/supersede-policy.md`](./release/supersede-policy.md) — Política de supersede / yank en PyPI: cuándo un release nuevo invalida al anterior, decision tree para `pip install` (creado 2026-09-24, post-v1.9.1).
+- [x] [`ci/publish-workflow.md`](./ci/publish-workflow.md) — Diseño del workflow `publish.yml` de GitHub Actions: triggers (tag push + manual), gate de TestPyPI, environments protegidos, OIDC vs API token (creado 2026-09-24, post-v1.9.1).
+- [x] [`qa/e2e-testing-strategy.md`](./qa/e2e-testing-strategy.md) — Estrategia para tests con engines reales (`te`, `dscmd`, `pbip-validator`): binaries pinned por SHA256, nightly vs on-PR, escenarios por tool, CI matrix (creado 2026-09-24, post-v1.9.1).
 
 ## Specs por tool (MVP ambicioso)
 
@@ -91,6 +96,33 @@ duplicación de schemas.
 
 - [x] `tools/sync-git-to-workspace.md` — outline v0.1
 - [ ] `tools/set-sensitivity-labels.md` (pendiente outline; governance)
+
+## Cambios v0.3 (audit 2026-09-24)
+
+Cierre del backlog "post-PyPI-publication": 4 specs nuevos que documentan
+decisiones pendientes desde la publicación de v1.9.0. Cero código nuevo;
+solo docs. Estos specs son los entregables que preceden a cualquier
+implementación de los features correspondientes.
+
+- ✅ Nuevo directorio `specs/release/` con `supersede-policy.md` — política de yank vs patch vs leave; documenta el caso v1.9.0 vs v1.9.1 (no yank) y los triggers para futuras decisiones (security CVE, metadata drift, etc.).
+- ✅ Nuevo directorio `specs/ci/` con `publish-workflow.md` — diseño del workflow `publish.yml` que reemplaza el flujo manual de `twine upload`. Cubre tag-push trigger, TestPyPI gate, environments protegidos, OIDC vs API token. Documenta también el gap actual: CONTRIBUTING.md describe un workflow que no existe todavía.
+- ✅ Nuevo directorio `specs/qa/` con `e2e-testing-strategy.md` — estrategia para tests con engines reales (`te`, `dscmd`, `pbip-validator`), binaries pinned por SHA256, nightly vs on-PR decision matrix, primer test scenario concreto (`test_te_modeling.py::test_add_measure_with_te_validates_dax`).
+- ✅ Nuevo directorio `specs/architecture/` con `07-http-transport.md` — **Capa 0** del orquestador: Streamable HTTP transport + Entra ID OAuth (decisión: PyJWT con JWKS, no MSAL). Incluye threat model, scopes RBAC (`Tools.Read`/`Tools.Write`/`Tools.Admin`), migration strategy (stdio default, HTTP opt-in vía `--transport http`).
+- ✅ Header del README: timestamp de "Última actualización" bumped a 2026-09-24.
+- ✅ Sección "Specs por capa" extendida con la nueva Capa 0.
+- ✅ Sección "Specs cross-cutting" extendida con las 3 specs de proceso (release/CI/QA).
+- ✅ Sección "Cómo leer este repo de specs" agrega línea sobre specs de release/CI/QA.
+
+Drift fix incluido (sin spec):
+
+- ✅ README.md: conteo de tools consolidado a 27 (5 lugares: Quickstart, sección "Arquitectura", diagrama ASCII, sección "Probar", "Estado actual"). Incluye `examples/README.md`.
+
+Spec pendientes para implementación posterior (no specs nuevos):
+
+- 🔲 Workflow `.github/workflows/publish.yml` (de `publish-workflow.md`).
+- 🔲 `.github/workflows/e2e-nightly.yml` + `tests/e2e/` (de `e2e-testing-strategy.md`).
+- 🔲 `src/powerbi_orchestrator_mcp/orchestrator/server.py --transport http` + `pyjwt[crypto]` dep (de `07-http-transport.md`).
+- 🔲 Posible bump a v1.9.2 / v1.10.0 cuando alguno de los 3 anteriores se implemente.
 
 ## Cambios v0.2 (audit 2026-08-26)
 
