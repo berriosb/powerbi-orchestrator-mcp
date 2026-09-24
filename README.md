@@ -234,10 +234,10 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 - ✅ Story variance analysis (detección de regresiones visuales)
 - ✅ mypy --strict clean, ruff clean, CI matrix Linux/macOS/Windows
 - ✅ Backlog de hardening cerrado (0 items pendientes)
-- ⏳ Pendiente: publicación en PyPI
+- ✅ Publicado en PyPI: https://pypi.org/project/powerbi-orchestrator-mcp/
 - ⏳ Pendiente: tests E2E con binaries reales (`te`, `dscmd`)
 
-Ver [`RELEASE-NOTES-v1.8.0.md`](./RELEASE-NOTES-v1.8.0.md) para detalles completos.
+Ver [`RELEASE-NOTES-v1.9.0.md`](./RELEASE-NOTES-v1.9.0.md) para detalles completos.
 
 ## Licencia
 

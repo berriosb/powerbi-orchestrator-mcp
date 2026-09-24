@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.1] — 2026-09-24
+
+### Changed
+
+- **README on PyPI:** `Estado actual (v1.9.0)` section now reflects ✅
+  publication on PyPI instead of marking it as a pending item. Link
+  to release notes corrected from `v1.8.0` → `v1.9.0`. First-time
+  users on https://pypi.org/project/powerbi-orchestrator-mcp/ now
+  see a description that matches reality.
+- **docs/MVP-STATUS.md:** PyPI publication moved out of the optional
+  backlog into a new "Hecho en v1.9.0" section.
+
+### Notes
+
+- Doc-only patch release. No code changes. No new tools. No dependency
+  bumps. Re-install is a no-op at the binary level (same wheel content
+  modulo the README). Safe to upgrade in place.
+- See [`RELEASE-NOTES-v1.9.1.md`](./RELEASE-NOTES-v1.9.1.md).
+
+---
+
 ## [1.9.0] — 2026-09-14
 
 ### Added
