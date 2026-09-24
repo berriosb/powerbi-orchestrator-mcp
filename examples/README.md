@@ -34,7 +34,7 @@ You don't need to run them sequentially; each example stands alone.
 
 ## What if my MCP client doesn't show tool names?
 
-The orchestrator exposes 26 tools grouped by category. See the main
+The orchestrator exposes 27 tools grouped by category. See the main
 [README § Quick links](../README.md) for the full list. If your client
 only shows a subset, check:
 

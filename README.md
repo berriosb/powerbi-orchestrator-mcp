@@ -44,7 +44,7 @@ powerbi-orchestrator-mcp --start  # runs over stdio
 python scripts/verify_mcp_server.py
 ```
 
-That's it — your LLM now sees 26 tools for Power BI / Fabric. See the
+That's it — your LLM now sees 27 tools for Power BI / Fabric. See the
 [`examples/`](./examples/) directory for 3 reproducible workflows.
 
 ---
@@ -53,14 +53,14 @@ That's it — your LLM now sees 26 tools for Power BI / Fabric. See the
 
 El proyecto **NO** es un wrapper sobre los MCP servers existentes. Es un
 servidor MCP propio que **consume** otros MCP servers como subprocess.
-Esto es lo que permite presentar al LLM 26 tools coherentes en lugar
+Esto es lo que permite presentar al LLM 27 tools coherentes en lugar
 de 500 primitivas dispersas.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Capa 1: MCP Client (Claude Desktop, VS Code, Copilot, Cursor)    │
 │         Habla JSON-RPC sobre stdio con el orquestrador.          │
-│         El LLM ve 26 tools de alto nivel.                        │
+│         El LLM ve 27 tools de alto nivel.                        │
 └────────────────────────────┬────────────────────────────────────┘
                              │ stdio + JSON-RPC
 ┌────────────────────────────▼────────────────────────────────────┐
@@ -193,7 +193,7 @@ Claude Code, Cursor** y cualquier cliente MCP stdio.
 
 ### 4. Probar
 
-En tu cliente MCP, el LLM ve **26 tools de alto nivel**, agrupadas por capa:
+En tu cliente MCP, el LLM ve **27 tools de alto nivel**, agrupadas por capa:
 
 **Sesión y planificación**
 - `connect_target` — abrir sesión contra un PBIP / Fabric workspace / PBI Desktop
@@ -225,7 +225,7 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 
 ## Estado actual (v1.9.0)
 
-- ✅ 26 tools implementadas (modelado, reportes, nube, auditoría, UX)
+- ✅ 27 tools implementadas (modelado, reportes, nube, auditoría, UX)
 - ✅ Cross-engine rollback
 - ✅ Audit log con HMAC chain
 - ✅ PlanBuilder con templates versionables
