@@ -32,7 +32,15 @@ dependencies = [
     "structlog>=24.1.0",
     "pyyaml>=6.0.1",
     "rich>=13.7.0",
+    "pyjwt[crypto]>=2.8.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/berriosb/powerbi-orchestrator-mcp"
+Repository = "https://github.com/berriosb/powerbi-orchestrator-mcp"
+Issues = "https://github.com/berriosb/powerbi-orchestrator-mcp/issues"
+Changelog = "https://github.com/berriosb/powerbi-orchestrator-mcp/blob/main/CHANGELOG.md"
+Releases = "https://github.com/berriosb/powerbi-orchestrator-mcp/releases"
 
 [project.optional-dependencies]
 dev = [

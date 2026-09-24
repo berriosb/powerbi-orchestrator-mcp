@@ -1,0 +1,200 @@
+name: e2e-nightly
+
+# Nightly E2E tests with real engine binaries (`te`, `dscmd`,
+# `pbip-validator`). See specs/qa/e2e-testing-strategy.md for the
+# design: binaries pinned by SHA256, matrix on 3 OS, schedule
+# daily + on-PR when engine adapter or fixtures change.
+#
+# Total runtime target: ≤15 min on the slowest runner.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # 04:00 UTC daily
+  workflow_dispatch:        # manual trigger
+  pull_request:
+    paths:
+      - 'src/powerbi_orchestrator_mcp/engines/**'
+      - 'src/powerbi_orchestrator_mcp/validation/**'
+      - 'tests/fixtures/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/e2e-nightly.yml'
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write           # auto-open issue on failure
+  actions: read
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Download + cache engine binaries. Pinned by SHA256 (see
+  # specs/qa/e2e-testing-strategy.md §3.3 for the canonical table).
+  #
+  # IMPORTANT: this job self-skips when SHA256 placeholders are still in
+  # place. To activate real E2E:
+  #   1. Replace `PLACEHOLDER_*_SHA256_*` below with real hashes (see
+  #      specs/qa/e2e-testing-strategy.md §3.3).
+  #   2. Verify the curl URLs point to existing release assets.
+  #   3. The workflow will then run nightly + on relevant PRs.
+  # -------------------------------------------------------------------------
+  engines:
+    name: download engines (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            engines: 'te,pbip-validator'
+          - os: macos-latest
+            engines: 'te,pbip-validator'
+          - os: windows-latest
+            engines: 'te,dscmd,pbip-validator'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Tabular Editor CLI (`te`)
+        if: contains(matrix.engines, 'te')
+        env:
+          TE_VERSION: '2.20.0'
+          # Replace with real SHA256 from the upstream release asset.
+          # See specs/qa/e2e-testing-strategy.md §3.3.
+          TE_SHA256: 'PLACEHOLDER_TE_SHA256_REPLACE_ME'
+        shell: bash
+        run: |
+          if [[ "$TE_SHA256" == PLACEHOLDER_* ]]; then
+            echo "::warning::TE_SHA256 is a placeholder. Skipping `te` download until real SHA256 is set in .github/workflows/e2e-nightly.yml. See specs/qa/e2e-testing-strategy.md §3.3."
+            exit 0
+          fi
+          mkdir -p ~/.local/bin
+          curl --fail --silent --show-error --location \
+            -o ~/.local/bin/te \
+            "https://github.com/TabularEditor/TabularEditor/releases/download/${TE_VERSION}/TabularEditor.zip"
+          echo "${TE_SHA256}  ~/.local/bin/te" | sha256sum --check -
+          chmod +x ~/.local/bin/te
+
+      - name: Download DAX Studio CLI (`dscmd`) — Windows only
+        if: contains(matrix.engines, 'dscmd')
+        env:
+          DSCMD_VERSION: '3.0.0'
+          # Replace with real SHA256 from the upstream release asset.
+          DSCMD_SHA256: 'PLACEHOLDER_DSCMD_SHA256_REPLACE_ME'
+        shell: pwsh
+        run: |
+          if ($env:DSCMD_SHA256.StartsWith('PLACEHOLDER_')) {
+            Write-Warning "DSCMD_SHA256 is a placeholder. Skipping dscmd download until real SHA256 is set in .github/workflows/e2e-nightly.yml. See specs/qa/e2e-testing-strategy.md §3.3."
+            exit 0
+          }
+          Invoke-WebRequest -Uri "https://github.com/DaxStudio/DAXStudio/releases/download/v${DSCMD_VERSION}/dscmd-win-x64.zip" -OutFile dscmd.zip
+          Expand-Archive -Path dscmd.zip -DestinationPath .
+          $actual = (Get-FileHash -Path .\dscmd.exe -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $DSCMD_SHA256) { throw "SHA256 mismatch: expected $DSCMD_SHA256, got $actual" }
+          Move-Item -Path .\dscmd.exe -Destination "$env:GITHUB_WORKSPACE\dscmd.exe"
+
+      - name: Install pbip-validator
+        if: contains(matrix.engines, 'pbip-validator')
+        continue-on-error: true   # package name may differ; non-fatal until pinned
+        run: |
+          python -m pip install --upgrade pip
+          # Microsoft's package may be published under a different name;
+          # update when the canonical name is known. See
+          # specs/qa/e2e-testing-strategy.md §3.3.
+          python -m pip install pbip-validator || \
+            echo "::warning::pbip-validator not installable from PyPI under that name. Skipping — see specs/qa/e2e-testing-strategy.md §3.3."
+          python -m pip show pbip-validator || true
+
+  # -------------------------------------------------------------------------
+  # Run E2E tests. Depends on `engines` having downloaded the binaries.
+  # -------------------------------------------------------------------------
+  e2e:
+    name: pytest e2e (${{ matrix.os }} / py${{ matrix.python-version }})
+    needs: engines
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install package in editable mode
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run E2E suite
+        id: pytest
+        shell: bash
+        run: |
+          set +e
+          mkdir -p test-results
+          pytest tests/e2e/ \
+            --junitxml=test-results/e2e-${{ matrix.os }}-py${{ matrix.python-version }}.xml \
+            --tb=short \
+            -v
+          PYTEST_EXIT=$?
+          echo "pytest_exit_code=${PYTEST_EXIT}" >> "${GITHUB_OUTPUT}"
+          exit ${PYTEST_EXIT}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: test-results/
+          retention-days: 30
+
+  # -------------------------------------------------------------------------
+  # Auto-open a GitHub issue on nightly failure so the maintainer
+  # gets pinged without having to dig through Actions logs.
+  # -------------------------------------------------------------------------
+  report-failure:
+    name: report failure
+    needs: e2e
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-results-*
+          path: test-results/
+          merge-multiple: true
+
+      - name: Open issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            let body = 'Nightly E2E run failed.\n\n';
+            body += 'Run: ${{ github.run_id }}\n';
+            body += 'Commit: ${{ github.sha }}\n\n';
+            body += '## Test results\n\n';
+            const files = fs.readdirSync('test-results').filter(f => f.endsWith('.xml'));
+            for (const f of files) {
+              const xml = fs.readFileSync(path.join('test-results', f), 'utf8');
+              body += '### ' + f + '\n\n```xml\n' + xml.slice(0, 2000) + '\n```\n\n';
+            }
+            body += '\nSee the full Actions run for context.';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'e2e-nightly failed @ ' + new Date().toISOString().slice(0, 10),
+              body: body,
+              labels: ['e2e', 'nightly', 'bug'],
+            });
