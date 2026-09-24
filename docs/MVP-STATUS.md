@@ -112,11 +112,13 @@ Total: **26/26 tools implementadas**, backlog de hardening cerrado.
 Sprint 13 fue ocupado por hardening sin tools nuevas (cobertura, redactado PII, elicitation rate-limit, audit log integrity).
 
 ### Backlog v1.8+ (siguientes, opcional)
-- Publicación en PyPI (ahora `pip install git+...`).
 - Tests E2E con binaries reales (`te`, `dscmd`, `superbi-mcp`).
 - Marketplace de page templates + plugin system para BPA rules custom.
 - Remote transport (HTTP + Entra OAuth).
 - Storytelling scoring con análisis de varianza real sobre telemetry.
+
+### Hecho en v1.9.0
+- ✅ Publicación en PyPI (`pip install powerbi-orchestrator-mcp` → https://pypi.org/project/powerbi-orchestrator-mcp/).
 
 ---
 
