@@ -48,7 +48,7 @@ def _engine(responses: dict[str, Any] | None = None) -> PowerBiModelingMcpEngine
     """Build an adapter with mocked responses (no real subprocess)."""
     return PowerBiModelingMcpEngine(
         binary="/bin/echo",
-        version="0.1.9",
+        version="1.0.0",
         mock_responses=responses or {},
     )
 
@@ -58,10 +58,10 @@ class TestProperties:
         assert _engine().name == "powerbi-modeling-mcp"
 
     def test_version_default(self) -> None:
-        assert _engine().version == "0.1.9"
+        assert _engine().version == "1.0.0"
 
     def test_default_pinned_version_constant(self) -> None:
-        assert DEFAULT_PINNED_VERSION == "0.1.9"
+        assert DEFAULT_PINNED_VERSION == "1.0.0"
 
 
 class TestConnect:
@@ -343,7 +343,7 @@ class TestDispatch:
         async def fake_rpc(method: str, params: dict | None = None) -> dict:
             raise RuntimeError("boom")
 
-        engine._rpc = fake_rpc  # type: ignore[method-assign]
+        engine._rpc = fake_rpc  # type: ignore[assignment]
         with pytest.raises(EngineError) as exc_info:
             await engine._dispatch("foo", "bar", conn=None)
         assert exc_info.value.code == "engine_unhandled"
@@ -356,7 +356,7 @@ class TestDispatch:
             captured.update(params or {})
             return {}
 
-        engine._rpc = fake_rpc  # type: ignore[method-assign]
+        engine._rpc = fake_rpc  # type: ignore[assignment]
         conn = ConnectionHandle(
             engine="powerbi-modeling-mcp",
             target_type="pbip_folder",
@@ -367,6 +367,30 @@ class TestDispatch:
         assert "target" in captured
         assert captured["target"]["target_type"] == "pbip_folder"
         assert captured["k"] == "v"
+
+    async def test_dispatch_routes_to_mcp_tools_call(self) -> None:
+        engine = _engine()
+        captured: dict[str, Any] = {}
+
+        async def fake_rpc(
+            method: str, params: dict[str, Any] | None = None
+        ) -> dict[str, Any]:
+            captured["method"] = method
+            captured["params"] = params
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": '{"tables": [{"name": "Sales"}]}',
+                    }
+                ]
+            }
+
+        engine._rpc = fake_rpc  # type: ignore[assignment]
+        res = await engine._dispatch("database_operations", "list_tables", conn=None)
+        assert captured["method"] == "tools/call"
+        assert captured["params"]["name"] == "list_tables"
+        assert res == {"tables": [{"name": "Sales"}]}
 
 
 class TestRealSubprocess:

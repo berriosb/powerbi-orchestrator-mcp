@@ -246,10 +246,9 @@ def commit_workspace_to_git(
             warnings=[f"not a git repo: {repo_path}"],
         )
 
-    # Optional branch switch (only if requested).
     if branch is not None:
         try:
-            _run_git(repo_path, ["checkout", branch])
+            _run_git(repo_path, ["checkout", "--", branch])
         except subprocess.CalledProcessError as exc:
             return CommitWorkspaceToGitResult(
                 dry_run=dry_run,
@@ -266,21 +265,27 @@ def commit_workspace_to_git(
         else:
             warnings.append("fabric_client returned an empty snapshot")
 
-    # Conflict detection against the working tree.
     local = _detect_local_changes(repo_path)
 
-    # Render-and-write phase.
     target_paths: list[Path] = []
     for item_id, item in snapshot.items():
         if item_id in excluded:
             continue
         item_name = str(item.get("name", item_id))
         item_type = str(item.get("type", "Dataset"))
-        # Gen2 Dataflows live in their own subtree.
         if item_type in {"DataflowGen2", "DataflowGen2Item"}:
             target = repo_path / "DataflowGen2" / f"{item_name}.pbip"
         else:
             target = repo_path / item_type / f"{item_name}.pbip"
+
+        try:
+            if not target.resolve().is_relative_to(repo_path.resolve()):
+                warnings.append(f"insecure item path detected for {item_name!r}; skipped")
+                continue
+        except (ValueError, RuntimeError):
+            warnings.append(f"invalid item path for {item_name!r}; skipped")
+            continue
+
         blob = str(item.get("blob", _render_pbip(item)))
         target.parent.mkdir(parents=True, exist_ok=True)
 

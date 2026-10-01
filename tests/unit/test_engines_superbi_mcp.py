@@ -252,3 +252,25 @@ class TestDispatch:
         assert result.valid is False
         assert len(result.findings) == 1
         assert result.findings[0]["rule_id"] == "missing_alt_text"
+
+
+class TestCommercialMode:
+    async def test_health_check_disabled_in_commercial_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PBI_COMMERCIAL_MODE", "true")
+        engine = _engine()
+        status = await engine.health_check()
+        assert status.available is False
+        assert "commercial mode" in (status.reason_unavailable or "")
+
+    async def test_connect_raises_in_commercial_mode(
+        self, pbip_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from powerbi_orchestrator_mcp.engines.errors import EngineValidationError
+
+        monkeypatch.setenv("PBI_COMMERCIAL_MODE", "true")
+        engine = _engine()
+        with pytest.raises(EngineValidationError) as exc:
+            await engine.connect(pbip_dir)
+        assert "commercial mode" in str(exc.value)

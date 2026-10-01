@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from powerbi_orchestrator_mcp.tools.promote_in_pipeline import (
     QualityGate,
@@ -211,7 +212,7 @@ class TestPromoteInPipeline:
         assert r.gates_executed[0].passed is False
 
     def test_invalid_gate_type_rejected(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             QualityGate(type="unknown_gate", blocking=True)
 
     def test_custom_gate_pass(self) -> None:
@@ -246,7 +247,7 @@ class TestPromoteInPipeline:
         def logger(**kwargs: Any) -> None:
             events.append(kwargs)
 
-        r = promote_in_pipeline(
+        promote_in_pipeline(
             "p", audit_logger=logger, items=["x"], dry_run=True
         )
         assert any(e.get("action") == "promoted" for e in events)

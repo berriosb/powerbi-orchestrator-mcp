@@ -42,7 +42,8 @@ RUN uv venv /app/.venv --python 3.11 && \
         "httpx>=0.27.0" \
         "structlog>=24.1.0" \
         "pyyaml>=6.0.1" \
-        "rich>=13.7.0"
+        "rich>=13.7.0" \
+        "pyjwt[crypto]>=2.8.0"
 
 # Now copy the source and install the package itself (no deps).
 COPY src /app/src

@@ -247,7 +247,7 @@ class TestModelDiffer:
         assert result.total_changes == 0
 
     def test_added_table_is_added_severity(self) -> None:
-        a = {"tables": [], "measures": [], "relationships": []}
+        a: dict[str, list[Any]] = {"tables": [], "measures": [], "relationships": []}
         b = {"tables": [{"name": "T_new"}], "measures": [], "relationships": []}
         differ = ModelDiffer(_inspector_factory(a, b))
         result = differ.diff("modelA", "modelB")
@@ -256,7 +256,7 @@ class TestModelDiffer:
 
     def test_removed_table_is_removed(self) -> None:
         a = {"tables": [{"name": "T_old"}], "measures": [], "relationships": []}
-        b = {"tables": [], "measures": [], "relationships": []}
+        b: dict[str, list[Any]] = {"tables": [], "measures": [], "relationships": []}
         differ = ModelDiffer(_inspector_factory(a, b))
         result = differ.diff("modelA", "modelB")
         assert result.removed_objects == 1

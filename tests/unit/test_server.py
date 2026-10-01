@@ -18,12 +18,14 @@ from typing import Any
 import pytest
 
 from powerbi_orchestrator_mcp.orchestrator import server as srv
-from powerbi_orchestrator_mcp.orchestrator.plan_models import PlanStep
+from powerbi_orchestrator_mcp.orchestrator.plan_models import (
+    EstimatedChanges,
+    PlanStep,
+)
 from powerbi_orchestrator_mcp.orchestrator.rollback import StepOutcome
 from powerbi_orchestrator_mcp.orchestrator.server import (
     ApplyResult,
     ConnectResult,
-    EstimatedChanges,
     PlanResult,
     apply_plan,
     connect_target,
@@ -313,6 +315,7 @@ class TestApplyPlan:
         result = await apply_plan(plan_id="plan_does_not_exist")
         assert isinstance(result, ApplyResult)
         assert result.result == "failed"
+        assert result.failed_step is not None
         assert "plan not found" in result.failed_step["error_message"]
 
     @pytest.mark.asyncio
@@ -467,3 +470,123 @@ class TestEngineDetectorHelpers:
 
         with pytest.raises(UnknownEngineError):
             get_engine_timeout_s("nonexistent")
+
+
+class TestSessionIsolation:
+    def test_session_var_defaults_none(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            _reset_server_state,
+            get_active_session_id,
+        )
+
+        _reset_server_state()
+        assert get_active_session_id() is None
+
+    @pytest.mark.asyncio
+    async def test_connect_target_sets_active_session_id(
+        self, pbip_dir: Path
+    ) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            _reset_server_state,
+            connect_target,
+            get_active_session_id,
+        )
+
+        _reset_server_state()
+        res = await connect_target(
+            target_type="pbip_folder", target_ref=str(pbip_dir)
+        )
+        assert get_active_session_id() == res.session_id
+
+
+class TestMcpInstructions:
+    def test_instructions_present_and_informative(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import mcp
+
+        assert mcp.instructions is not None
+        assert "execute_dax_query" in mcp.instructions
+        assert "audit_model_and_report" in mcp.instructions
+        assert "powerbi_health" in mcp.instructions
+
+
+class TestJsonArgParsing:
+    def test_dict_input_returned_as_is(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
+
+        data = {"foo": "bar", "num": 42}
+        assert _parse_json_arg(data) == data
+
+    def test_list_input_returned_as_is(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
+
+        data = [{"a": 1}, {"b": 2}]
+        assert _parse_json_arg(data) == data
+
+    def test_valid_json_string_parsed(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
+
+        assert _parse_json_arg('{"key": "val"}') == {"key": "val"}
+        assert _parse_json_arg('[1, 2, 3]') == [1, 2, 3]
+
+    def test_invalid_json_string_returns_default(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
+
+        assert _parse_json_arg("{bad json", default=[]) == []
+        assert _parse_json_arg("not json", default={}) == {}
+
+    def test_none_and_empty_returns_default(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
+
+        assert _parse_json_arg(None, default="fallback") == "fallback"
+        assert _parse_json_arg("   ", default=[]) == []
+
+
+class TestExecuteDaxQuery:
+    @pytest.mark.asyncio
+    async def test_execute_dax_query_wraps_in_evaluate(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from powerbi_orchestrator_mcp.orchestrator.server import execute_dax_query
+
+        mock_client = MagicMock()
+        mock_client.execute_queries = AsyncMock(return_value={"results": [{"tables": []}]})
+
+        res = await execute_dax_query(
+            workspace_id="ws-123",
+            dataset_id="ds-456",
+            dax_query="TOPN(5, Sales)",
+            fabric_client=mock_client,
+        )
+
+        assert res == {"results": [{"tables": []}]}
+        mock_client.execute_queries.assert_awaited_once_with(
+            workspace_id="ws-123",
+            dataset_id="ds-456",
+            queries=[{"query": "EVALUATE TOPN(5, Sales)"}],
+            impersonated_user_name=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_execute_dax_query_preserves_evaluate_and_upn(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from powerbi_orchestrator_mcp.orchestrator.server import execute_dax_query
+
+        mock_client = MagicMock()
+        mock_client.execute_queries = AsyncMock(return_value={"results": [{"tables": [{"rows": [1]}]}]})
+
+        res = await execute_dax_query(
+            workspace_id="ws-123",
+            dataset_id="ds-456",
+            dax_query="EVALUATE ROW('Count', 1)",
+            impersonated_user_name="user@company.com",
+            fabric_client=mock_client,
+        )
+
+        assert res == {"results": [{"tables": [{"rows": [1]}]}]}
+        mock_client.execute_queries.assert_awaited_once_with(
+            workspace_id="ws-123",
+            dataset_id="ds-456",
+            queries=[{"query": "EVALUATE ROW('Count', 1)"}],
+            impersonated_user_name="user@company.com",
+        )

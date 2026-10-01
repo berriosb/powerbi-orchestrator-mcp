@@ -18,6 +18,7 @@ from jwt import PyJWKClient
 
 from powerbi_orchestrator_mcp.orchestrator.transport import (
     AuthError,
+    EntraAuthMiddleware,
     HttpConfig,
     _extract_bearer,
     auth_middleware_factory,
@@ -405,3 +406,79 @@ class TestAuthMiddlewareFactory:
         with pytest.raises(AuthError) as exc_info:
             validate(None)
         assert exc_info.value.status == 401
+
+
+class TestEntraAuthMiddleware:
+    @pytest.mark.asyncio
+    async def test_middleware_blocks_unauthenticated_http(self) -> None:
+        async def inner_app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"OK"})
+
+        def validate_fn(header: str | None) -> dict[str, object]:
+            raise AuthError(401, "Missing bearer token", www_authenticate='Bearer realm="test"')
+
+        middleware = EntraAuthMiddleware(inner_app, validate_fn)
+
+        messages: list[dict[str, Any]] = []
+
+        async def fake_receive() -> dict[str, Any]:
+            return {"type": "http.request"}
+
+        async def fake_send(message: dict[str, Any]) -> None:
+            messages.append(message)
+
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "headers": [],
+        }
+
+        await middleware(scope, fake_receive, fake_send)
+
+        assert len(messages) == 2
+        assert messages[0]["status"] == 401
+        headers = dict(messages[0]["headers"])
+        assert b"www-authenticate" in headers
+
+    @pytest.mark.asyncio
+    async def test_middleware_passes_authenticated_http(self) -> None:
+        called = False
+
+        async def inner_app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+            nonlocal called
+            called = True
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"OK"})
+
+        def validate_fn(header: str | None) -> dict[str, object]:
+            return {"sub": "user-123"}
+
+        middleware = EntraAuthMiddleware(inner_app, validate_fn)
+
+        messages: list[dict[str, Any]] = []
+
+        async def fake_receive() -> dict[str, Any]:
+            return {"type": "http.request"}
+
+        async def fake_send(message: dict[str, Any]) -> None:
+            messages.append(message)
+
+        scope: dict[str, Any] = {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "headers": [(b"authorization", b"Bearer valid-token")],
+        }
+
+        await middleware(scope, fake_receive, fake_send)
+
+        assert called is True
+        assert len(messages) == 2
+        assert messages[0]["status"] == 200
+        assert scope.get("entra_claims") == {"sub": "user-123"}
+
+        from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+
+        assert get_current_user() == {"sub": "user-123"}

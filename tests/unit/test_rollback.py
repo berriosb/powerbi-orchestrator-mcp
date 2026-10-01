@@ -293,7 +293,10 @@ class TestCrossEngineDispatcher:
         failed_step = _step("failed", "failed-rb", action="noop")
         failed_step.engine = "cloud"
 
-        # Override rb engines to match originals.
+        assert s_modeling.rollback_step is not None
+        assert s_report_a.rollback_step is not None
+        assert s_report_b.rollback_step is not None
+        assert failed_step.rollback_step is not None
         s_modeling.rollback_step.engine = "modeling"
         s_report_a.rollback_step.engine = "report"
         s_report_b.rollback_step.engine = "report"
@@ -313,10 +316,13 @@ class TestCrossEngineDispatcher:
 
     async def test_dispatcher_partial_failure(self) -> None:
         s1 = _step("s1", "s1-rb")
+        assert s1.rollback_step is not None
         s1.rollback_step.engine = "modeling"
         s2 = _step("s2", "s2-rb")
+        assert s2.rollback_step is not None
         s2.rollback_step.engine = "report"
         failed_step = _step("failed", "failed-rb")
+        assert failed_step.rollback_step is not None
         failed_step.rollback_step.engine = "cloud"
 
         # Dispatcher returns an executor that fails for "report".
@@ -341,8 +347,10 @@ class TestCrossEngineDispatcher:
         executor = _PerEngineExecutor()
         engine = RollbackEngine(executor)
         s1 = _step("s1", "s1-rb")
+        assert s1.rollback_step is not None
         s1.rollback_step.engine = "modeling"
         failed_step = _step("failed", "failed-rb")
+        assert failed_step.rollback_step is not None
         failed_step.rollback_step.engine = "cloud"
 
         result = await engine.execute_plan(

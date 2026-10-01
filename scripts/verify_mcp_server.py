@@ -74,6 +74,7 @@ EXPECTED_TOOLS = {
     "sync_git_to_workspace",
     "set_sensitivity_labels",
     "powerbi_health",
+    "execute_dax_query",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 

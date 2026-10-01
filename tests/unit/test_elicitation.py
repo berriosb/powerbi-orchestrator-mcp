@@ -45,6 +45,7 @@ class TestModels:
                 ElicitationChoice(label="B"),
             ],
         )
+        assert req.choices is not None
         assert len(req.choices) == 2
 
     def test_elicitation_response(self) -> None:

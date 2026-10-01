@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
     AuditReportUxAndStorytellingResult,
+    PageContext,
     UxFinding,
     _check_cohesion,
     _check_density,
@@ -89,11 +91,7 @@ class TestStrictnessThreshold:
 # ---------------------------------------------------------------------------
 
 
-def _ctx(visuals: list[dict], *, audience: str = "executive") -> object:
-    from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
-        PageContext,
-    )
-
+def _ctx(visuals: list[dict[str, Any]], *, audience: str = "executive") -> PageContext:
     return PageContext(
         page_name="Test",
         audience=audience,

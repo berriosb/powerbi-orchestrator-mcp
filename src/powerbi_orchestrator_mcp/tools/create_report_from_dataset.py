@@ -49,6 +49,16 @@ def create_report_from_dataset(
     include_card) and bar charts. Each visual references the first
     measure or table returned by the inspector (mock or modeling engine).
     """
+    if Path(page_name).name != page_name or "/" in page_name or "\\" in page_name or not page_name.strip():
+        return {
+            "success": False,
+            "page_name": page_name,
+            "files_created": [],
+            "visual_ids": [],
+            "warnings": [f"invalid page name: {page_name!r}"],
+            "rollback_handle": None,
+        }
+
     pbip_root = Path(pbip_path)
     if not pbip_root.exists():
         return {

@@ -15,6 +15,7 @@ later is a single constant.
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 from dataclasses import dataclass
 
@@ -122,6 +123,17 @@ async def detect_engine(probe: EngineProbe) -> EngineStatus:
     3. If found and has version_args, probe version (best-effort,
        fail silently — engines that crash on --version still count).
     """
+    if probe.engine == "superbi-mcp" and (
+        os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in ("1", "true", "yes")
+        or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes")
+    ):
+        return EngineStatus(
+            name=probe.engine,
+            available=False,
+            version=None,
+            reason_unavailable="disabled in commercial mode (FSL license; python_report is used as MIT alternative)",
+        )
+
     binary_path = _resolve_binary(probe.binary_names)
 
     if binary_path is None:

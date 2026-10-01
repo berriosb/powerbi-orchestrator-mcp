@@ -10,12 +10,12 @@
 
 | Version | Supported           |
 |---------|---------------------|
-| 1.8.x   | ✅ active           |
-| 1.7.x   | ✅ critical fixes only |
-| 1.6.x   | ⚠️ EOL — please upgrade |
-| < 1.6   | ❌ unsupported       |
+| 1.10.x  | ✅ active           |
+| 1.9.x   | ✅ active           |
+| 1.8.x   | ✅ critical fixes only |
+| < 1.8   | ❌ unsupported       |
 
-We follow semver. Patch releases (1.8.x) get critical security fixes;
+We follow semver. Patch releases (1.10.x) get critical security fixes;
 minor releases (1.x) get full backports for one cycle.
 
 ---

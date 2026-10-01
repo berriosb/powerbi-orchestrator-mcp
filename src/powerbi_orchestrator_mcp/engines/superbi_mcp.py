@@ -25,6 +25,7 @@ caller.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +93,16 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         return self._version
 
     async def health_check(self) -> EngineStatus:
+        if (
+            os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in ("1", "true", "yes")
+            or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes")
+        ):
+            return EngineStatus(
+                name=self._engine_name,
+                available=False,
+                version=None,
+                reason_unavailable="disabled in commercial mode (FSL license; use python_report)",
+            )
         try:
             await self._start()
         except EngineError as err:
@@ -110,6 +121,20 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
 
     async def connect(self, pbip_path: Path) -> ConnectionHandle:
         """Open a logical connection to the PBIP via superbi-mcp."""
+        if (
+            os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in ("1", "true", "yes")
+            or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes")
+        ):
+            from powerbi_orchestrator_mcp.engines.errors import (
+                EngineValidationError,
+            )
+
+            raise EngineValidationError(
+                "superbi-mcp is disabled in commercial mode due to FSL license. Use python_report for MIT-compliant operation.",
+                engine=self._engine_name,
+                code="engine_validation_failed",
+                remediation_hint="Use python_report for MIT-compliant operation or unset PBI_COMMERCIAL_MODE",
+            )
         await self._start()
         if not pbip_path.exists():
             from powerbi_orchestrator_mcp.engines.errors import (

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -266,7 +267,8 @@ class InMemoryModelingAdapter:
         conn: ConnectionHandle,  # noqa: ARG002
         label: str,
     ) -> SnapshotHandle:
-        path = Path(os.path.join("/tmp", f"snapshot-{label}.json"))
+        clean_label = Path(label).name
+        path = Path(tempfile.gettempdir()) / f"snapshot-{clean_label}.json"
         path.write_text(
             json.dumps(self._models.get(conn.target_ref, {}), indent=2)
         )

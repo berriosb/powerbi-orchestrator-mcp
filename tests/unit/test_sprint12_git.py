@@ -7,11 +7,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from powerbi_orchestrator_mcp.tools.commit_workspace_to_git import (
     commit_workspace_to_git,
 )
 from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (
+    SyncGitToWorkspace,
     sync_git_to_workspace,
 )
 
@@ -117,7 +119,7 @@ class TestCommitWorkspaceToGit:
         assert len(r.items_committed) == 2
         # No files written.
         for path in empty_git_repo.glob("Dataset/*.pbip"):
-            assert False, f"dry_run should not write {path}"
+            pytest.fail(f"dry_run should not write {path}")
 
     def test_real_commit_creates_files_and_sha(
         self, empty_git_repo: Path
@@ -223,7 +225,7 @@ class TestCommitWorkspaceToGit:
         self, empty_git_repo: Path
     ) -> None:
         client = _FabricClientStub()
-        r = commit_workspace_to_git(
+        commit_workspace_to_git(
             workspace_id="ws",
             output_repo_path=str(empty_git_repo),
             dry_run=False,
@@ -339,7 +341,7 @@ class TestSyncGitToWorkspace:
         assert any("no *.pbip" in w for w in r.warnings)
 
     def test_invalid_conflict_resolution_rejected(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             SyncGitToWorkspace.model_validate(
                 {
                     "repo_path": "/tmp/x",
@@ -376,7 +378,7 @@ class TestSyncGitToWorkspace:
             {"Dataset/SalesModel.pbip": "{}", "Report/Exec.pbip": "{}"},
         )
         client = _FabricListStub()
-        r = sync_git_to_workspace(
+        sync_git_to_workspace(
             repo_path=str(empty_git_repo),
             workspace_id="ws",
             dry_run=False,

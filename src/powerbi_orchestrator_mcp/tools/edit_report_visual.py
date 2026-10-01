@@ -28,9 +28,9 @@ class EditReportVisual(BaseModel):
     page_name: str
     visual_id: str
     type: str | None = None
-    fields_json: str | None = None  # JSON of fields to merge (e.g. {"Values": ["[Sales]"]})
-    format_json: str | None = None  # JSON of format/objects
-    position_json: str | None = None  # JSON of {x, y, width, height}
+    fields_json: Any = None
+    format_json: Any = None
+    position_json: Any = None
     alt_text: str | None = None
     is_hidden: bool | None = None
 
@@ -41,9 +41,9 @@ def edit_report_visual(
     visual_id: str,
     *,
     type: str | None = None,
-    fields_json: str | None = None,
-    format_json: str | None = None,
-    position_json: str | None = None,
+    fields_json: Any = None,
+    format_json: Any = None,
+    position_json: Any = None,
     alt_text: str | None = None,
     is_hidden: bool | None = None,
 ) -> dict[str, Any]:
@@ -121,10 +121,14 @@ def edit_report_visual(
             ),
         }
 
-    # Parse JSON inputs.
     try:
-        fields = json.loads(fields_json) if fields_json is not None else None
-    except json.JSONDecodeError as exc:
+        if isinstance(fields_json, dict):
+            fields = fields_json
+        elif fields_json is not None:
+            fields = json.loads(fields_json)
+        else:
+            fields = None
+    except (json.JSONDecodeError, TypeError) as exc:
         return {
             "success": False,
             "visual_id": visual_id,
@@ -134,8 +138,13 @@ def edit_report_visual(
             "error_message": f"fields_json is not valid JSON: {exc}",
         }
     try:
-        format_obj = json.loads(format_json) if format_json is not None else None
-    except json.JSONDecodeError as exc:
+        if isinstance(format_json, dict):
+            format_obj = format_json
+        elif format_json is not None:
+            format_obj = json.loads(format_json)
+        else:
+            format_obj = None
+    except (json.JSONDecodeError, TypeError) as exc:
         return {
             "success": False,
             "visual_id": visual_id,
@@ -145,8 +154,13 @@ def edit_report_visual(
             "error_message": f"format_json is not valid JSON: {exc}",
         }
     try:
-        position = json.loads(position_json) if position_json is not None else None
-    except json.JSONDecodeError as exc:
+        if isinstance(position_json, dict):
+            position = position_json
+        elif position_json is not None:
+            position = json.loads(position_json)
+        else:
+            position = None
+    except (json.JSONDecodeError, TypeError) as exc:
         return {
             "success": False,
             "visual_id": visual_id,

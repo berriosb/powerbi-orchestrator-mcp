@@ -21,10 +21,10 @@ from powerbi_orchestrator_mcp.viz.visual_suggester import (
 class SelectVisualsForKpis(BaseModel):
     """Input schema for ``select_visuals_for_kpis`` (SPEC §6.2 #2)."""
 
-    kpis_json: str  # JSON list of KPIs; each: name, semantic_type, fields, audience
+    kpis_json: Any
     audience: str = "executive"
     max_results: int = 3
-    inspector: Any = None  # optional: provides cardinality via list_tables
+    inspector: Any = None
 
 
 class VisualRecommendation(BaseModel):
@@ -40,17 +40,24 @@ class SelectVisualsResult(BaseModel):
     """Output of select_visuals_for_kpis."""
 
     recommendations: list[VisualRecommendation]
-    coverage_pct: float  # % of KPIs that got at least 1 recommendation
+    coverage_pct: float
     warnings: list[str] = Field(default_factory=list)
 
 
-def _parse_kpis(kpis_json: str) -> list[SuggesterInput]:
+def _parse_kpis(kpis_json: Any) -> list[SuggesterInput]:
     """Parse the JSON KPI list into SuggesterInput objects."""
     import json as _json
 
-    raw = _json.loads(kpis_json)
+    if isinstance(kpis_json, list):
+        raw = kpis_json
+    elif isinstance(kpis_json, str):
+        raw = _json.loads(kpis_json)
+    else:
+        raw = []
     out: list[SuggesterInput] = []
     for k in raw:
+        if not isinstance(k, dict):
+            continue
         out.append(
             SuggesterInput(
                 name=k.get("name", "?"),
@@ -77,7 +84,6 @@ def _infer_cardinality(inspector: Any, fields: list[str]) -> int | None:
             cols = inspector.list_columns(table["name"])
             col_names = {c["name"] for c in cols}
             if any(f in col_names for f in fields):
-                # Rough estimate: 10 if we can't count exactly.
                 return 10
     except Exception:  # noqa: BLE001
         return None
@@ -85,7 +91,7 @@ def _infer_cardinality(inspector: Any, fields: list[str]) -> int | None:
 
 
 def select_visuals_for_kpis(
-    kpis_json: str,
+    kpis_json: Any,
     audience: str = "executive",  # noqa: ARG001
     max_results: int = 3,
     *,

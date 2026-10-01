@@ -222,6 +222,16 @@ def design_report_page_from_requirements(
     else:
         report_dir = report_dir_candidates[0]
 
+    if Path(page_name).name != page_name or "/" in page_name or "\\" in page_name or not page_name.strip():
+        return DesignReportPageResult(
+            page_name=page_name,
+            visual_count=len(visual_specs),
+            visuals=visual_specs,
+            rationale=rationale,
+            files_changed=[],
+            warnings=[f"invalid page name: {page_name!r}"],
+        )
+
     page_dir = report_dir / "pages" / page_name
     page_dir.mkdir(parents=True, exist_ok=True)
     page_path = page_dir / "page.json"
