@@ -103,8 +103,10 @@ jobs:
     name: test-pypi (smoke install)
     needs: build
     if: |
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.promote != 'true')
+      secrets.TEST_PYPI_API_TOKEN != '' && (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.promote != 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -118,7 +120,7 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
         run: |
           python -m pip install --upgrade twine
-          python -m twine upload --skip-existing dist/*.whl dist/*.tar.gz
+          python -m twine upload --repository-url https://test.pypi.org/legacy/ --skip-existing dist/*.whl dist/*.tar.gz
 
       - name: Smoke install from TestPyPI
         shell: bash
@@ -146,8 +148,13 @@ jobs:
     name: pypi (production)
     needs: [build, test-pypi]
     if: |
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.promote == 'true')
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.test-pypi.result == 'success' || needs.test-pypi.result == 'skipped') &&
+      (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: ubuntu-latest
     environment:
       name: pypi-production
@@ -227,10 +234,15 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
           fi
-          gh release create "$VERSION" \
-            --title "Release $VERSION" \
-            --notes-file /tmp/release-body.md \
-            --target "${{ github.sha }}" \
-            dist/*.whl \
-            dist/*.tar.gz \
-            SHA256SUMS
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists. Uploading/updating assets..."
+            gh release upload "$VERSION" dist/*.whl dist/*.tar.gz SHA256SUMS --clobber
+          else
+            gh release create "$VERSION" \
+              --title "Release $VERSION" \
+              --notes-file /tmp/release-body.md \
+              --target "${{ github.sha }}" \
+              dist/*.whl \
+              dist/*.tar.gz \
+              SHA256SUMS
+          fi
