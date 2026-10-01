@@ -15,14 +15,18 @@ to SQLite-backed plan storage.
 
 from __future__ import annotations
 
+import contextvars
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
+from powerbi_orchestrator_mcp.cloud.auth import AuthConfig, FabricCredential
+from powerbi_orchestrator_mcp.cloud.fabric_client import FabricClient
 from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog
 from powerbi_orchestrator_mcp.orchestrator.context import (
     EngineStatus,
@@ -41,7 +45,9 @@ from powerbi_orchestrator_mcp.orchestrator.plan_executions import (
     PlanExecution,
     PlanExecutionState,
     PlanExecutionStore,
-    reconcile_orphan_executions_on_boot,
+)
+from powerbi_orchestrator_mcp.orchestrator.plan_executions import (
+    reconcile_orphan_executions_on_boot as reconcile_orphan_executions_on_boot,
 )
 from powerbi_orchestrator_mcp.orchestrator.plan_models import (
     EstimatedChanges,
@@ -51,6 +57,7 @@ from powerbi_orchestrator_mcp.orchestrator.plan_models import (
     PlanValidationError,
     UnknownTemplateError,
 )
+from powerbi_orchestrator_mcp.orchestrator.plan_store import PlanStore
 from powerbi_orchestrator_mcp.orchestrator.planner import PlanBuilder
 from powerbi_orchestrator_mcp.orchestrator.rollback import (
     NoRollbackAvailableError,
@@ -163,11 +170,54 @@ class ApplyResult(BaseModel):
     artifacts_changed: list[str] = Field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# FastMCP instance
-# ---------------------------------------------------------------------------
+MCP_INSTRUCTIONS = """Power BI & Microsoft Fabric Orchestrator MCP Server.
 
-mcp = FastMCP("powerbi-orchestrator-mcp")
+You are an expert Power BI and Microsoft Fabric solutions architect and data analyst assistant.
+Use this server's tools to inspect, audit, query, author, and deploy Power BI and Fabric assets.
+
+Core Workflows & Tool Selection:
+1. Environment Health & Diagnostics:
+   - Call `powerbi_health` first if you need to inspect available external engines (TMDL tools, DAX compilers, Tabular Editor) or provide setup guidance.
+
+2. Auditing & Quality Gates:
+   - Use `audit_model_and_report` for full project audits (Tabular BPA, DAX linting, WCAG 2.1 accessibility, naming conventions).
+   - Use `optimize_report_performance` to evaluate report page rendering times and identify slow visual containers.
+   - Use `audit_report_ux_and_storytelling` to critique dashboard UX, visual hierarchy, and cognitive load.
+   - Use `pre_deploy_check` to evaluate audit findings against gate profiles before publishing.
+
+3. Live Data & DAX Testing:
+   - Use `execute_dax_query` to query live semantic models in Power BI Service / Fabric. Inspect table rows, test measures, or verify Row-Level Security via `impersonated_user_name`.
+   - Use `run_dax_regression` to compare measure query outputs against a golden baseline.
+
+4. Model Authoring & Changes:
+   - Use `add_measure_with_validation` to write measures with automated syntax and best-practice linting.
+   - Use `create_semantic_model_from_schema` to generate complete TMDL models and PBIP directories from YAML or JSON.
+   - Use `setup_rls_and_roles` to configure and test Row-Level Security roles.
+   - Use `refactor_to_calculation_groups` to consolidate repetitive time-intelligence measures.
+   - Use `plan_change` (with `intent='safe_rename'`) and `apply_plan` for safe column/measure renames across model and visuals.
+
+5. Visuals & Report Design:
+   - Use `select_visuals_for_kpis` to find the most effective visual types for given business metrics and target audiences.
+   - Use `design_report_page_from_requirements` to automatically generate a PBIR page layout from a natural language brief.
+   - Use `create_report_from_dataset` to scaffold a starter report for a model.
+   - Use `edit_report_visual` for surgical edits on individual chart containers.
+   - Use `apply_theme_and_accessibility_rules` to apply colorblind-safe themes (e.g. Okabe-Ito) and backfill alt text.
+   - Use `screenshot_report_pages` to capture visual wireframes or image snapshots.
+
+6. Deployment & Governance:
+   - Use `deploy_to_workspace` to run gates, publish PBIP, and configure scheduled refresh in Fabric.
+   - Use `run_refresh` to trigger or poll dataset refreshes.
+   - Use `promote_in_pipeline` for Fabric Deployment Pipelines (Dev -> Test -> Prod).
+   - Use `commit_workspace_to_git` and `sync_git_to_workspace` for Git source-control integration.
+   - Use `set_sensitivity_labels` for Microsoft Purview information protection.
+   - Use `generate_data_dictionary` to export dataset documentation and Mermaid ER diagrams.
+
+Rules & Guidelines:
+- Parameters accepting JSON (findings_json, dax_measures_json, spec_json, kpis_json, fields_json) accept both serialized JSON strings and native JSON lists/dictionaries.
+- Always prefer non-destructive dry-run checks (`dry_run=True`) when available before applying structural modifications.
+"""
+
+mcp = FastMCP("powerbi-orchestrator-mcp", instructions=MCP_INSTRUCTIONS)
 
 
 # ---------------------------------------------------------------------------
@@ -175,14 +225,43 @@ mcp = FastMCP("powerbi-orchestrator-mcp")
 # ---------------------------------------------------------------------------
 
 _plans: dict[str, Plan] = {}
+_plan_store = PlanStore()
 _active_session_id: str | None = None
+_active_session_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "active_session_id", default=None
+)
+
+
+def get_active_session_id() -> str | None:
+    return _active_session_var.get() or _active_session_id
+
+
+def set_active_session_id(session_id: str | None) -> None:
+    global _active_session_id  # noqa: PLW0603
+    _active_session_id = session_id
+    _active_session_var.set(session_id)
 
 
 def _reset_server_state() -> None:
     """Reset module-level state (for tests)."""
-    global _active_session_id  # noqa: PLW0603
     _plans.clear()
-    _active_session_id = None
+    set_active_session_id(None)
+
+
+def _parse_json_arg(val: Any, default: Any = None) -> Any:
+    if val is None:
+        return default
+    if isinstance(val, (dict, list)):
+        return val
+    if isinstance(val, str):
+        val_str = val.strip()
+        if not val_str:
+            return default
+        try:
+            return json.loads(val_str)
+        except json.JSONDecodeError:
+            return default
+    return default
 
 
 # ---------------------------------------------------------------------------
@@ -239,20 +318,21 @@ async def connect_target(
     auth_mode: str = "interactive",
     tenant_id: str | None = None,
 ) -> ConnectResult:
-    """Connect to a Power BI target and detect available engines.
+    """Connect to a Power BI target and initialize an orchestrator session.
+
+    Use this tool when the user asks to:
+    - Connect to a Power BI Desktop session, Fabric workspace, PBIP folder, or PBIX file.
+    - Start an interactive session to inspect or modify Power BI assets.
 
     Args:
-        target_type: One of "pbi_desktop", "fabric_workspace",
-            "pbip_folder", "pbix_file".
-        target_ref: Reference to the target (path, workspace_id, etc.).
-        auth_mode: "interactive" or "service_principal".
-        tenant_id: Azure tenant ID (only used with service_principal).
+        target_type: One of "pbi_desktop", "fabric_workspace", "pbip_folder", "pbix_file".
+        target_ref: Reference path (for PBIP/PBIX) or workspace UUID (for Fabric).
+        auth_mode: "interactive" (default, browser login) or "service_principal".
+        tenant_id: Azure AD tenant ID (required when auth_mode is service_principal).
 
     Returns:
-        ConnectResult with session_id, engines_available, and warnings.
+        ConnectResult with session_id, engines_available status, and any diagnostic warnings.
     """
-    global _active_session_id  # noqa: PLW0603
-
     if target_type not in _TARGET_TYPES:
         raise ValueError(
             f"target_type must be one of {sorted(_TARGET_TYPES)}, "
@@ -294,7 +374,7 @@ async def connect_target(
         metadata_cache={"target_id": target_id},
     )
     SessionStore().create(context)
-    _active_session_id = session_id
+    set_active_session_id(session_id)
 
     return ConnectResult(
         session_id=session_id,
@@ -349,15 +429,17 @@ async def plan_change(
     intent: str,
     options: dict[str, Any] | None = None,
 ) -> PlanResult:
-    """Create a versionable plan from a template name + structured args.
+    """Create a versionable, multi-step execution plan from an intent template.
+
+    Use this tool when the user asks to:
+    - Plan a complex or risky operation requiring atomic execution or rollback capability.
+    - Safely rename a table or column across both model and visual bindings (intent="safe_rename").
+    - Plan an audit, deployment, or DAX regression run.
 
     Args:
-        intent: One of the 4 MVP templates: safe_rename, audit, deploy,
-            dax_regression. (Each template's required args go in ``options``.)
-        options: Template-specific args (e.g. for safe_rename:
-            ``{"old_path": "T[A]", "new_path": "T[B]", "scope": "report_bindings"}``).
-            May also contain ``PlanOptions`` fields which are extracted
-            before passing template args to the builder.
+        intent: One of the supported templates ("safe_rename", "audit", "deploy", "dax_regression").
+        options: Template-specific arguments (e.g. for safe_rename: old_path, new_path, scope).
+            May also contain PlanOptions fields (auto_rollback, max_impact_threshold, dry_run_first).
 
     Returns:
         PlanResult with plan_id, plan_yaml, steps, risk_score, estimated_changes.
@@ -382,6 +464,7 @@ async def plan_change(
 
     plan = _build_plan_from_intent(intent, template_args, opts)
     _plans[plan.id] = plan
+    _plan_store.put(plan)
     return PlanResult(
         plan_id=plan.id,
         plan_yaml=plan.yaml,
@@ -497,19 +580,21 @@ async def apply_plan(
     dry_run: bool = False,
     confirm_each_step: bool = False,  # noqa: ARG001 — elicitation hook for v2
 ) -> ApplyResult:
-    """Execute a plan with automatic rollback on failure.
+    """Execute an approved plan with automatic rollback on step failure.
+
+    Use this tool when the user asks to:
+    - Execute or apply an approved plan created by plan_change.
+    - Run plan steps in dry-run mode before modifying actual files.
 
     Args:
-        plan_id: ID of the plan previously created by ``plan_change``.
-        dry_run: If True, execute steps without side effects (dry_run
-            executor is used regardless of registered engines).
-        confirm_each_step: Reserved for per-step elicitation in v2;
-            accepted but not enforced in MVP.
+        plan_id: ID of the plan previously created by plan_change.
+        dry_run: If True, simulate execution without modifying files or cloud resources.
+        confirm_each_step: Reserved hook for interactive step confirmations.
 
     Returns:
-        ApplyResult with execution status, executed steps, rollback info.
+        ApplyResult with execution status, executed steps, and rollback details if needed.
     """
-    plan = _plans.get(plan_id)
+    plan = _plans.get(plan_id) or _plan_store.get(plan_id)
     if plan is None:
         return ApplyResult(
             result="failed",
@@ -610,21 +695,36 @@ async def apply_plan(
 async def audit_model_and_report(
     pbip_path: str,
     bpa_ruleset: str = "default",
-    dax_measures_json: str = "{}",
+    dax_measures_json: Any = "{}",
     bpa: bool = True,
     dax_lint: bool = True,
     accessibility: bool = True,
     naming: bool = True,
 ) -> dict[str, Any]:
-    """Composite audit (BPA + DAX lint + WCAG) on a PBIP folder."""
-    import json as _json
+    """Composite quality and compliance audit on a Power BI project (PBIP).
 
-    try:
-        dax_measures = _json.loads(dax_measures_json)
-    except _json.JSONDecodeError:
+    Use this tool when the user asks to:
+    - Audit, inspect, or validate a Power BI project (.pbip) or semantic model.
+    - Check Best Practice Analyzer (BPA) rules, DAX code quality, or naming conventions.
+    - Validate WCAG 2.1 accessibility (contrast, missing alt text, chart readability).
+
+    Args:
+        pbip_path: Path to the root .pbip directory or folder.
+        bpa_ruleset: Best practice ruleset to run ("default", "strict", "lenient").
+        dax_measures_json: Optional JSON string or dictionary mapping measure names to DAX expressions.
+        bpa: Whether to execute Tabular BPA checks.
+        dax_lint: Whether to execute static DAX linting checks.
+        accessibility: Whether to audit WCAG 2.1 accessibility on report pages.
+        naming: Whether to validate column, measure, and table naming conventions.
+
+    Returns:
+        Dict with overall score (0-100), pass/fail status, and categorized findings.
+    """
+    dax_measures = _parse_json_arg(dax_measures_json, default={})
+    if not isinstance(dax_measures, dict):
         dax_measures = {}
     from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
-        AuditCheck as _AC,  # noqa: F821
+        AuditCheck as _AC,
     )
 
     result = await _audit(
@@ -641,7 +741,7 @@ async def deploy_to_workspace(
     pbip_path: str,
     workspace_id: str,
     refresh_daily_hour: int = 6,
-    findings_json: str = "[]",
+    findings_json: Any = "[]",
     gate_profile: str = "standard",
     auth_mode: str = "interactive",
     tenant_id: str | None = None,
@@ -649,12 +749,30 @@ async def deploy_to_workspace(
     client_secret: str | None = None,
     mock: bool = False,
 ) -> dict[str, Any]:
-    """Pre-deploy gate + publish PBIP + configure refresh + initial refresh."""
-    import json as _json
+    """Deploy a PBIP project to a Fabric/Power BI workspace with pre-deploy gates.
 
-    try:
-        findings = _json.loads(findings_json)
-    except _json.JSONDecodeError:
+    Use this tool when the user asks to:
+    - Deploy, publish, or release a Power BI project (.pbip) to Microsoft Fabric or Power BI Service.
+    - Run pre-deployment quality gates before publishing.
+    - Schedule automatic daily dataset refreshes upon publication.
+
+    Args:
+        pbip_path: Local filesystem path to the root .pbip directory.
+        workspace_id: Target Fabric / Power BI workspace ID (UUID).
+        refresh_daily_hour: Daily UTC hour (0-23) for scheduled refresh (default: 6 AM UTC).
+        findings_json: Optional list or JSON string of pre-existing audit findings to evaluate.
+        gate_profile: Quality gate profile ("strict", "standard", "lenient").
+        auth_mode: "interactive" (default, browser login) or "service_principal".
+        tenant_id: Azure AD tenant ID.
+        client_id: Azure AD client ID.
+        client_secret: Azure AD client secret.
+        mock: If True, simulate deployment without calling external APIs.
+
+    Returns:
+        Dict with deployment status, gate evaluation results, published item IDs, and refresh configuration.
+    """
+    findings = _parse_json_arg(findings_json, default=[])
+    if not isinstance(findings, list):
         findings = []
     result = await _deploy(
         pbip_path=pbip_path,
@@ -686,7 +804,27 @@ async def run_refresh(
     client_id: str | None = None,
     client_secret: str | None = None,
 ) -> dict[str, Any]:
-    """Trigger and optionally wait for a dataset refresh."""
+    """Trigger, monitor, and optionally wait for a Power BI dataset refresh.
+
+    Use this tool when the user asks to:
+    - Refresh data in a published Power BI semantic model.
+    - Check the completion status of a refresh operation.
+    - Perform full, automatic, or data-only refreshes.
+
+    Args:
+        workspace_id: Fabric / Power BI workspace ID (UUID).
+        dataset_id: Dataset / semantic model ID (UUID).
+        refresh_type: "full", "automatic", "data_only", "calculate", or "clearValues".
+        wait: Whether to poll and wait for the refresh to complete before returning.
+        timeout_s: Maximum wait time in seconds (default: 1800).
+        auth_mode: "interactive" or "service_principal".
+        tenant_id: Azure AD tenant ID.
+        client_id: Azure AD client ID.
+        client_secret: Azure AD client secret.
+
+    Returns:
+        Dict with refresh status, duration, error details, and rollback status if applicable.
+    """
     result = await _refresh(
         workspace_id=workspace_id,
         dataset_id=dataset_id,
@@ -704,17 +842,27 @@ async def run_refresh(
 @mcp.tool()
 async def run_dax_regression(
     baseline_path: str,
-    queries_json: str = "[]",
+    queries_json: Any = "[]",
     tolerance_pct: float = 0.1,
     query_executor: Any = None,
 ) -> dict[str, Any]:
-    """Run DAX queries vs a baseline JSON and diff results."""
-    import json as _json
+    """Run DAX queries against a baseline and assert regression tolerance.
 
-    try:
-        queries = _json.loads(queries_json)
-    except _json.JSONDecodeError:
-        queries = None
+    Use this tool when the user asks to:
+    - Verify that measures or models return consistent results across changes.
+    - Compare live DAX calculation outputs against a golden baseline file.
+    - Check numerical tolerances on calculation outputs during CI/CD.
+
+    Args:
+        baseline_path: Path to the JSON baseline file containing expected results.
+        queries_json: Optional list or JSON string of DAX queries to execute.
+        tolerance_pct: Maximum allowed percentage difference between actual and expected numeric values (default: 0.1%).
+        query_executor: Optional custom query execution callable.
+
+    Returns:
+        Dict containing diff summary, passed/failed queries, and variance details.
+    """
+    queries = _parse_json_arg(queries_json, default=None)
     result = await _dax_regress(
         baseline_path=baseline_path,
         queries=queries,
@@ -725,27 +873,115 @@ async def run_dax_regression(
 
 
 @mcp.tool()
+async def execute_dax_query(
+    workspace_id: str,
+    dataset_id: str,
+    dax_query: str,
+    impersonated_user_name: str | None = None,
+    auth_mode: str = "interactive",
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+    fabric_client: Any = None,
+) -> dict[str, Any]:
+    """Execute a DAX query against a published Power BI semantic model / Fabric dataset.
+
+    Use this tool when the user asks to:
+    - Run, evaluate, or test a DAX query against a live dataset in Power BI or Fabric.
+    - Inspect actual business data, measure outputs, KPI calculations, or table rows.
+    - Verify Row-Level Security (RLS) filters by simulating a specific user principal name.
+
+    Args:
+        workspace_id: Fabric / Power BI workspace ID (UUID).
+        dataset_id: Published semantic model / dataset ID (UUID).
+        dax_query: The DAX query expression (e.g. "EVALUATE TOPN(10, 'Sales')" or "EVALUATE ROW(\"Total\", [Total Sales])").
+        impersonated_user_name: Optional User Principal Name (UPN) to test RLS rules as that user.
+        auth_mode: "interactive" (default, browser login) or "service_principal".
+        tenant_id: Azure AD tenant ID (required for service_principal).
+        client_id: Azure AD client ID (for service_principal).
+        client_secret: Azure AD client secret (for service_principal).
+        fabric_client: Optional injected FabricClient instance (for testing).
+
+    Returns:
+        Dict containing query execution results with tabular rows, columns, and execution metadata.
+    """
+    if fabric_client is not None:
+        client = fabric_client
+        close_client = False
+    else:
+        config = AuthConfig.from_env_or_args(
+            mode=auth_mode,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+        cred = FabricCredential(config)
+        client = FabricClient(cred)
+        close_client = True
+
+    try:
+        trimmed = dax_query.strip()
+        formatted_query = (
+            trimmed
+            if (trimmed.upper().startswith("EVALUATE") or trimmed.upper().startswith("DEFINE"))
+            else f"EVALUATE {trimmed}"
+        )
+        result = await client.execute_queries(
+            workspace_id=workspace_id,
+            dataset_id=dataset_id,
+            queries=[{"query": formatted_query}],
+            impersonated_user_name=impersonated_user_name,
+        )
+        return cast(dict[str, Any], result)
+    finally:
+        if close_client and hasattr(client, "aclose"):
+            await client.aclose()
+
+
+@mcp.tool()
 async def diff_models(
     before: str,
     after: str,
     inspector: Any = None,
 ) -> dict[str, Any]:
-    """Diff two semantic models (PBIP folders or snapshots)."""
+    """Compare two semantic models and report structural differences.
+
+    Use this tool when the user asks to:
+    - Compare two versions of a Power BI model or PBIP directory.
+    - See what tables, columns, measures, or relationships changed between branches or releases.
+
+    Args:
+        before: Path to the baseline PBIP directory or snapshot.
+        after: Path to the target PBIP directory or snapshot.
+        inspector: Optional model inspector callable.
+
+    Returns:
+        Dict detailing added, removed, and modified tables, columns, measures, and relationships.
+    """
     result = _diff(before=before, after=after, inspector=inspector)
     return result.model_dump(mode="json")
 
 
 @mcp.tool()
 async def pre_deploy_check(
-    findings_json: str = "[]",
+    findings_json: Any = "[]",
     profile: str = "standard",
 ) -> dict[str, Any]:
-    """Evaluate findings against a pre-deploy gate profile."""
-    import json as _json
+    """Evaluate audit findings against a pre-deployment quality gate profile.
 
-    try:
-        findings = _json.loads(findings_json)
-    except _json.JSONDecodeError:
+    Use this tool when the user asks to:
+    - Check whether audit findings block deployment or meet quality criteria.
+    - Validate findings against 'strict', 'standard', or 'lenient' governance gates.
+
+    Args:
+        findings_json: List or JSON string of audit findings to evaluate.
+        profile: Gate profile to evaluate against ("strict", "standard", "lenient").
+
+    Returns:
+        Dict with gate decision (passed=True/False), blocking findings, and warnings.
+    """
+    findings = _parse_json_arg(findings_json, default=[])
+    if not isinstance(findings, list):
         findings = []
     result = _pre_deploy(findings, profile=profile)
     return result.model_dump(mode="json")
@@ -757,7 +993,21 @@ async def generate_data_dictionary(
     output_path: str | None = None,
     inspector: Any = None,
 ) -> dict[str, Any]:
-    """Generate a Markdown data dictionary (with Mermaid ER diagram) for a PBIP."""
+    """Generate Markdown documentation and Mermaid ER diagram for a semantic model.
+
+    Use this tool when the user asks to:
+    - Document a Power BI dataset or semantic model.
+    - Generate a data dictionary listing all tables, columns, types, and descriptions.
+    - Create a Mermaid entity-relationship (ER) diagram of the model.
+
+    Args:
+        pbip_path: Path to the .pbip directory.
+        output_path: Optional file path to save the generated Markdown.
+        inspector: Optional model inspector.
+
+    Returns:
+        Dict with data dictionary markdown content, table count, measure count, and output path.
+    """
     result = _data_dict(
         pbip_path=pbip_path,
         output_path=output_path,
@@ -773,7 +1023,22 @@ async def apply_theme_and_accessibility_rules(
     auto_backfill_alt_text: bool = True,
     alt_text_template: str = "{visual_type} visualizing measure {first_measure}",
 ) -> dict[str, Any]:
-    """Apply a colorblind-safe theme + backfill alt text + re-audit WCAG."""
+    """Apply a colorblind-safe theme, backfill visual alt text, and re-audit WCAG.
+
+    Use this tool when the user asks to:
+    - Make a report accessible and WCAG 2.1 compliant.
+    - Apply a colorblind-safe palette (e.g. Okabe-Ito, ColorBrewer).
+    - Automatically generate informative alt text for visuals lacking descriptions.
+
+    Args:
+        pbip_path: Path to the .pbip directory.
+        palette: Colorblind-safe palette name ("okabe_ito", "colorbrewer").
+        auto_backfill_alt_text: Whether to generate missing alt text on visuals.
+        alt_text_template: Format template for generated alt text.
+
+    Returns:
+        Dict with updated WCAG score, modified visual count, and theme update details.
+    """
     result = _apply_theme(
         pbip_path=pbip_path,
         palette=palette,
@@ -802,10 +1067,28 @@ async def add_measure_with_validation(
     runtime_check: bool = False,
     measure_writer: Any = None,
 ) -> dict[str, Any]:
-    """Add a DAX measure with mandatory lint validation.
+    """Add a DAX measure to a semantic model with automated linting and validation.
 
-    Lint gate blocks writes if any finding has severity ≥ fail_on_severity
-    (default: warning). dry_run=True returns findings without writing.
+    Use this tool when the user asks to:
+    - Create or add a new DAX measure to a Power BI model.
+    - Validate DAX syntax and best practices (preventing division by zero, unformatted measures, etc.).
+    - Dry-run a measure to check for lint issues before committing to TMDL.
+
+    Args:
+        target: Target PBIP directory or TMDL path.
+        measure_name: Name of the measure to create.
+        table: Target table where the measure will reside.
+        expression: DAX formula for the measure (e.g. "DIVIDE([Total Sales], [Units], 0)").
+        format_string: Format string (e.g. "$#,##0.00", "0.0%").
+        description: Measure documentation or business description.
+        is_hidden: Whether the measure should be hidden in report view.
+        fail_on_severity: Minimum lint severity that blocks creation ("error", "warning", "info").
+        dry_run: If True, validate lint rules without writing to disk.
+        runtime_check: Whether to execute the measure against an active engine if connected.
+        measure_writer: Optional custom measure writer callable.
+
+    Returns:
+        Dict with success status, lint findings, and modified file paths.
     """
     result = _add_measure(
         target=target,
@@ -832,10 +1115,22 @@ async def create_report_from_dataset(
     include_card: bool = True,
     inspector: Any = None,
 ) -> dict[str, Any]:
-    """Scaffold a PBIR folder from an existing dataset.
+    """Scaffold a PBIR report folder and layout from an existing semantic model.
 
-    Creates <name>.Report/, theme.json, report.json, and a sample page.
-    Never overwrites existing files (returns warnings instead).
+    Use this tool when the user asks to:
+    - Create a new report (.Report folder) for an existing dataset.
+    - Generate starter report pages with cards, charts, and an accessible theme.
+
+    Args:
+        pbip_path: Path to the .pbip directory containing the dataset.
+        page_name: Name of the initial report page (default: "Overview").
+        visual_count: Number of starter visuals to generate.
+        theme: Theme name to apply (default: "okabe_ito").
+        include_card: Whether to generate a top-line KPI card visual.
+        inspector: Optional model inspector.
+
+    Returns:
+        Dict with created page path, visual IDs, and scaffolded report files.
     """
     result = _create_report(
         pbip_path=pbip_path,
@@ -854,25 +1149,43 @@ async def edit_report_visual(
     page_name: str,
     visual_id: str,
     type: str | None = None,
-    fields_json: str | None = None,
-    format_json: str | None = None,
-    position_json: str | None = None,
+    fields_json: Any = None,
+    format_json: Any = None,
+    position_json: Any = None,
     alt_text: str | None = None,
     is_hidden: bool | None = None,
 ) -> dict[str, Any]:
-    """Deterministic edit on a single visualContainer in a PBIR page.
+    """Modify a visualContainer in a PBIR report page (type, fields, formatting, layout).
 
-    Field-level merge: only the fields in the input change; unspecified
-    fields are preserved. Atomic write via temp-then-rename.
+    Use this tool when the user asks to:
+    - Edit, reformat, or resize a specific chart/visual on a report page.
+    - Change visual fields, bindings, alt text, or visibility.
+
+    Args:
+        pbip_path: Path to the root .pbip directory.
+        page_name: Name of the page containing the visual.
+        visual_id: Unique ID of the visualContainer to edit.
+        type: New visual type if changing (e.g. "barChart", "lineChart", "card").
+        fields_json: Optional dict or JSON string specifying field bindings to update.
+        format_json: Optional dict or JSON string specifying formatting options.
+        position_json: Optional dict or JSON string with x, y, width, height layout.
+        alt_text: New alt text for accessibility.
+        is_hidden: Whether to hide the visualContainer.
+
+    Returns:
+        Dict with success status, changes applied, and page path.
     """
+    fields_str = json.dumps(fields_json) if isinstance(fields_json, (dict, list)) else fields_json
+    format_str = json.dumps(format_json) if isinstance(format_json, (dict, list)) else format_json
+    position_str = json.dumps(position_json) if isinstance(position_json, (dict, list)) else position_json
     result = _edit_visual(
         pbip_path=pbip_path,
         page_name=page_name,
         visual_id=visual_id,
         type=type,
-        fields_json=fields_json,
-        format_json=format_json,
-        position_json=position_json,
+        fields_json=fields_str,
+        format_json=format_str,
+        position_json=position_str,
         alt_text=alt_text,
         is_hidden=is_hidden,
     )
@@ -895,10 +1208,23 @@ async def refactor_to_calculation_groups(
     inspector: Any = None,
     measure_writer: Any = None,
 ) -> dict[str, Any]:
-    """Detect measures that share structure (e.g. `X YTD/QTD/MTD`) and
-    consolidate into a calculation group.
+    """Consolidate repetitive measures (e.g. YTD, QTD, PY) into calculation groups.
 
-    Returns the plan + (optionally) writes the calc group if auto_apply=True.
+    Use this tool when the user asks to:
+    - Refactor or clean up redundant DAX measures using calculation groups.
+    - Reduce model complexity and standardize time intelligence calculations.
+
+    Args:
+        target: Target PBIP directory or TMDL path.
+        min_candidates: Minimum measure patterns needed to trigger consolidation.
+        reconcile_strategy: "strict" or "lenient".
+        preserve_originals: Whether to keep original measures alongside the calculation group.
+        auto_apply: If True, write calculation items immediately; if False, return proposed refactoring plan.
+        inspector: Optional model inspector.
+        measure_writer: Optional measure writer callable.
+
+    Returns:
+        Dict with proposed or applied calculation items, candidate measures, and impact assessment.
     """
     result = _refactor(
         target=target,
@@ -914,18 +1240,32 @@ async def refactor_to_calculation_groups(
 
 @mcp.tool()
 async def select_visuals_for_kpis(
-    kpis_json: str,
+    kpis_json: Any,
     audience: str = "executive",
     max_results: int = 3,
     *,
     inspector: Any = None,
 ) -> dict[str, Any]:
-    """For each KPI in the JSON list, return a primary visual + alternatives.
+    """Recommend optimal visual types and chart configurations for given KPIs.
 
-    Uses the viz/visual_suggester for recommendation logic.
+    Use this tool when the user asks to:
+    - Choose the best charts or visual types for a specific set of KPIs or metrics.
+    - Tailor visual recommendations to an audience ('executive', 'analytical', 'operational').
+    - Get primary and alternative chart suggestions with rationale based on data types.
+
+    Args:
+        kpis_json: List of KPIs or JSON string (each with name, semantic_type, fields, etc.).
+        audience: Target persona ("executive", "analytical", "operational").
+        max_results: Maximum number of alternative visual recommendations per KPI.
+        inspector: Optional model inspector providing column cardinality and schema info.
+
+    Returns:
+        Dict with recommended primary visual, alternatives, and rationale for each KPI.
     """
+    raw_kpis = _parse_json_arg(kpis_json, default=[])
+    payload = json.dumps(raw_kpis) if not isinstance(kpis_json, str) else kpis_json
     result = _select_visuals(
-        kpis_json=kpis_json,
+        kpis_json=payload,
         audience=audience,
         max_results=max_results,
         inspector=inspector,
@@ -943,9 +1283,23 @@ async def design_report_page_from_requirements(
     *,
     inspector: Any = None,
 ) -> dict[str, Any]:
-    """Synthesize a PBIR page from an NL brief.
+    """Synthesize a complete PBIR report page layout from a natural language brief.
 
-    Composes viz/visual_suggester + python_report for actual file I/O.
+    Use this tool when the user asks to:
+    - Design or generate a new Power BI report page based on business requirements.
+    - Automatically select, size, position, and format visuals matching an analytical goal.
+    - Apply professional color schemes and visual hierarchy to a page.
+
+    Args:
+        pbip_path: Path to the target .pbip directory.
+        brief: Natural language description of what the report page should convey.
+        page_name: Display name for the newly created report page (default: "Overview").
+        audience: Target audience ("executive", "analytical", "operational").
+        palette: Color palette name (default: "okabe_ito").
+        inspector: Optional model inspector for schema context.
+
+    Returns:
+        Dict containing synthesized visual containers, positions, and page metadata.
     """
     result = _design_page(
         pbip_path=pbip_path,
@@ -958,23 +1312,23 @@ async def design_report_page_from_requirements(
     return result.model_dump(mode="json")
 
 
-# ---------------------------------------------------------------------------
-# Sprint 10: v2 tools — performance audit (spec: 04-viz-ux.md §4)
-# ---------------------------------------------------------------------------
-
-
 @mcp.tool()
 async def optimize_report_performance(
     pbip_path: str,
     target_load_ms: int = 5000,
 ) -> dict[str, Any]:
-    """Heuristic performance analyzer for PBIR pages.
+    """Analyze PBIR report pages for visual performance bottlenecks and anti-patterns.
 
-    Reads ``pages/*/page.json`` and detects anti-patterns that impact
-    perceived load (visual density, pie/donut, custom visuals,
-    conditional-formatting). Returns a 0-100 score, estimated load in
-    ms, and a per-page list of hotspots with low/medium/high cost
-    classification and fix suggestions.
+    Use this tool when the user asks to:
+    - Diagnose slow-loading report pages or improve visual performance.
+    - Identify excessive visual density, expensive custom visuals, or unoptimized filters.
+
+    Args:
+        pbip_path: Path to the .pbip directory.
+        target_load_ms: Desired maximum page load latency in milliseconds (default: 5000 ms).
+
+    Returns:
+        Dict with performance score (0-100), estimated load time, and actionable recommendations.
     """
     result = _optimize_perf(
         pbip_path=pbip_path,
@@ -990,10 +1344,20 @@ async def audit_report_ux_and_storytelling(
     audience_assumed: str | None = None,
     strictness: str = "standard",
 ) -> dict[str, Any]:
-    """Heuristic qualitative auditor (hierarchy/density/narrative/mobile/cohesion).
+    """Evaluate report storytelling, visual hierarchy, cognitive load, and UX design.
 
-    Reads PBIR pages and scores 0-100 with category breakdown + per-finding
-    suggestions. Strictness adjustable (lenient|standard|strict).
+    Use this tool when the user asks to:
+    - Audit report design quality, narrative flow, or visual hierarchy.
+    - Check if a report follows dashboard best practices for a specific audience.
+
+    Args:
+        pbip_path: Path to the .pbip directory.
+        page_name: Optional specific page name to audit; audits all pages if omitted.
+        audience_assumed: Target audience ("executive", "analytical", "operational").
+        strictness: Scoring strictness ("lenient", "standard", "strict").
+
+    Returns:
+        Dict with UX score (0-100), category breakdowns (hierarchy, density, narrative), and suggestions.
     """
     result = _audit_ux(
         pbip_path=pbip_path,
@@ -1013,11 +1377,22 @@ async def screenshot_report_pages(
     output_dir: str = "./screenshots",
     wait_ms: int = 2000,
 ) -> dict[str, Any]:
-    """Best-effort screenshot capture of PBIR pages.
+    """Capture screenshots or structural wireframes of Power BI report pages.
 
-    Without Power BI Desktop Bridge this emits SVG wireframes + JSON
-    manifests (deterministic for regression diff). Real PNG/PDF needs
-    superbi-mcp on Windows; absence is reported via rendering_warnings.
+    Use this tool when the user asks to:
+    - Visually inspect or capture report pages for reviews or regression diffs.
+    - Generate SVG wireframes or image snapshots of PBIR layouts.
+
+    Args:
+        pbip_path: Path to the .pbip directory.
+        pages: Optional list of specific page names to capture.
+        format: Output format ("png", "svg", "pdf").
+        resolution: Target resolution ("desktop", "mobile", "tablet").
+        output_dir: Directory where captured images are written.
+        wait_ms: Time in ms to wait for visual rendering.
+
+    Returns:
+        Dict with output image paths, warnings, and rendering metadata.
     """
     result = _screenshot(
         pbip_path=pbip_path,
@@ -1038,21 +1413,29 @@ async def screenshot_report_pages(
 @mcp.tool()
 async def create_semantic_model_from_schema(
     spec_yaml: str | None = None,
-    spec_json: str | None = None,
+    spec_json: Any = None,
     output_pbip_path: str = "",
     dry_run: bool = True,
 ) -> dict[str, Any]:
-    """Generate a TMDL semantic model from a declarative spec.
+    """Generate a TMDL semantic model and PBIP project from a declarative schema spec.
 
-    Validates the spec (Pydantic + dangling-reference check + basic DAX
-    lint) and either returns the validation result (dry_run=True) or
-    atomically writes the PBIP layout (dry_run=False). Output contains
-    ``tables_created``, ``relationships_created``, ``hierarchies_created``
-    and any ``lint_findings``.
+    Use this tool when the user asks to:
+    - Create, scaffold, or generate a new Power BI semantic model from scratch.
+    - Define tables, columns, data types, relationships, and hierarchies declaratively.
+
+    Args:
+        spec_yaml: YAML specification of tables, columns, types, and relationships.
+        spec_json: JSON specification (either as a string or a structured object/dict).
+        output_pbip_path: Target directory to write the generated .pbip project.
+        dry_run: If True, validate specification without writing files to disk.
+
+    Returns:
+        Dict with tables created, relationships created, hierarchies created, and validation status.
     """
+    spec_json_payload = json.dumps(spec_json) if spec_json is not None and isinstance(spec_json, (dict, list)) else spec_json
     result = _create_model(
         spec_yaml=spec_yaml,
-        spec_json=spec_json,
+        spec_json=spec_json_payload,
         output_pbip_path=output_pbip_path,
         dry_run=dry_run,
     )
@@ -1063,21 +1446,31 @@ async def create_semantic_model_from_schema(
 async def setup_rls_and_roles(
     target: str,
     spec_yaml: str | None = None,
-    spec_json: str | None = None,
+    spec_json: Any = None,
     dry_run: bool = True,
     rollback_on_test_failure: bool = True,
 ) -> dict[str, Any]:
-    """Apply RLS roles + members + run a test matrix against a TMDL model.
+    """Configure Row-Level Security (RLS) roles and validation rules in a TMDL model.
 
-    Validates the role spec, writes ``role <Name>`` blocks into
-    ``definition.tmdl`` (atomic), and runs each ``test_query`` through
-    the (injected) ``test_engine`` callable. Failures can roll back
-    edits when ``rollback_on_test_failure`` is True.
+    Use this tool when the user asks to:
+    - Set up, add, or configure RLS roles and DAX table filter expressions.
+    - Test and validate security rules against sample queries.
+
+    Args:
+        target: Target PBIP directory or TMDL path.
+        spec_yaml: YAML specification of security roles, members, and DAX filters.
+        spec_json: JSON specification (either as a string or a structured object/dict).
+        dry_run: If True, validate role specification without writing to disk.
+        rollback_on_test_failure: Whether to revert modifications if test queries fail.
+
+    Returns:
+        Dict with roles created, test query outcomes, and rollback status if applicable.
     """
+    spec_json_payload = json.dumps(spec_json) if spec_json is not None and isinstance(spec_json, (dict, list)) else spec_json
     result = _setup_rls(
         target=target,
         spec_yaml=spec_yaml,
-        spec_json=spec_json,
+        spec_json=spec_json_payload,
         dry_run=dry_run,
         rollback_on_test_failure=rollback_on_test_failure,
     )
@@ -1092,12 +1485,21 @@ async def promote_in_pipeline(
     items: list[str] | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Promote items between Fabric Deployment Pipeline stages.
+    """Promote artifacts across Microsoft Fabric Deployment Pipeline stages.
 
-    Built-in gates (``pre_deploy_check`` / ``audit_model_and_report`` /
-    ``run_dax_regression``) wrap the corresponding tools; plug custom
-    gates via injected ``custom_gates``. ``fabric_client`` is the
-    injected REST adapter; absent it the tool runs in dry-run.
+    Use this tool when the user asks to:
+    - Promote or move items between Fabric deployment stages (e.g. dev to test, test to prod).
+    - Run pre-promotion quality gates before moving items.
+
+    Args:
+        pipeline_id: Fabric deployment pipeline ID (UUID).
+        source_stage: Source stage ("dev", "test", "prod").
+        target_stage: Target stage ("test", "prod").
+        items: Optional list of specific item IDs to promote. Promotes all if omitted.
+        dry_run: If True, validate stages and gate checks without triggering actual promotion.
+
+    Returns:
+        Dict with promotion status, gate outcomes, and affected items.
     """
     result = _promote(
         pipeline_id=pipeline_id,
@@ -1123,12 +1525,22 @@ async def commit_workspace_to_git(
     exclude_items: list[str] | None = None,
     dry_run: bool = True,
 ) -> dict[str, Any]:
-    """Snapshot a Fabric workspace into a local Git repo.
+    """Export and commit a Fabric workspace into a local Git repository.
 
-    Reads workspace state via ``fabric_client.snapshot_workspace`` and
-    commits each item as ``<type>/<name>.pbip``. Warns on local
-    uncommitted changes or large files (>50MB by default). ``dry_run``
-    skips the commit.
+    Use this tool when the user asks to:
+    - Back up or version-control a Fabric workspace into Git.
+    - Snapshot reports and semantic models into local PBIP files with Git commits.
+
+    Args:
+        workspace_id: Source Fabric workspace ID (UUID).
+        output_repo_path: Local path to destination Git repository.
+        branch: Git branch to commit into.
+        commit_message: Commit message describing the snapshot.
+        exclude_items: Optional list of item IDs to exclude.
+        dry_run: If True, inspect items without creating git commits.
+
+    Returns:
+        Dict with committed items, commit SHA, and repository status.
     """
     result = _commit_ws(
         workspace_id=workspace_id,
@@ -1149,13 +1561,21 @@ async def sync_git_to_workspace(
     conflict_resolution: str = "manual",
     dry_run: bool = True,
 ) -> dict[str, Any]:
-    """Deploy a local Git PBIP tree to a Fabric workspace.
+    """Deploy a local Git repository with PBIP projects to a Fabric workspace.
 
-    For v3 inicial the only conflict-resolution mode is ``manual``:
-    conflicts are surfaced in ``items_skipped`` for human review. The
-    optional ``pre_deploy_profile`` + ``pre_deploy_findings`` arguments
-    can be passed via the input schema when you add them to the MCP
-    wrapper.
+    Use this tool when the user asks to:
+    - Synchronize or publish a local Git repository or branch to a Fabric workspace.
+    - Update workspace items based on version-controlled PBIP files.
+
+    Args:
+        repo_path: Path to the local Git repository.
+        workspace_id: Target Fabric workspace ID (UUID).
+        branch_or_commit: Git ref to sync (default: "HEAD").
+        conflict_resolution: Conflict handling strategy ("manual", etc.).
+        dry_run: If True, calculate changes without publishing.
+
+    Returns:
+        Dict with synchronized items, skipped items, and deployment results.
     """
     result = _sync_git(
         repo_path=repo_path,
@@ -1176,12 +1596,22 @@ async def set_sensitivity_labels(
     redact_names: bool = True,
     dry_run: bool = True,
 ) -> dict[str, Any]:
-    """Apply a Microsoft Purview sensitivity label to one or more items.
+    """Apply Microsoft Purview information protection sensitivity labels to items.
 
-    Batched via ``POST /admin/items/labels/bulkSet``. Gated by an
-    explicit ``*.Admin.*`` (or ``InformationProtectionPolicy.Apply.All``)
-    scope; missing scope elicits remediation. Names are SHA-256 redacted
-    in outputs (toggle via ``redact_names``).
+    Use this tool when the user asks to:
+    - Classify or protect Power BI items (reports, semantic models, dashboards).
+    - Set Purview sensitivity labels (Confidential, General, Highly Confidential).
+
+    Args:
+        items: List of dicts specifying item IDs and types (e.g. [{"id": "...", "type": "Report"}]).
+        label_id: Microsoft Purview label GUID.
+        label_name: Display name of the sensitivity label.
+        admin_scopes: Optional list of administrative authorization scopes.
+        redact_names: Whether to redact item names in returned logs for security.
+        dry_run: If True, validate permissions without applying labels.
+
+    Returns:
+        Dict with updated items, failed items, and compliance status.
     """
     result = _set_labels(
         items=items,
@@ -1203,17 +1633,18 @@ async def set_sensitivity_labels(
 async def powerbi_health(
     include_engine_details: bool = True,
 ) -> dict[str, Any]:
-    """Return a diagnostic snapshot of the orchestrator.
+    """Diagnose orchestrator health, detected modeling engines, and storage readiness.
 
-    Surfaces:
-    - Engine availability (powerbi-modeling-mcp, te, dscmd, ...).
-    - Plan + execution store counts (persistence working?).
-    - Audit log row count (forensic trail working?).
-    - Per-engine remediation hints when something is missing.
+    Use this tool when the user asks to:
+    - Check if the Power BI MCP orchestrator is running properly.
+    - See which external tools/engines are installed (Tabular Editor, DAX optimizer, etc.).
+    - Get installation or setup instructions for missing components.
 
-    Designed for the LLM to surface "the orchestrator says X is missing,
-    here's how to install it" instead of letting the user hit a brick wall
-    on the first workflow.
+    Args:
+        include_engine_details: Whether to return full diagnostic info and remediation tips for each engine.
+
+    Returns:
+        Dict with system status, engine availability matrix, active store counts, and remediation advice.
     """
     return await _powerbi_health(
         include_engine_details=include_engine_details,
@@ -1256,27 +1687,34 @@ def main() -> None:
         mcp.run(transport="stdio")
         return
 
-    # HTTP transport: build the auth middleware, configure FastMCP,
-    # and run. The middleware is registered lazily because FastMCP's
-    # API for per-request hooks varies between mcp versions; we
-    # expose the validation function via `transport.auth_middleware_factory`
-    # so the exact integration is a follow-up (tracked in PR #11).
     from powerbi_orchestrator_mcp.orchestrator.transport import (
+        EntraAuthMiddleware,
         auth_middleware_factory,
     )
 
-    assert http_cfg is not None
+    if http_cfg is None:
+        sys.stderr.write("error: missing HTTP configuration\n")
+        raise SystemExit(2)
+
     _validate_request = auth_middleware_factory(http_cfg)
-    # Configure the FastMCP server for HTTP. Streamable HTTP is the
-    # MCP spec 2025-06+ recommendation; SSE is deprecated.
     mcp.settings.host = http_cfg.host
     mcp.settings.port = http_cfg.port
     mcp.settings.mount_path = http_cfg.mount_path
     reconcile_orphan_executions_on_boot()
-    # Auth happens at the ASGI middleware layer (added in a follow-up
-    # PR — the validation function is wired up here so callers can
-    # `import` and use it in their own deployment adapters today).
-    mcp.run(transport="streamable-http")
+
+    import anyio
+    import uvicorn
+
+    starlette_app = mcp.streamable_http_app()
+    authed_app = EntraAuthMiddleware(starlette_app, _validate_request)
+    config = uvicorn.Config(
+        authed_app,
+        host=http_cfg.host,
+        port=http_cfg.port,
+        log_level=mcp.settings.log_level.lower(),
+    )
+    server = uvicorn.Server(config)
+    anyio.run(server.serve)
 
 
 if __name__ == "__main__":

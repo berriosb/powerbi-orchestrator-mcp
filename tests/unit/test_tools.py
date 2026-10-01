@@ -467,11 +467,12 @@ class TestDeployToWorkspace:
             def __init__(self, *_a: Any, **_kw: Any) -> None:
                 pass
 
-            async def create_item(self, ws_id, display_name, item_type):
+            async def create_item(self, ws_id: str, display_name: str, item_type: str, **_kw: Any) -> dict[str, Any]:
                 captured["create"] = {
                     "ws": ws_id,
                     "name": display_name,
                     "type": item_type,
+                    "definition": _kw.get("definition"),
                 }
                 return {"id": "item-real-1"}
 
@@ -562,6 +563,77 @@ class TestDeployToWorkspace:
         )
         assert result.publish_ok is False
         assert any("publish_failed" in e for e in result.errors)
-        # schedule + refresh should still have run
         assert result.schedule_ok is True
         assert result.refresh_id == "rf-1"
+
+    async def test_real_path_uploads_tmdl_definition(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import importlib
+
+        dt_module = importlib.import_module(
+            "powerbi_orchestrator_mcp.tools.deploy_to_workspace"
+        )
+        deploy_to_workspace = dt_module.deploy_to_workspace
+        captured: dict[str, Any] = {}
+
+        class FakeClient:
+            def __init__(self, *_a: Any, **_kw: Any) -> None:
+                pass
+
+            async def create_item(
+                self, ws_id: str, display_name: str, item_type: str, **_kw: Any
+            ) -> dict[str, Any]:
+                captured["create"] = {
+                    "ws": ws_id,
+                    "name": display_name,
+                    "type": item_type,
+                    "definition": _kw.get("definition"),
+                }
+                return {"id": "uuid-dataset-123"}
+
+            async def update_refresh_schedule(
+                self, ws_id: str, ds_id: str, *, schedule: Any
+            ) -> dict[str, Any]:
+                captured["schedule"] = {
+                    "ws_id": ws_id,
+                    "ds_id": ds_id,
+                    "schedule": schedule,
+                }
+                return {}
+
+            async def refresh_dataset(
+                self, ws_id: str, ds_id: str, **_kw: Any
+            ) -> dict[str, Any]:
+                captured["refresh"] = {"ws_id": ws_id, "ds_id": ds_id}
+                return {"refreshId": "rf-100"}
+
+            async def aclose(self) -> None:
+                pass
+
+        monkeypatch.setattr(dt_module, "FabricClient", FakeClient)
+        monkeypatch.setattr(
+            dt_module, "FabricCredential", lambda *_a, **_kw: object()
+        )
+
+        pbip = tmp_path / "sales.pbip"
+        pbip.mkdir()
+        (pbip / "sales.pbip").write_text("{}")
+        ds_dir = pbip / "sales.Dataset"
+        ds_dir.mkdir()
+        (ds_dir / "definition.tmdl").write_text("table Sales")
+
+        result = await deploy_to_workspace(
+            pbip_path=str(pbip),
+            workspace_id="ws-real",
+            findings=[],
+            mock=False,
+        )
+        assert result.publish_ok is True
+        assert result.item_id == "uuid-dataset-123"
+        assert result.dataset_id == "uuid-dataset-123"
+        assert captured["schedule"]["ds_id"] == "uuid-dataset-123"
+        assert captured["refresh"]["ds_id"] == "uuid-dataset-123"
+        assert captured["create"]["definition"] is not None
+        assert len(captured["create"]["definition"]["parts"]) == 1
+        assert captured["create"]["definition"]["parts"][0]["path"] == "definition.tmdl"

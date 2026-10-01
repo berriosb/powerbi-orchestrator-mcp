@@ -138,11 +138,11 @@ class ModelSpec(BaseModel):
 class CreateSemanticModelFromSchema(BaseModel):
     """Input schema."""
 
-    spec_yaml: str | None = None  # Either YAML or JSON
-    spec_json: str | None = None
+    spec_yaml: str | None = None
+    spec_json: Any = None
     output_pbip_path: str
     dry_run: bool = True
-    modeling_engine: Any = None  # optional: inject real TOM/TE engine in prod
+    modeling_engine: Any = None
 
 
 class TableCreated(BaseModel):
@@ -290,8 +290,8 @@ def render_tmdl(spec: ModelSpec) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _parse_spec(spec_yaml: str | None, spec_json: str | None) -> ModelSpec:
-    """Parse a YAML or JSON spec string into a ModelSpec."""
+def _parse_spec(spec_yaml: str | None, spec_json: Any) -> ModelSpec:
+    """Parse a YAML or JSON spec into a ModelSpec."""
     if spec_yaml and spec_json:
         raise ValueError("pass either spec_yaml or spec_json, not both")
     if not spec_yaml and not spec_json:
@@ -303,10 +303,13 @@ def _parse_spec(spec_yaml: str | None, spec_json: str | None) -> ModelSpec:
         if not isinstance(raw, dict):
             raise ValueError("spec_yaml did not parse to a mapping")
     else:
-        try:
-            raw = json.loads(spec_json or "{}")
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"spec_json is not valid JSON: {exc}") from exc
+        if isinstance(spec_json, dict):
+            raw = spec_json
+        else:
+            try:
+                raw = json.loads(spec_json or "{}")
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise ValueError(f"spec_json is not valid JSON: {exc}") from exc
         if not isinstance(raw, dict):
             raise ValueError("spec_json did not parse to an object")
 
@@ -435,7 +438,7 @@ def _write_pbip(pbip_path: Path, model_name: str, tmdl: str) -> None:
 
 def create_semantic_model_from_schema(
     spec_yaml: str | None = None,
-    spec_json: str | None = None,
+    spec_json: Any = None,
     output_pbip_path: str = "",
     dry_run: bool = True,
     modeling_engine: Any = None,  # noqa: ARG001

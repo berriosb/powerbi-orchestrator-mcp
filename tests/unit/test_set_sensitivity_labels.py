@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from powerbi_orchestrator_mcp.tools.set_sensitivity_labels import (
     LabelTarget,
@@ -48,7 +49,7 @@ class _AdminClientStub:
 
 class TestSpec:
     def test_label_id_must_be_guid(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             SetSensitivityLabels(
                 items=[LabelTarget(item_id=VALID_GUID)],
                 label_id="not-a-guid",
@@ -56,7 +57,7 @@ class TestSpec:
             )
 
     def test_item_id_must_be_guid(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             SetSensitivityLabels(
                 items=[LabelTarget(item_id="not-a-guid")],
                 label_id=VALID_LABEL_GUID,

@@ -76,12 +76,12 @@ class RoleSpec(BaseModel):
 class SetupRlsAndRoles(BaseModel):
     """Input schema."""
 
-    target: str  # PBIP path or .tmdl file
+    target: str
     spec_yaml: str | None = None
-    spec_json: str | None = None
+    spec_json: Any = None
     dry_run: bool = True
     rollback_on_test_failure: bool = True
-    test_engine: Any = None  # callable: (role_name, dax) -> value
+    test_engine: Any = None
 
 
 class RoleCreated(BaseModel):
@@ -120,7 +120,7 @@ class SetupRlsAndRolesResult(BaseModel):
 
 
 def _parse_spec(
-    spec_yaml: str | None, spec_json: str | None
+    spec_yaml: str | None, spec_json: Any
 ) -> list[RoleSpec]:
     """Parse a YAML or JSON spec string into a list of RoleSpec."""
     import yaml as _yaml
@@ -134,10 +134,13 @@ def _parse_spec(
     if spec_yaml:
         raw = _yaml.safe_load(spec_yaml)
     else:
-        try:
-            raw = json.loads(spec_json or "[]")
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"spec_json is not valid JSON: {exc}") from exc
+        if isinstance(spec_json, (dict, list)):
+            raw = spec_json
+        else:
+            try:
+                raw = json.loads(spec_json or "[]")
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise ValueError(f"spec_json is not valid JSON: {exc}") from exc
 
     # The spec can be a list of roles, or a {"roles": [...]} mapping.
     if isinstance(raw, dict):
@@ -292,7 +295,7 @@ def _risk_score(specs: list[RoleSpec]) -> float:
 def setup_rls_and_roles(
     target: str,
     spec_yaml: str | None = None,
-    spec_json: str | None = None,
+    spec_json: Any = None,
     dry_run: bool = True,
     rollback_on_test_failure: bool = True,
     test_engine: Any = None,

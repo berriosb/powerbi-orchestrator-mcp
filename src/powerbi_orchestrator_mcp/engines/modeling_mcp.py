@@ -24,6 +24,7 @@ the package installed).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,6 @@ from powerbi_orchestrator_mcp.engines.base import (
     DaxResult,
     JsonRpcSubprocessEngine,
     Measure,
-    ModelingEngine,  # noqa: F401  (Protocol used as type hint)
     OperationResult,
     Relationship,
     SnapshotHandle,
@@ -45,8 +45,21 @@ from powerbi_orchestrator_mcp.orchestrator.context import (
     Target,
 )
 
-# Pinned version per specs/05 §3 + src/engines/versions.py.
-DEFAULT_PINNED_VERSION = "0.1.9"
+DEFAULT_PINNED_VERSION = "1.0.0"
+
+_RPC_TO_MCP_TOOL: dict[str, str] = {
+    "database_operations/list_tables": "list_tables",
+    "column_operations/list": "list_columns",
+    "measure_operations/list": "list_measures",
+    "database_operations/list_relationships": "list_relationships",
+    "column_operations/update": "update_column",
+    "measure_operations/create": "create_measure",
+    "measure_operations/update": "update_measure",
+    "measure_operations/delete": "delete_measure",
+    "dax_query_operations/run": "execute_dax",
+    "database_operations/export_tmdl": "export_tmdl",
+    "database_operations/import_tmdl": "import_tmdl",
+}
 
 
 class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
@@ -76,11 +89,20 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             mock_responses: If set, ``_rpc()`` returns these canned
                 responses instead of dispatching JSON-RPC. Used by tests.
         """
+        effective_env = dict(env or {})
+        if "PBI_MODELING_MCP_ACCEPT_EULA" not in effective_env:
+            effective_env["PBI_MODELING_MCP_ACCEPT_EULA"] = "true"
+
         super().__init__(
             engine_name="powerbi-modeling-mcp",
             binary=binary,
-            args=("-y", f"@microsoft/powerbi-modeling-mcp@{version}"),
-            env=env,
+            args=(
+                "-y",
+                f"@microsoft/powerbi-modeling-mcp@{version}",
+                "--start",
+                "--accept-eula",
+            ),
+            env=effective_env,
         )
         self._version = version
         self._mock_responses = mock_responses or {}
@@ -312,6 +334,19 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
         if rpc_method in self._mock_responses:
             return self._mock_responses[rpc_method]  # type: ignore[no-any-return]
         try:
+            mcp_tool = _RPC_TO_MCP_TOOL.get(rpc_method)
+            if mcp_tool:
+                resp = await self._rpc("tools/call", {"name": mcp_tool, "arguments": params})
+                if isinstance(resp, dict) and "content" in resp:
+                    for item in resp.get("content", []):
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            try:
+                                parsed = json.loads(item.get("text", "{}"))
+                                if isinstance(parsed, dict):
+                                    return parsed
+                            except Exception:
+                                pass
+                return resp
             return await self._rpc(rpc_method, params)
         except EngineError:
             raise

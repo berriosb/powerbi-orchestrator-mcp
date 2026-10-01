@@ -2,27 +2,27 @@
 
 > **Un servidor MCP orquestrador** que unifica modelado semántico, autoría
 > de reportes, nube Fabric, validación y visualización/UX para Power BI /
-> Fabric en **26 herramientas de alto nivel** (no 500 primitivas).
+> Fabric en **28 herramientas de alto nivel** (no 500 primitivas).
 >
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-[![Tests](https://img.shields.io/badge/tests-823%20passing-brightgreen)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-920%20passing-brightgreen)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen)](./tests/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](./pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.9.0 — Beta. 27 tools (`powerbi_health` added), 89% cobertura,
+**Status:** v1.11.0 — Beta. 28 tools (`execute_dax_query` added), 89% cobertura,
 product-readiness pass (CLI, Dockerfile, examples, plugin system).
-See [release notes](./RELEASE-NOTES-v1.9.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./RELEASE-NOTES-v1.11.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
 ## Quickstart (60 segundos)
 
 ```bash
-# 1. Install from PyPI (v1.9.0).
+# 1. Install from PyPI (v1.11.0).
 pip install powerbi-orchestrator-mcp
 
 # 2. Configure your MCP client (Claude Desktop shown).
@@ -44,7 +44,7 @@ powerbi-orchestrator-mcp --start  # runs over stdio
 python scripts/verify_mcp_server.py
 ```
 
-That's it — your LLM now sees 27 tools for Power BI / Fabric. See the
+That's it — your LLM now sees 28 tools for Power BI / Fabric. See the
 [`examples/`](./examples/) directory for 3 reproducible workflows.
 
 ---
@@ -53,14 +53,14 @@ That's it — your LLM now sees 27 tools for Power BI / Fabric. See the
 
 El proyecto **NO** es un wrapper sobre los MCP servers existentes. Es un
 servidor MCP propio que **consume** otros MCP servers como subprocess.
-Esto es lo que permite presentar al LLM 27 tools coherentes en lugar
+Esto es lo que permite presentar al LLM 28 tools coherentes en lugar
 de 500 primitivas dispersas.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Capa 1: MCP Client (Claude Desktop, VS Code, Copilot, Cursor)    │
 │         Habla JSON-RPC sobre stdio con el orquestrador.          │
-│         El LLM ve 27 tools de alto nivel.                        │
+│         El LLM ve 28 tools de alto nivel.                        │
 └────────────────────────────┬────────────────────────────────────┘
                              │ stdio + JSON-RPC
 ┌────────────────────────────▼────────────────────────────────────┐
@@ -193,7 +193,7 @@ Claude Code, Cursor** y cualquier cliente MCP stdio.
 
 ### 4. Probar
 
-En tu cliente MCP, el LLM ve **27 tools de alto nivel**, agrupadas por capa:
+En tu cliente MCP, el LLM ve **28 tools de alto nivel**, agrupadas por capa:
 
 **Sesión y planificación**
 - `connect_target` — abrir sesión contra un PBIP / Fabric workspace / PBI Desktop
@@ -212,20 +212,24 @@ En tu cliente MCP, el LLM ve **27 tools de alto nivel**, agrupadas por capa:
 **Nube Fabric / Power BI Service**
 - `deploy_to_workspace`, `run_refresh`, `promote_in_pipeline`,
   `setup_rls_and_roles`, `set_sensitivity_labels`,
-  `commit_workspace_to_git`, `sync_git_to_workspace`, `pre_deploy_check`
+  `commit_workspace_to_git`, `sync_git_to_workspace`, `pre_deploy_check`,
+  `execute_dax_query`
 
 **Auditoría y calidad**
 - `audit_model_and_report`, `audit_report_ux_and_storytelling`,
   `apply_theme_and_accessibility_rules`, `run_dax_regression`
+
+**Diagnóstico**
+- `powerbi_health`
 
 Con `connect_target` + `plan_change` + `apply_plan` solos, el LLM ya puede
 hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 (sin engines externos) o cualquier Fabric workspace (con
 `powerbi-modeling-mcp` instalado).
 
-## Estado actual (v1.9.0)
+## Estado actual (v1.11.0)
 
-- ✅ 27 tools implementadas (modelado, reportes, nube, auditoría, UX)
+- ✅ 28 tools implementadas (modelado, reportes, nube, auditoría, UX, DAX)
 - ✅ Cross-engine rollback
 - ✅ Audit log con HMAC chain
 - ✅ PlanBuilder con templates versionables
@@ -237,7 +241,7 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 - ✅ Publicado en PyPI: https://pypi.org/project/powerbi-orchestrator-mcp/
 - ⏳ Pendiente: tests E2E con binaries reales (`te`, `dscmd`)
 
-Ver [`RELEASE-NOTES-v1.9.0.md`](./RELEASE-NOTES-v1.9.0.md) para detalles completos.
+Ver [`RELEASE-NOTES-v1.11.0.md`](./RELEASE-NOTES-v1.11.0.md) para detalles completos.
 
 ## Licencia
 

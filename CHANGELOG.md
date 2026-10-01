@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.0] — 2026-10-01
+
+### Added
+- **New Tool `execute_dax_query`**: Execute DAX queries against published Fabric / Power BI semantic models with optional RLS user impersonation.
+- **Global `MCP_INSTRUCTIONS`**: System instructions embedded into FastMCP to guide LLM agents on optimal tool selection and workflows.
+- **Resilient Argument Parsing**: `_parse_json_arg` support for both string and native object arguments across all JSON-accepting tools.
+- **TMDL Multipart Publication**: Base64 multipart encoding in `deploy_to_workspace` for seamless semantic model deployment.
+- **Session Isolation**: `contextvars` isolation for multi-tenant requests in HTTP and stdio transports.
+- **Commercial FSL Guards**: `PBI_COMMERCIAL_MODE` and `PBI_DISABLE_FSL_ENGINES` flags.
+
+### Changed
+- **Tool Docstrings**: All 28 tools updated with natural-language intent guides ("Use this tool when the user asks to...").
+- **MCP Tool Count**: Expanded from 27 to 28 tools.
+
+---
+
 ## [1.10.0] — 2026-09-24
 
 ### Added

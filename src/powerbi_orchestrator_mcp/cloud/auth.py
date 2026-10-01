@@ -144,9 +144,14 @@ class FabricCredential:
             # in its chain when no other credentials are configured.
             return DefaultAzureCredential()
         if self._config.mode == "service_principal":
-            assert self._config.tenant_id is not None
-            assert self._config.client_id is not None
-            assert self._config.client_secret is not None
+            if (
+                self._config.tenant_id is None
+                or self._config.client_id is None
+                or self._config.client_secret is None
+            ):
+                raise ValueError(
+                    "tenant_id, client_id, and client_secret are required for service_principal mode"
+                )
             return ClientSecretCredential(
                 tenant_id=self._config.tenant_id,
                 client_id=self._config.client_id,

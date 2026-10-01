@@ -72,7 +72,10 @@ def _get_hmac_key() -> bytes:
         return key_path.read_bytes()
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     new_key = secrets.token_bytes(32)
-    key_path.write_bytes(new_key)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(str(key_path), flags, 0o600)
+    with open(fd, "wb") as f:
+        f.write(new_key)
     return new_key
 
 

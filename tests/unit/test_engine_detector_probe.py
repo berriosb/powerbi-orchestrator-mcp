@@ -132,3 +132,23 @@ class TestProbeVersion:
         result = await _probe_version("/bin/echo", ("--version",))
         assert result is not None
         assert result.startswith("v1.0")
+
+
+class TestDetectEngineCommercialMode:
+    async def test_superbi_disabled_in_commercial_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.engine_detector import (
+            EngineProbe,
+            detect_engine,
+        )
+
+        monkeypatch.setenv("PBI_COMMERCIAL_MODE", "true")
+        probe = EngineProbe(
+            engine="superbi-mcp",
+            binary_names=("superbi-mcp",),
+            npx_package="superbi-mcp",
+        )
+        status = await detect_engine(probe)
+        assert status.available is False
+        assert "commercial mode" in (status.reason_unavailable or "")

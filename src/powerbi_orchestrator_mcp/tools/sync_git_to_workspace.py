@@ -93,7 +93,7 @@ def _list_pbip_files(repo_path: Path, ref: str) -> list[Path]:
     checkoutable).
     """
     proc = subprocess.run(
-        ["git", "-C", str(repo_path), "ls-tree", "-r", "--name-only", ref],
+        ["git", "-C", str(repo_path), "ls-tree", "-r", "--name-only", "--", ref],
         capture_output=True,
         text=True,
         check=False,

@@ -96,7 +96,7 @@ def _register_engines(
     # the engine doesn't try to spawn a real subprocess.
     modeling = PowerBiModelingMcpEngine(
         binary="/bin/echo",
-        version="0.1.9",
+        version="1.0.0",
         mock_responses=modeling_responses or {},
     )
 
@@ -192,12 +192,12 @@ def _register_engines(
                     # we re-use the modeling snapshot. Return success.
                     return StepOutcome(success=True)
                 else:
-                    result = await self._eng.validate_pbir(conn)
+                    val_res = await self._eng.validate_pbir(conn)
                     from powerbi_orchestrator_mcp.engines.base import (
                         OperationResult,
                     )
 
-                    result = OperationResult(success=result.valid)
+                    result = OperationResult(success=val_res.valid)
                 return StepOutcome(
                     success=result.success,
                     error_message=result.error_message,
@@ -374,6 +374,8 @@ class TestSafeRenameEndToEnd:
             args={"pbip_path": str(pbip_dir)},
         )
 
+        assert s1.rollback_step is not None
+        assert s2.rollback_step is not None
         plan = Plan(
             id=plan_id,
             steps=[s1, s2, s3],

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
     RlsTestQuery,
@@ -67,7 +68,7 @@ class TestSpecParsing:
 
 class TestRoleSpecPydantic:
     def test_invalid_member_type_rejected(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             RoleMember(type="unknown", value="x")
 
     def test_role_with_minimal_fields(self) -> None:

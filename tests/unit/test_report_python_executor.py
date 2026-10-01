@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from powerbi_orchestrator_mcp.engines.base import (
     ConnectionHandle,
@@ -266,7 +267,7 @@ class TestValidatePbir:
 # ---------------------------------------------------------------------------
 
 
-def _get_executor() -> object:
+def _get_executor() -> Any:
     """Return the report StepExecutor.
 
     We construct it directly instead of going through the global

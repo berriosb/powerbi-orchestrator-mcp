@@ -66,12 +66,14 @@ class TestVisualRegistry:
         assert any(e.type_id == "pieChart" for e in comp_4)
 
     def test_color_safe_flag(self) -> None:
-        # Pie and donut are NOT colorblind-safe by default (per registry).
-        assert lookup("pieChart").color_safe_default is False
-        assert lookup("donutChart").color_safe_default is False
-        # Others are safe.
-        assert lookup("card").color_safe_default is True
-        assert lookup("barChart").color_safe_default is True
+        pie = lookup("pieChart")
+        assert pie is not None and pie.color_safe_default is False
+        donut = lookup("donutChart")
+        assert donut is not None and donut.color_safe_default is False
+        card = lookup("card")
+        assert card is not None and card.color_safe_default is True
+        bar = lookup("barChart")
+        assert bar is not None and bar.color_safe_default is True
 
 
 # ---------------------------------------------------------------------------

@@ -23,15 +23,29 @@ Design reference: `specs/architecture/07-http-transport.md`.
 from __future__ import annotations
 
 import argparse
+import contextvars
+import json
 import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import jwt
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
+
+_current_user_var: contextvars.ContextVar[dict[str, object] | None] = (
+    contextvars.ContextVar("current_user", default=None)
+)
+
+
+def get_current_user() -> dict[str, object] | None:
+    return _current_user_var.get()
+
+
+def set_current_user(claims: dict[str, object] | None) -> None:
+    _current_user_var.set(claims)
 
 Transport = Literal["stdio", "http"]
 
@@ -298,12 +312,61 @@ def auth_middleware_factory(
     return validate_request
 
 
+class EntraAuthMiddleware:
+    def __init__(
+        self,
+        app: Any,
+        validate_fn: Callable[[str | None], dict[str, object]],
+    ) -> None:
+        self.app = app
+        self.validate_fn = validate_fn
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Any],
+        send: Callable[[dict[str, Any]], Any],
+    ) -> None:
+        if scope.get("type") == "http":
+            headers = dict(scope.get("headers", []))
+            auth_header = headers.get(b"authorization", b"").decode("latin1")
+            try:
+                claims = self.validate_fn(auth_header)
+                set_current_user(claims)
+                scope["entra_claims"] = claims
+            except AuthError as exc:
+                resp_headers = [(b"content-type", b"application/json")]
+                if exc.www_authenticate:
+                    resp_headers.append(
+                        (b"www-authenticate", exc.www_authenticate.encode("latin1"))
+                    )
+                body = json.dumps({"error": exc.message}).encode("utf-8")
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": exc.status,
+                        "headers": resp_headers,
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": body,
+                    }
+                )
+                return
+        await self.app(scope, receive, send)
+
+
 __all__ = [
     "AuthError",
+    "EntraAuthMiddleware",
     "HttpConfig",
     "Transport",
     "auth_middleware_factory",
+    "get_current_user",
     "parse_transport_args",
+    "set_current_user",
     "validate_entra_token",
     "_extract_bearer",
 ]

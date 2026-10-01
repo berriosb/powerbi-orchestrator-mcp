@@ -12,6 +12,7 @@ Mock mode short-circuits steps 2-5 with synthetic responses.
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,39 @@ class DeployResult(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+def _extract_tmdl_definition(pbip_path: str) -> dict[str, Any] | None:
+    path = Path(pbip_path)
+    if not path.exists():
+        return None
+    dataset_dirs: list[Path] = []
+    if path.is_dir():
+        dataset_dirs = [
+            d
+            for d in path.iterdir()
+            if d.is_dir()
+            and (d.name.endswith(".Dataset") or d.name.endswith(".SemanticModel"))
+        ]
+        if not dataset_dirs and (
+            path.name.endswith(".Dataset") or path.name.endswith(".SemanticModel")
+        ):
+            dataset_dirs = [path]
+    if not dataset_dirs:
+        return None
+    target_dir = dataset_dirs[0]
+    parts: list[dict[str, str]] = []
+    for file_path in target_dir.rglob("*"):
+        if file_path.is_file():
+            rel_path = file_path.relative_to(target_dir).as_posix()
+            parts.append(
+                {
+                    "path": rel_path,
+                    "payload": base64.b64encode(file_path.read_bytes()).decode("ascii"),
+                    "payloadType": "InlineBase64",
+                }
+            )
+    return {"parts": parts} if parts else None
+
+
 async def deploy_to_workspace(
     pbip_path: str,
     workspace_id: str,
@@ -85,7 +119,6 @@ async def deploy_to_workspace(
     findings = findings or []
     result = DeployResult()
 
-    # 1. Pre-deploy gate.
     gate = PreDeployGate(profile=gate_profile)
     gate_result = gate.evaluate(findings)
     result.gate_result = gate_result
@@ -95,7 +128,6 @@ async def deploy_to_workspace(
         )
         return result
 
-    # 2-5: cloud calls (only if not in mock mode and credentials are valid).
     if mock:
         result.publish_ok = True
         result.item_id = "mock-item-id"
@@ -113,15 +145,20 @@ async def deploy_to_workspace(
     cred = FabricCredential(config)
     client = FabricClient(cred)
     try:
-        dataset_id = Path(pbip_path).stem  # e.g. "sales"
+        dataset_id = Path(pbip_path).stem
         display_name = dataset_id
+        tmdl_definition = _extract_tmdl_definition(pbip_path)
+        create_kwargs: dict[str, Any] = {
+            "display_name": display_name,
+            "item_type": "PowerBIDataset",
+        }
+        if tmdl_definition is not None:
+            create_kwargs["definition"] = tmdl_definition
 
-        # 2. Publish — create the dataset item in the workspace.
         try:
             create_resp = await client.create_item(
                 workspace_id,
-                display_name=display_name,
-                item_type="PowerBIDataset",
+                **create_kwargs,
             )
             result.publish_ok = True
             result.item_id = (
@@ -132,32 +169,29 @@ async def deploy_to_workspace(
         except Exception as exc:
             result.errors.append(f"publish_failed: {exc}")
 
-        # 3. Bind gateway — not needed if no on-prem data source.
-        # (Skipped per MVP.)
+        target_dataset_id = result.item_id or dataset_id
+        result.dataset_id = target_dataset_id
 
-        # 4. Configure refresh schedule (Power BI Service REST).
         schedule_body = _build_daily_schedule(refresh_daily_hour)
         try:
             await client.update_refresh_schedule(
                 workspace_id,
-                dataset_id,
+                target_dataset_id,
                 schedule=schedule_body,
             )
             result.schedule_ok = True
         except Exception as exc:
             result.errors.append(f"schedule_failed: {exc}")
 
-        # 5. Trigger initial refresh.
         try:
             refresh_resp = await client.refresh_dataset(
                 workspace_id,
-                dataset_id,
+                target_dataset_id,
                 refresh_type="full",
             )
             result.refresh_id = (
                 refresh_resp.get("refreshId") or refresh_resp.get("id")
             )
-            result.dataset_id = dataset_id
         except Exception as exc:
             result.errors.append(f"initial_refresh_failed: {exc}")
 

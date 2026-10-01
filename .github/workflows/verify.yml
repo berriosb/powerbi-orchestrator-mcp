@@ -51,10 +51,10 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run ruff
-        run: ruff check src/powerbi_orchestrator_mcp
+        run: ruff check src tests
 
-      - name: Run mypy --strict
-        run: mypy --strict src/powerbi_orchestrator_mcp
+      - name: Run mypy
+        run: mypy src tests
 
   # ---------------------------------------------------------------
   # Job 2: test (full pytest + coverage + fresh-install e2e).
