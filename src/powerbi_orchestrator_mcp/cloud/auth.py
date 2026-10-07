@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from azure.core.exceptions import ClientAuthenticationError
@@ -30,23 +30,11 @@ from azure.identity import (
     ManagedIdentityCredential,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# Per spec 02-cloud-fabric.md §2.1: scope set varies by operation.
-# Read = Dataset.Read.All, Write = + Dataset.ReadWrite.All,
-# Admin = + Admin.* (gated explicitly).
 READ_SCOPES = ("https://analysis.windows.net/powerbi/api/Dataset.Read.All",)
 WRITE_SCOPES = (
     "https://analysis.windows.net/powerbi/api/Dataset.Read.All",
     "https://analysis.windows.net/powerbi/api/Dataset.ReadWrite.All",
 )
-
-
-# ---------------------------------------------------------------------------
-# AuthMode + FabricCredential
-# ---------------------------------------------------------------------------
 
 
 class AuthModeError(ValueError):
@@ -68,7 +56,7 @@ class AuthConfig:
     mode: str
     tenant_id: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
+    client_secret: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env_or_args(
@@ -140,9 +128,14 @@ class FabricCredential:
         of the project.
         """
         if self._config.mode == "interactive":
-            # DefaultAzureCredential includes InteractiveBrowserCredential
-            # in its chain when no other credentials are configured.
-            return DefaultAzureCredential()
+            kwargs: dict[str, Any] = {
+                "exclude_interactive_browser_credential": False
+            }
+            if self._config.tenant_id:
+                kwargs["interactive_browser_tenant_id"] = self._config.tenant_id
+            if self._config.client_id:
+                kwargs["interactive_browser_client_id"] = self._config.client_id
+            return DefaultAzureCredential(**kwargs)
         if self._config.mode == "service_principal":
             if (
                 self._config.tenant_id is None

@@ -23,6 +23,7 @@ to the orchestrator — they all surface as ``EngineError`` subclasses.
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import os
 import time
@@ -305,6 +306,9 @@ class JsonRpcSubprocessEngine:
         self._process: asyncio.subprocess.Process | None = None
         self._next_id = 1
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._stderr_buffer: collections.deque[str] = collections.deque(maxlen=100)
+        self._stdout_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
 
     def is_available(self) -> bool:
         import shutil
@@ -336,6 +340,7 @@ class JsonRpcSubprocessEngine:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=self._env,
+                limit=16 * 1024 * 1024,
             )
         except FileNotFoundError as exc:
             from powerbi_orchestrator_mcp.engines.errors import EngineNotFoundError
@@ -358,14 +363,16 @@ class JsonRpcSubprocessEngine:
                 ),
             ) from exc
 
-        asyncio.create_task(self._read_stdout_loop())
+        self._stdout_task = asyncio.create_task(self._read_stdout_loop())
+        self._stderr_task = asyncio.create_task(self._read_stderr_loop())
 
         await asyncio.sleep(0.05)
         if self._process.returncode is not None:
+            buffered_stderr = "\n".join(self._stderr_buffer)
             stderr_bytes = await self._process.stderr.read() if self._process.stderr else b""
-            stderr = stderr_bytes.decode("utf-8", errors="replace")[:500]
+            combined_err = (buffered_stderr + "\n" + stderr_bytes.decode("utf-8", errors="replace")).strip()[:500]
             err = map_exit_code_to_error(
-                self._engine_name, self._process.returncode, stderr
+                self._engine_name, self._process.returncode, combined_err
             )
             if err is None:
                 err = EngineCrashedError(
@@ -407,7 +414,12 @@ class JsonRpcSubprocessEngine:
                     await proc.wait()
         finally:
             self._process = None
-            # Cancel any pending RPCs.
+            if self._stdout_task and not self._stdout_task.done():
+                self._stdout_task.cancel()
+            if self._stderr_task and not self._stderr_task.done():
+                self._stderr_task.cancel()
+            self._stdout_task = None
+            self._stderr_task = None
             for fut in self._pending.values():
                 if not fut.done():
                     fut.cancel()
@@ -545,8 +557,24 @@ class JsonRpcSubprocessEngine:
             ) from exc
 
 
+    async def _read_stderr_loop(self) -> None:
+        proc = self._process
+        if proc is None or proc.stderr is None:
+            return
+        try:
+            while True:
+                line = await proc.stderr.readline()
+                if not line:
+                    break
+                self._stderr_buffer.append(
+                    line.decode("utf-8", errors="replace").strip()
+                )
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        except Exception:
+            pass
+
     async def _read_stdout_loop(self) -> None:
-        """Background task: read JSON-RPC responses from subprocess stdout."""
         proc = self._process
         if proc is None or proc.stdout is None:
             return
@@ -554,7 +582,7 @@ class JsonRpcSubprocessEngine:
             while True:
                 line = await proc.stdout.readline()
                 if not line:
-                    break  # EOF: subprocess closed stdout
+                    break
                 line_str = line.decode("utf-8", errors="replace").strip()
                 if not line_str:
                     continue
@@ -572,23 +600,33 @@ class JsonRpcSubprocessEngine:
                     ) from exc
                 request_id = response.get("id")
                 if request_id is None:
-                    # Notification or invalid; ignore for MVP.
                     continue
                 fut = self._pending.pop(request_id, None)
                 if fut is not None and not fut.done():
                     fut.set_result(response)
         except (asyncio.CancelledError, GeneratorExit):
             pass
-        except Exception:  # noqa: BLE001
-            # Any unexpected read error → fail all pending RPCs.
+        except Exception as exc:
             for fut in self._pending.values():
                 if not fut.done():
                     fut.set_exception(
                         EngineCrashedError(
-                            f"{self._engine_name} stdout reader crashed",
+                            f"{self._engine_name} stdout reader crashed: {exc}",
                             engine=self._engine_name,
                             code="engine_stdout_reader_crashed",
                             remediation_hint="Restart the engine",
+                        )
+                    )
+            self._pending.clear()
+        finally:
+            for fut in self._pending.values():
+                if not fut.done():
+                    fut.set_exception(
+                        EngineCrashedError(
+                            f"{self._engine_name} process exited unexpectedly (EOF on stdout)",
+                            engine=self._engine_name,
+                            code="engine_eof",
+                            remediation_hint="Inspect engine logs / installation",
                         )
                     )
             self._pending.clear()

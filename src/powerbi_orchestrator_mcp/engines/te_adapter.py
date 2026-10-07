@@ -36,8 +36,10 @@ error_message).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Protocol
@@ -119,9 +121,84 @@ class SupportsSpecOps(Protocol):
     ) -> RefactorCalcGroupsResult: ...
 
 
-# ---------------------------------------------------------------------------
-# In-memory fallback adapter (for tests + non-Windows)
-# ---------------------------------------------------------------------------
+def _find_dataset_model_files(target_ref: str | Path) -> list[Path]:
+    p = Path(target_ref)
+    if not p.exists():
+        return []
+    if p.is_file():
+        if p.name in ("definition.pbism", "model.bim") or p.suffix == ".tmdl":
+            return [p]
+        if p.suffix == ".pbip":
+            p = p.parent
+    if p.is_dir():
+        candidates = [
+            *(p.glob("*.Dataset/definition.pbism")),
+            *(p.glob("*.SemanticModel/definition.pbism")),
+            *(p.glob("*.Dataset/model.bim")),
+            *(p.glob("*.SemanticModel/model.bim")),
+            *(p.glob("definition.pbism")),
+            *(p.glob("model.bim")),
+        ]
+        if candidates:
+            return candidates
+        tmdl_tables = [
+            *(p.glob("*.Dataset/definition/tables/*.tmdl")),
+            *(p.glob("*.SemanticModel/definition/tables/*.tmdl")),
+            *(p.glob("definition/tables/*.tmdl")),
+        ]
+        if tmdl_tables:
+            return tmdl_tables
+    return []
+
+
+def _load_model_from_json_file(file_path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+        model_data = data.get("model", data)
+        tables = [
+            str(t.get("name", ""))
+            for t in model_data.get("tables", [])
+            if t.get("name")
+        ]
+        columns: dict[str, list[str]] = {}
+        measures: list[dict[str, Any]] = []
+        relationships: list[dict[str, Any]] = []
+        for t in model_data.get("tables", []):
+            tname = str(t.get("name", ""))
+            if not tname:
+                continue
+            columns[tname] = [
+                str(c.get("name", ""))
+                for c in t.get("columns", [])
+                if c.get("name")
+            ]
+            for m in t.get("measures", []):
+                mname = str(m.get("name", ""))
+                if mname:
+                    measures.append(
+                        {
+                            "name": mname,
+                            "table": tname,
+                            "expression": str(m.get("expression", "")),
+                        }
+                    )
+        for r in model_data.get("relationships", []):
+            relationships.append(
+                {
+                    "from_table": str(r.get("fromTable", "")),
+                    "from_column": str(r.get("fromColumn", "")),
+                    "to_table": str(r.get("toTable", "")),
+                    "to_column": str(r.get("toColumn", "")),
+                }
+            )
+        return {
+            "tables": tables,
+            "columns": columns,
+            "measures": measures,
+            "relationships": relationships,
+        }
+    except Exception:
+        return None
 
 
 class InMemoryModelingAdapter:
@@ -176,32 +253,49 @@ class InMemoryModelingAdapter:
             session_token=f"in-memory-{target.target_ref}",
         )
 
-    async def disconnect(self, conn: ConnectionHandle) -> None:  # noqa: ARG002
+    async def disconnect(self, conn: ConnectionHandle) -> None:
+        _ = conn
         return None
+
+    def _ensure_model_loaded(self, target_ref: str) -> dict[str, Any]:
+        if target_ref in self._models and self._models[target_ref]:
+            return self._models[target_ref]
+        target_files = _find_dataset_model_files(target_ref)
+        for tf in target_files:
+            if tf.suffix in (".pbism", ".bim") or tf.name in ("definition.pbism", "model.bim"):
+                loaded = _load_model_from_json_file(tf)
+                if loaded is not None:
+                    self._models[target_ref] = loaded
+                    return loaded
+        return self._models.setdefault(target_ref, {})
 
     async def list_tables(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
     ) -> list[Table]:
-        model = self._models.get(conn.target_ref, {})
+        model = self._ensure_model_loaded(conn.target_ref)
         return [Table(name=t) for t in model.get("tables", [])]
 
     async def list_measures(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
     ) -> list[Measure]:
-        model = self._models.get(conn.target_ref, {})
+        model = self._ensure_model_loaded(conn.target_ref)
         return [
-            Measure(name=m["name"], table=m.get("table", ""), expression="")
+            Measure(
+                name=m["name"],
+                table=m.get("table", ""),
+                expression=m.get("expression", ""),
+            )
             for m in model.get("measures", [])
         ]
 
     async def list_columns(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
         table: str,
     ) -> list[Column]:
-        model = self._models.get(conn.target_ref, {})
+        model = self._ensure_model_loaded(conn.target_ref)
         return [
             Column(name=c)
             for c in model.get("columns", {}).get(table, [])
@@ -209,9 +303,9 @@ class InMemoryModelingAdapter:
 
     async def list_relationships(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
     ) -> list[Relationship]:
-        model = self._models.get(conn.target_ref, {})
+        model = self._ensure_model_loaded(conn.target_ref)
         return [
             Relationship(
                 from_table=r["from_table"],
@@ -224,62 +318,304 @@ class InMemoryModelingAdapter:
 
     async def update_column(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
         table: str,
         column: str,
-        changes: dict[str, Any],  # noqa: ARG002
+        changes: dict[str, Any],
     ) -> OperationResult:
         model = self._models.setdefault(conn.target_ref, {"columns": {}})
-        model["columns"].setdefault(table, []).append(column)
-        return OperationResult(success=True, changed_files=[f"{table}.{column}"])
+        model.setdefault("columns", {}).setdefault(table, []).append(column)
+        target_files = _find_dataset_model_files(conn.target_ref)
+        if not target_files:
+            return OperationResult(success=True, changed_files=[f"{table}.{column}"])
+
+        changed_files: list[str] = []
+        new_name = str(changes.get("new_name") or changes.get("name") or "")
+
+        for tf in target_files:
+            if tf.suffix in (".pbism", ".bim") or tf.name in ("definition.pbism", "model.bim"):
+                try:
+                    data = json.loads(tf.read_text(encoding="utf-8"))
+                    model_obj = data.get("model", data)
+                    file_modified = False
+                    for t in model_obj.get("tables", []):
+                        t_name = str(t.get("name", ""))
+                        if not table or t_name.lower() == table.lower():
+                            for c in t.get("columns", []):
+                                if str(c.get("name", "")).lower() == column.lower():
+                                    if new_name:
+                                        c["name"] = new_name
+                                    for k, v in changes.items():
+                                        if k not in ("new_name", "name"):
+                                            c[k] = v
+                                    file_modified = True
+                            if not file_modified:
+                                for m in t.get("measures", []):
+                                    if str(m.get("name", "")).lower() == column.lower():
+                                        if new_name:
+                                            m["name"] = new_name
+                                        for k, v in changes.items():
+                                            if k not in ("new_name", "name"):
+                                                m[k] = v
+                                        file_modified = True
+                    if file_modified and new_name:
+                        for t in model_obj.get("tables", []):
+                            t_name = str(t.get("name", ""))
+                            for m in t.get("measures", []):
+                                expr = str(m.get("expression", ""))
+                                if expr:
+                                    prefix = f"{table}[" if table else f"{t_name}["
+                                    updated_expr = expr.replace(
+                                        f"{prefix}{column}]", f"{prefix}{new_name}]"
+                                    )
+                                    if not table or t_name.lower() == table.lower():
+                                        updated_expr = updated_expr.replace(
+                                            f"[{column}]", f"[{new_name}]"
+                                        )
+                                    if updated_expr != expr:
+                                        m["expression"] = updated_expr
+                        for r in model_obj.get("relationships", []):
+                            if (
+                                not table
+                                or str(r.get("fromTable", "")).lower() == table.lower()
+                            ) and str(r.get("fromColumn", "")).lower() == column.lower():
+                                r["fromColumn"] = new_name
+                            if (
+                                not table
+                                or str(r.get("toTable", "")).lower() == table.lower()
+                            ) and str(r.get("toColumn", "")).lower() == column.lower():
+                                r["toColumn"] = new_name
+                    if file_modified:
+                        tmp = tf.with_suffix(tf.suffix + ".tmp")
+                        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                        tmp.replace(tf)
+                        changed_files.append(str(tf))
+                except Exception:
+                    pass
+            elif tf.suffix == ".tmdl":
+                try:
+                    text = tf.read_text(encoding="utf-8")
+                    if new_name:
+                        pattern = re.compile(
+                            rf"^(\s*column\s+)(?:{re.escape(column)}|'{re.escape(column)}')\b",
+                            re.MULTILINE,
+                        )
+                        new_text = pattern.sub(rf"\g<1>{new_name}", text)
+                        if table:
+                            new_text = new_text.replace(
+                                f"{table}[{column}]", f"{table}[{new_name}]"
+                            )
+                        new_text = new_text.replace(f"[{column}]", f"[{new_name}]")
+                        if new_text != text:
+                            tmp = tf.with_suffix(tf.suffix + ".tmp")
+                            tmp.write_text(new_text, encoding="utf-8")
+                            tmp.replace(tf)
+                            changed_files.append(str(tf))
+                except Exception:
+                    pass
+
+        if not changed_files:
+            changed_files = [f"{table}.{column}"]
+        return OperationResult(success=True, changed_files=changed_files)
 
     async def create_measure(
         self, conn: ConnectionHandle, table: str, measure: Measure
     ) -> OperationResult:
         model = self._models.setdefault(conn.target_ref, {"measures": []})
-        model["measures"].append({"name": measure.name, "table": table})
-        return OperationResult(success=True, changed_files=[f"{table}.{measure.name}"])
+        model.setdefault("measures", []).append(
+            {"name": measure.name, "table": table}
+        )
+        target_files = _find_dataset_model_files(conn.target_ref)
+        if not target_files:
+            return OperationResult(
+                success=True, changed_files=[f"{table}.{measure.name}"]
+            )
+
+        changed_files: list[str] = []
+        for tf in target_files:
+            if tf.suffix in (".pbism", ".bim") or tf.name in (
+                "definition.pbism",
+                "model.bim",
+            ):
+                try:
+                    data = json.loads(tf.read_text(encoding="utf-8"))
+                    model_obj = data.get("model", data)
+                    file_modified = False
+                    for t in model_obj.get("tables", []):
+                        if not table or str(t.get("name", "")).lower() == table.lower():
+                            measures_list = t.setdefault("measures", [])
+                            measures_list.append(
+                                {
+                                    "name": measure.name,
+                                    "table": str(t.get("name", table)),
+                                    "expression": measure.expression,
+                                }
+                            )
+                            file_modified = True
+                            break
+                    if file_modified:
+                        tmp = tf.with_suffix(tf.suffix + ".tmp")
+                        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                        tmp.replace(tf)
+                        changed_files.append(str(tf))
+                except Exception:
+                    pass
+            elif tf.suffix == ".tmdl" and (
+                not table or tf.stem.lower() == table.lower()
+            ):
+                try:
+                    text = tf.read_text(encoding="utf-8")
+                    block = f"\n\n\tmeasure '{measure.name}' = {measure.expression}\n"
+                    tmp = tf.with_suffix(tf.suffix + ".tmp")
+                    tmp.write_text(text + block, encoding="utf-8")
+                    tmp.replace(tf)
+                    changed_files.append(str(tf))
+                except Exception:
+                    pass
+        if not changed_files:
+            changed_files = [f"{table}.{measure.name}"]
+        return OperationResult(success=True, changed_files=changed_files)
 
     async def update_measure(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
         table: str,
         measure: str,
-        changes: dict[str, Any],  # noqa: ARG002
+        changes: dict[str, Any],
     ) -> OperationResult:
-        return OperationResult(success=True, changed_files=[f"{table}.{measure}"])
+        target_files = _find_dataset_model_files(conn.target_ref)
+        if not target_files:
+            return OperationResult(success=True, changed_files=[f"{table}.{measure}"])
+
+        changed_files: list[str] = []
+        new_name = str(changes.get("new_name") or changes.get("name") or "")
+        new_expr = changes.get("expression")
+
+        for tf in target_files:
+            if tf.suffix in (".pbism", ".bim") or tf.name in (
+                "definition.pbism",
+                "model.bim",
+            ):
+                try:
+                    data = json.loads(tf.read_text(encoding="utf-8"))
+                    model_obj = data.get("model", data)
+                    file_modified = False
+                    for t in model_obj.get("tables", []):
+                        if not table or str(t.get("name", "")).lower() == table.lower():
+                            for m in t.get("measures", []):
+                                if str(m.get("name", "")).lower() == measure.lower():
+                                    if new_name:
+                                        m["name"] = new_name
+                                    if new_expr is not None:
+                                        m["expression"] = str(new_expr)
+                                    for k, v in changes.items():
+                                        if k not in ("new_name", "name", "expression"):
+                                            m[k] = v
+                                    file_modified = True
+                    if file_modified:
+                        tmp = tf.with_suffix(tf.suffix + ".tmp")
+                        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                        tmp.replace(tf)
+                        changed_files.append(str(tf))
+                except Exception:
+                    pass
+        if not changed_files:
+            changed_files = [f"{table}.{measure}"]
+        return OperationResult(success=True, changed_files=changed_files)
 
     async def delete_measure(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
         table: str,
         measure: str,
     ) -> OperationResult:
-        return OperationResult(success=True, changed_files=[f"{table}.{measure}"])
+        target_files = _find_dataset_model_files(conn.target_ref)
+        if not target_files:
+            return OperationResult(success=True, changed_files=[f"{table}.{measure}"])
+
+        changed_files: list[str] = []
+        for tf in target_files:
+            if tf.suffix in (".pbism", ".bim") or tf.name in (
+                "definition.pbism",
+                "model.bim",
+            ):
+                try:
+                    data = json.loads(tf.read_text(encoding="utf-8"))
+                    model_obj = data.get("model", data)
+                    file_modified = False
+                    for t in model_obj.get("tables", []):
+                        if not table or str(t.get("name", "")).lower() == table.lower():
+                            measures = t.get("measures", [])
+                            initial_len = len(measures)
+                            t["measures"] = [
+                                m
+                                for m in measures
+                                if str(m.get("name", "")).lower() != measure.lower()
+                            ]
+                            if len(t["measures"]) != initial_len:
+                                file_modified = True
+                    if file_modified:
+                        tmp = tf.with_suffix(tf.suffix + ".tmp")
+                        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                        tmp.replace(tf)
+                        changed_files.append(str(tf))
+                except Exception:
+                    pass
+        if not changed_files:
+            changed_files = [f"{table}.{measure}"]
+        return OperationResult(success=True, changed_files=changed_files)
 
     async def execute_dax(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
-        query: str,  # noqa: ARG002
-        effective_identity: dict[str, Any] | None = None,  # noqa: ARG002
+        conn: ConnectionHandle,
+        query: str,
+        effective_identity: dict[str, Any] | None = None,
     ) -> DaxResult:
+        _ = (conn, query, effective_identity)
         return DaxResult(rows=[], row_count=0, duration_ms=0)
 
     async def snapshot(
         self,
-        conn: ConnectionHandle,  # noqa: ARG002
+        conn: ConnectionHandle,
         label: str,
     ) -> SnapshotHandle:
         clean_label = Path(label).name
         path = Path(tempfile.gettempdir()) / f"snapshot-{clean_label}.json"
-        path.write_text(
-            json.dumps(self._models.get(conn.target_ref, {}), indent=2)
-        )
+        target_files = _find_dataset_model_files(conn.target_ref)
+        file_backups: dict[str, str] = {}
+        for tf in target_files:
+            with contextlib.suppress(Exception):
+                file_backups[str(tf)] = tf.read_text(encoding="utf-8")
+        payload = {
+            "in_memory": self._models.get(conn.target_ref, {}),
+            "disk_files": file_backups,
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return SnapshotHandle(label=label, path=path)
 
-    async def restore_snapshot(self, handle: SnapshotHandle) -> None:
-        # In-memory impl: keep a copy.
-        self.snapshots.setdefault(handle.label, [])  # noqa: ARG002
+    async def restore_snapshot(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        handle: SnapshotHandle | None = None
+        for a in args:
+            if isinstance(a, SnapshotHandle):
+                handle = a
+                break
+        if handle is None:
+            h = kwargs.get("handle")
+            if isinstance(h, SnapshotHandle):
+                handle = h
+        if handle is not None and handle.path.exists():
+            try:
+                data = json.loads(handle.path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and "disk_files" in data:
+                    for fpath, fcontent in data.get("disk_files", {}).items():
+                        Path(fpath).write_text(fcontent, encoding="utf-8")
+            except Exception:
+                pass
+            self.snapshots.setdefault(handle.label, [])
 
     # -- SupportsSpecOps ----------------------------------------------
 

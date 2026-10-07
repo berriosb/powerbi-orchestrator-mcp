@@ -196,15 +196,52 @@ class ModelingStepExecutor:
                 if "[" in old_path and old_path.endswith("]"):
                     table = old_path.split("[")[0]
                     column = old_path.rsplit("[", 1)[1][:-1]
-                else:
+                elif "." in old_path:
                     table = old_path.rsplit(".", 1)[0]
                     column = old_path.split(".")[-1]
+                else:
+                    table = ""
+                    column = old_path
                 changes = dict(args.get("changes", {}))
                 if new_name is not None:
                     changes["new_name"] = str(new_name)
                 res = await engine.update_column(
                     conn, table=table, column=column, changes=changes
                 )
+                return StepOutcome(
+                    success=res.success,
+                    error_message=res.error_message if not res.success else None,
+                    changed_files=res.changed_files,
+                )
+            if action in ("measure.create", "create_measure"):
+                table = str(args.get("table", ""))
+                name = str(args.get("name", ""))
+                expression = str(args.get("expression", ""))
+                from powerbi_orchestrator_mcp.engines.base import Measure
+
+                meas = Measure(name=name, table=table, expression=expression)
+                res = await engine.create_measure(conn, table=table, measure=meas)
+                return StepOutcome(
+                    success=res.success,
+                    error_message=res.error_message if not res.success else None,
+                    changed_files=res.changed_files,
+                )
+            if action in ("measure.update", "update_measure"):
+                table = str(args.get("table", ""))
+                name = str(args.get("name") or args.get("measure", ""))
+                changes = dict(args.get("changes", {}))
+                res = await engine.update_measure(
+                    conn, table=table, measure=name, changes=changes
+                )
+                return StepOutcome(
+                    success=res.success,
+                    error_message=res.error_message if not res.success else None,
+                    changed_files=res.changed_files,
+                )
+            if action in ("measure.delete", "delete_measure"):
+                table = str(args.get("table", ""))
+                name = str(args.get("name") or args.get("measure", ""))
+                res = await engine.delete_measure(conn, table=table, measure=name)
                 return StepOutcome(
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
@@ -227,7 +264,10 @@ class ModelingStepExecutor:
                         label=str(args.get("label", "snapshot")),
                         path=Path(str(args.get("path", "."))),
                     )
-                    await engine.restore_snapshot(conn, handle)
+                    try:
+                        await engine.restore_snapshot(conn, handle)
+                    except TypeError:
+                        await engine.restore_snapshot(handle)
                 return StepOutcome(success=True, changed_files=[])
             return StepOutcome(success=True, changed_files=[])
         except Exception as exc:

@@ -330,3 +330,84 @@ class TestFabricClientSprint14B:
             assert client._select_client("fabric") is not client._select_client("pbi")  # type: ignore[attr-defined]  # noqa: SLF001
         finally:
             await client.aclose()
+
+
+class TestRetrySafety:
+    async def test_retry_after_http_date_parsed_safely(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = AuthConfig(mode="interactive")
+        cred = FabricCredential(cfg)
+
+        async def fake_get_token(*_args, **_kwargs):
+            return "fake-token"
+
+        monkeypatch.setattr(cred, "get_token", fake_get_token)
+        client = FabricClient(cred, rpm=10_000, burst=10_000)
+
+        class FakeResponse:
+            status_code = 429
+            headers = {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}
+            text = "Too Many Requests"
+            content = b""
+
+        attempts = 0
+
+        async def fake_request(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return FakeResponse()
+            class OkResponse:
+                status_code = 200
+                headers: dict[str, str] = {}
+                content = b'{"ok": true}'
+                def json(self):
+                    return {"ok": True}
+            return OkResponse()
+
+        monkeypatch.setattr(client._select_client("fabric"), "request", fake_request)
+        try:
+            res = await client._request(
+                "GET", "/test", service="fabric", max_retries=1
+            )
+            assert res == {"ok": True}
+            assert attempts == 2
+        finally:
+            await client.aclose()
+
+    async def test_non_idempotent_post_does_not_retry_502(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = AuthConfig(mode="interactive")
+        cred = FabricCredential(cfg)
+
+        async def fake_get_token(*_args, **_kwargs):
+            return "fake-token"
+
+        monkeypatch.setattr(cred, "get_token", fake_get_token)
+        client = FabricClient(cred, rpm=10_000, burst=10_000)
+
+        class BadGatewayResponse:
+            status_code = 502
+            headers: dict[str, str] = {}
+            text = "Bad Gateway"
+            content = b"Bad Gateway"
+
+        calls = 0
+
+        async def fake_request(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return BadGatewayResponse()
+
+        monkeypatch.setattr(client._select_client("fabric"), "request", fake_request)
+        try:
+            with pytest.raises(FabricAPIError) as exc_info:
+                await client._request(
+                    "POST", "/test", service="fabric", max_retries=3
+                )
+            assert exc_info.value.status_code == 502
+            assert calls == 1
+        finally:
+            await client.aclose()

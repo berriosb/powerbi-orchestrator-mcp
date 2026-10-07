@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +11,13 @@ import pytest
 from powerbi_orchestrator_mcp.engines.base import (
     ConnectionHandle,
     DaxResult,
+    JsonRpcSubprocessEngine,
     Measure,
     OperationResult,
     SnapshotHandle,
 )
 from powerbi_orchestrator_mcp.engines.errors import (
+    EngineCrashedError,
     EngineError,
     EngineNotFoundError,
 )
@@ -404,3 +407,41 @@ class TestRealSubprocess:
         engine = PowerBiModelingMcpEngine(binary="/nonexistent/binary")
         with pytest.raises(EngineNotFoundError):
             await engine.connect(target)
+
+
+class TestSubprocessHardening:
+    async def test_large_jsonrpc_response_accepted(self) -> None:
+        code = (
+            "import sys, json\n"
+            "for line in sys.stdin:\n"
+            "    req = json.loads(line)\n"
+            "    big_data = [{'i': i, 'val': 'x' * 150} for i in range(700)]\n"
+            "    res = {'jsonrpc': '2.0', 'id': req.get('id'), 'result': {'rows': big_data}}\n"
+            "    sys.stdout.write(json.dumps(res) + '\\n')\n"
+            "    sys.stdout.flush()\n"
+        )
+        engine = JsonRpcSubprocessEngine(
+            "powerbi-modeling-mcp",
+            binary=sys.executable,
+            args=("-c", code),
+        )
+        await engine._start()
+        try:
+            resp = await engine._rpc("test_large", {})
+            assert len(resp["rows"]) == 700
+        finally:
+            await engine._stop()
+
+    async def test_premature_eof_fails_pending_rpc_without_hang(self) -> None:
+        code = "import sys, time; time.sleep(0.05); sys.exit(1)"
+        engine = JsonRpcSubprocessEngine(
+            "powerbi-modeling-mcp",
+            binary=sys.executable,
+            args=("-c", code),
+        )
+        await engine._start()
+        try:
+            with pytest.raises(EngineCrashedError):
+                await engine._rpc("will_die", {}, timeout_s=5)
+        finally:
+            await engine._stop()

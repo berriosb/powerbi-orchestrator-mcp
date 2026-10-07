@@ -25,7 +25,8 @@ from pydantic import BaseModel
 
 AUDIT_DIR = Path.home() / ".powerbi-orchestrator-mcp" / "audit"
 AUDIT_DB = AUDIT_DIR / "audit.db"
-_HMAC_KEY_ENV = "PBI_ORCHestrATOR_AUDIT_SECRET"
+_HMAC_KEY_ENV = "PBI_ORCHESTRATOR_AUDIT_SECRET"
+_LEGACY_HMAC_KEY_ENV = "PBI_ORCHestrATOR_AUDIT_SECRET"
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +64,7 @@ class AuditVerifyResult(BaseModel):
 
 def _get_hmac_key() -> bytes:
     """Get the HMAC secret key from env or generate one."""
-    secret = os.environ.get(_HMAC_KEY_ENV)
+    secret = os.environ.get(_HMAC_KEY_ENV) or os.environ.get(_LEGACY_HMAC_KEY_ENV)
     if secret:
         return secret.encode("utf-8")
     # Generate a persistent key on first use

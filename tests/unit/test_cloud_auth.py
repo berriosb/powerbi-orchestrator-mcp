@@ -83,3 +83,18 @@ class TestFabricCredential:
 
         with pytest.raises(AuthModeError, match="unknown scope_kind"):
             asyncio.run(cred.get_token_for_scope("admin"))
+
+    def test_auth_config_masks_client_secret_in_repr(self) -> None:
+        cfg = AuthConfig(
+            mode="service_principal",
+            tenant_id="t",
+            client_id="c",
+            client_secret="sensitive_key_12345",
+        )
+        assert "sensitive_key_12345" not in repr(cfg)
+
+    def test_interactive_includes_browser_credential(self) -> None:
+        cfg = AuthConfig(mode="interactive", tenant_id="tid-1", client_id="cid-1")
+        cred = FabricCredential(cfg)
+        cred_types = [type(c).__name__ for c in cred._credential.credentials]
+        assert "InteractiveBrowserCredential" in cred_types

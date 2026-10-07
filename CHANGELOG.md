@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.14.0] — 2026-10-07
+
+### Fixed
+- **PBIP Local Fallback Disk Mutations**: `InMemoryModelingAdapter` now inspects, updates, and saves semantic models on disk (`definition.pbism`, `model.bim`, TMDL) when `conn.target_ref` points to a local PBIP project. Column renames, measure expressions, and relationships are updated in lockstep with report visual bindings without requiring external modeling binaries.
+- **Interactive Azure Authentication**: Enabled `InteractiveBrowserCredential` explicitly when `auth_mode="interactive"` under `azure-identity >= 1.19`, resolving authentication failure with browser flow.
+- **Large DAX Response Support**: Increased `asyncio.StreamReader` buffer limit from 64KB to 16MB in `JsonRpcSubprocessEngine`, preventing crashes on queries returning large result sets.
+- **HMAC Audit Key Normalization**: Canonicalized environment variable name to `PBI_ORCHESTRATOR_AUDIT_SECRET` while preserving backward compatibility with legacy casing.
+- **Subprocess Hang and Deadlock Prevention**: Continuously drained subprocess `stderr` to a bounded ring buffer and implemented immediate pending RPC cancellation on premature subprocess termination (EOF).
+- **Cross-Platform System Path Safety**: Expanded `validate_safe_pbip_path` to block Windows system directories (`Windows`, `System32`, `Program Files`) and UNC paths (`\\`).
+- **Fabric Client Idempotency & Retry Hardening**: Restricted 502/503/504 retries to idempotent HTTP methods (`GET`, `PUT`, `DELETE`), parsed HTTP-date RFC 7231 `Retry-After` headers safely, and mapped 5xx gateway/proxy errors directly to `FabricAPIError`.
+- **Credential Masking in Logs**: Masked `client_secret` in `AuthConfig.__repr__` to prevent accidental credential leakage in debug logs.
+
 ---
 
 ## [1.13.0] — 2026-10-07
