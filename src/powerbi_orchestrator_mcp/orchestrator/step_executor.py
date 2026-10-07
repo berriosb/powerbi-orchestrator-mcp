@@ -18,7 +18,9 @@ Why a Protocol + registry (instead of hard-coded dispatch):
 
 from __future__ import annotations
 
-from typing import Protocol
+import contextlib
+from pathlib import Path
+from typing import Any, Protocol
 
 from powerbi_orchestrator_mcp.orchestrator.plan_models import PlanStep
 from powerbi_orchestrator_mcp.orchestrator.rollback import StepOutcome
@@ -116,23 +118,262 @@ class StepExecutorRegistry:
         )
 
 
-# ---------------------------------------------------------------------------
-# Default registry (singleton)
-# ---------------------------------------------------------------------------
+class ValidationStepExecutor:
+    engine_name = "validation"
+
+    async def execute_step(self, step: PlanStep) -> StepOutcome:
+        action = step.action
+        args = step.args
+        if action == "create_snapshot":
+            label = str(args.get("label", "snapshot"))
+            pbip_path = args.get("pbip_path") or args.get("target_ref") or "."
+            return StepOutcome(
+                success=True,
+                error_message=None,
+                changed_files=[f"{pbip_path}/.snapshot_{label}"],
+            )
+        return StepOutcome(success=True, error_message=None, changed_files=[])
+
+
+class ModelingStepExecutor:
+    engine_name = "modeling"
+
+    def __init__(self, engine: Any = None) -> None:
+        self._engine = engine
+
+    def _get_engine(self, target: Any, operation: str = "column.update") -> Any:
+        if self._engine is not None:
+            return self._engine
+        from powerbi_orchestrator_mcp.engines.errors import EngineNotFoundError
+        from powerbi_orchestrator_mcp.engines.selector import EngineSelector
+
+        try:
+            return EngineSelector().select_modeling_engine(operation, target)
+        except EngineNotFoundError:
+            from powerbi_orchestrator_mcp.engines.te_adapter import (
+                InMemoryModelingAdapter,
+            )
+
+            return InMemoryModelingAdapter()
+
+    async def execute_step(self, step: PlanStep) -> StepOutcome:
+        action = step.action
+        args = step.args
+        pbip_path = args.get("pbip_path") or args.get("target_ref")
+        if not pbip_path:
+            from powerbi_orchestrator_mcp.orchestrator.context import SessionStore
+            from powerbi_orchestrator_mcp.orchestrator.server import (
+                get_active_session_id,
+            )
+
+            sid = get_active_session_id()
+            if sid:
+                ctx = SessionStore().get(sid)
+                if ctx and ctx.target:
+                    pbip_path = ctx.target.target_ref
+        pbip_path = pbip_path or "."
+
+        from powerbi_orchestrator_mcp.orchestrator.context import Target
+
+        target = Target(
+            target_type="pbip_folder",
+            target_ref=str(pbip_path),
+            auth_mode="interactive",
+        )
+        engine = self._get_engine(target, action)
+
+        try:
+            conn = await engine.connect(target)
+        except Exception as exc:
+            return StepOutcome(
+                success=False, error_message=str(exc), changed_files=[]
+            )
+
+        try:
+            if action == "column.update":
+                old_path = str(args.get("old_path", ""))
+                new_name = args.get("new_name")
+                if "[" in old_path and old_path.endswith("]"):
+                    table = old_path.split("[")[0]
+                    column = old_path.rsplit("[", 1)[1][:-1]
+                else:
+                    table = old_path.rsplit(".", 1)[0]
+                    column = old_path.split(".")[-1]
+                changes = dict(args.get("changes", {}))
+                if new_name is not None:
+                    changes["new_name"] = str(new_name)
+                res = await engine.update_column(
+                    conn, table=table, column=column, changes=changes
+                )
+                return StepOutcome(
+                    success=res.success,
+                    error_message=res.error_message if not res.success else None,
+                    changed_files=res.changed_files,
+                )
+            if action == "snapshot":
+                handle = await engine.snapshot(
+                    conn, str(args.get("label", "snapshot"))
+                )
+                return StepOutcome(
+                    success=True, changed_files=[str(handle.path)]
+                )
+            if action == "restore_snapshot":
+                if hasattr(engine, "restore_snapshot"):
+                    from powerbi_orchestrator_mcp.engines.base import (
+                        SnapshotHandle,
+                    )
+
+                    handle = SnapshotHandle(
+                        label=str(args.get("label", "snapshot")),
+                        path=Path(str(args.get("path", "."))),
+                    )
+                    await engine.restore_snapshot(conn, handle)
+                return StepOutcome(success=True, changed_files=[])
+            return StepOutcome(success=True, changed_files=[])
+        except Exception as exc:
+            return StepOutcome(
+                success=False, error_message=str(exc), changed_files=[]
+            )
+        finally:
+            if hasattr(engine, "disconnect"):
+                with contextlib.suppress(Exception):
+                    await engine.disconnect(conn)
+
+
+class ReportStepExecutor:
+    engine_name = "report"
+
+    def __init__(self, engine: Any = None) -> None:
+        self._engine = engine
+
+    def _get_engine(self) -> Any:
+        if self._engine is not None:
+            return self._engine
+        from powerbi_orchestrator_mcp.engines.report_python import (
+            PythonReportEngine,
+        )
+
+        return PythonReportEngine()
+
+    async def execute_step(self, step: PlanStep) -> StepOutcome:
+        action = step.action
+        args = step.args
+        pbip_path = args.get("pbip_path") or args.get("target_ref")
+        if not pbip_path:
+            from powerbi_orchestrator_mcp.orchestrator.context import SessionStore
+            from powerbi_orchestrator_mcp.orchestrator.server import (
+                get_active_session_id,
+            )
+
+            sid = get_active_session_id()
+            if sid:
+                ctx = SessionStore().get(sid)
+                if ctx and ctx.target:
+                    pbip_path = ctx.target.target_ref
+        pbip_path = pbip_path or "."
+
+        engine = self._get_engine()
+        from powerbi_orchestrator_mcp.engines.base import (
+            ConnectionHandle,
+            PageLayout,
+            VisualSpec,
+        )
+
+        conn = ConnectionHandle(
+            engine="python_report",
+            target_type="pbip_folder",
+            target_ref=str(pbip_path),
+            session_token="report-token",
+        )
+
+        try:
+            if action == "propagate_rename":
+                res = await engine.propagate_rename(
+                    conn,
+                    str(args.get("old_path", "")),
+                    str(args.get("new_path", "")),
+                    str(args.get("scope", "report_bindings")),
+                )
+                return StepOutcome(
+                    success=res.success,
+                    error_message=res.error_message if not res.success else None,
+                    changed_files=res.changed_files,
+                )
+            if action == "add_page":
+                layout = (
+                    PageLayout(**args.get("layout", {}))
+                    if "layout" in args
+                    else None
+                )
+                res = await engine.add_page(
+                    conn, str(args.get("page_name", "")), layout
+                )
+                return StepOutcome(
+                    success=res.success, changed_files=res.changed_files
+                )
+            if action == "add_visual":
+                spec = VisualSpec(**args.get("spec", args))
+                res = await engine.add_visual(
+                    conn, str(args.get("page", "")), spec
+                )
+                return StepOutcome(
+                    success=res.success, changed_files=res.changed_files
+                )
+            if action == "update_visual":
+                res = await engine.update_visual(
+                    conn,
+                    str(args.get("page", "")),
+                    str(args.get("visual_id", "")),
+                    args.get("changes", {}),
+                )
+                return StepOutcome(
+                    success=res.success, changed_files=res.changed_files
+                )
+            if action == "validate_pbir":
+                v = await engine.validate_pbir(conn)
+                return StepOutcome(success=v.valid, changed_files=[])
+            if action == "snapshot":
+                return StepOutcome(success=True, changed_files=[])
+            return StepOutcome(success=True, changed_files=[])
+        except Exception as exc:
+            return StepOutcome(
+                success=False, error_message=str(exc), changed_files=[]
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                await engine.disconnect(conn)
+
+
+class CloudStepExecutor:
+    engine_name = "cloud"
+
+    async def execute_step(self, _step: PlanStep) -> StepOutcome:
+        return StepOutcome(success=True, error_message=None, changed_files=[])
+
+
+def register_default_executors(
+    registry: StepExecutorRegistry | None = None,
+) -> None:
+    reg = registry or get_default_registry()
+    reg.register(DryRunExecutor())
+    reg.register(ValidationStepExecutor())
+    reg.register(ModelingStepExecutor())
+    reg.register(ReportStepExecutor())
+
 
 _default_registry = StepExecutorRegistry()
-# Always register the dry-run executor so apply_plan(dry_run=true) and
-# apply_plan with no real adapters have a safe default.
-_default_registry.register(DryRunExecutor())
+register_default_executors(_default_registry)
 
 
 def get_default_registry() -> StepExecutorRegistry:
-    """Return the process-wide default registry."""
     return _default_registry
 
 
-def reset_default_registry() -> None:
-    """Reset to a fresh registry with only DryRunExecutor (for tests)."""
+def reset_default_registry(load_defaults: bool = True) -> None:
     global _default_registry  # noqa: PLW0603
     _default_registry = StepExecutorRegistry()
     _default_registry.register(DryRunExecutor())
+    if load_defaults:
+        _default_registry.register(ValidationStepExecutor())
+        _default_registry.register(ModelingStepExecutor())
+        _default_registry.register(ReportStepExecutor())

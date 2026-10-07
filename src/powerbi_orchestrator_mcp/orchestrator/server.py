@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -226,26 +227,35 @@ mcp = FastMCP("powerbi-orchestrator-mcp", instructions=MCP_INSTRUCTIONS)
 
 _plans: dict[str, Plan] = {}
 _plan_store = PlanStore()
-_active_session_id: str | None = None
+_session_state: dict[str, str | None] = {"active_id": None}
 _active_session_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "active_session_id", default=None
 )
 
 
 def get_active_session_id() -> str | None:
-    return _active_session_var.get() or _active_session_id
+    session_id = _active_session_var.get()
+    if session_id is not None:
+        return session_id
+    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+
+    if get_current_user() is not None or os.environ.get("PBI_TRANSPORT") == "http":
+        return None
+    return _session_state["active_id"]
 
 
 def set_active_session_id(session_id: str | None) -> None:
-    global _active_session_id  # noqa: PLW0603
-    _active_session_id = session_id
     _active_session_var.set(session_id)
+    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+
+    if get_current_user() is None and os.environ.get("PBI_TRANSPORT") != "http":
+        _session_state["active_id"] = session_id
 
 
 def _reset_server_state() -> None:
-    """Reset module-level state (for tests)."""
     _plans.clear()
-    set_active_session_id(None)
+    _session_state["active_id"] = None
+    _active_session_var.set(None)
 
 
 def _parse_json_arg(val: Any, default: Any = None) -> Any:
@@ -281,8 +291,20 @@ def _validate_target_ref(target_type: str, target_ref: str) -> str | None:
     succeeds and the warning is surfaced to the agent.
     """
     if target_type in ("pbip_folder", "pbix_file"):
-        path = Path(target_ref)
-        if not path.exists():
+        from powerbi_orchestrator_mcp.validation.path_safety import (
+            FORBIDDEN_SYSTEM_PATHS,
+        )
+
+        resolved = Path(target_ref).resolve()
+        resolved_str = str(resolved)
+        for forbidden in FORBIDDEN_SYSTEM_PATHS:
+            if resolved_str == forbidden or resolved_str.startswith(
+                forbidden + "/"
+            ):
+                return (
+                    f"{target_type} refers to forbidden system path: {target_ref}"
+                )
+        if not resolved.exists():
             return f"{target_type} path does not exist: {target_ref}"
         return None
     if target_type == "fabric_workspace":
@@ -404,6 +426,15 @@ def _build_plan_from_intent(
     error, not a Python TypeError.
     """
     args = dict(options or {})
+    if "target" not in args:
+        if "pbip_path" in args:
+            args["target"] = args["pbip_path"]
+        else:
+            active_sid = get_active_session_id()
+            if active_sid:
+                ctx = SessionStore().get(active_sid)
+                if ctx and ctx.target and ctx.target.target_ref:
+                    args["target"] = ctx.target.target_ref
     builder = PlanBuilder()
 
     try:
@@ -480,10 +511,16 @@ async def plan_change(
 
 
 def _resolve_executor(step: PlanStep, *, dry_run: bool) -> StepExecutor:
-    """Pick the executor for a step based on dry_run flag + registry."""
+    registry = get_default_registry()
+    if not registry.has(step.engine):
+        from powerbi_orchestrator_mcp.orchestrator.step_executor import (
+            MissingEngineExecutor,
+        )
+
+        return MissingEngineExecutor(step.engine)
     if dry_run:
-        return get_default_registry().get("dry_run")
-    return get_default_registry().get(step.engine)
+        return registry.get("dry_run")
+    return registry.get(step.engine)
 
 
 async def _run_plan_steps(
