@@ -5,8 +5,8 @@
 > [`docs/architecture.md`](./docs/architecture.md) y los specs modulares en
 > [`specs/`](./specs/README.md).
 
-**Status:** v1.0.0 released (2026-08-26). MVP done — 15/15 tools (12 MVP + 3 v1.1). Ver [`RELEASE-NOTES-v1.0.0.md`](./RELEASE-NOTES-v1.0.0.md) y [`docs/MVP-STATUS.md`](./docs/MVP-STATUS.md).
-**Fecha:** 2026-08-21 (spec original); v1.0.0 released 2026-08-26
+**Status:** v1.11.0 released (2026-10-01). 28 tools implementadas en FastMCP (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + 2 runtime extensions). Ver [`RELEASE-NOTES-v1.11.0.md`](./RELEASE-NOTES-v1.11.0.md) y [`CHANGELOG.md`](./CHANGELOG.md).
+**Fecha:** 2026-08-21 (spec original); v1.11.0 released 2026-10-01
 **Owner:** Bastian Berrios (@berriosb)
 **Licencia:** MIT
 
@@ -58,7 +58,7 @@ agente. Las otras 5 son internas.
                              │ MCP (stdio)
 ┌────────────────────────────▼────────────────────────────────────┐
 │ CAPA 6 · ORQUESTACIÓN (este servidor)                           │
-│   26 tools de alto nivel + planner + rollback engine            │
+│   28 tools de alto nivel + planner + rollback engine            │
 └──┬───────────┬───────────┬───────────┬──────────────────────────┘
    │           │           │           │
    ▼           ▼           ▼           ▼
@@ -142,7 +142,7 @@ Config (igual en todos):
 
 ## 4. Herramientas (alto nivel)
 
-**26 tools de alto nivel** agrupados en 7 categorías. Cada tool devuelve
+**28 tools de alto nivel** agrupados en 7 categorías. Cada tool devuelve
 `structuredContent` (JSON Schema validado por Pydantic) y opcionalmente
 `artifact` (screenshot, archivo generado).
 
@@ -152,22 +152,23 @@ Config (igual en todos):
 - `apply_plan` — ejecuta plan con checkpoints; cada step tiene rollback pre-calculado.
 
 ### 4.2 Modelo semántico (4)
-- `create_semantic_model_from_schema` — scaffold TMDL desde spec JSON/YAML.
-- `add_measure_with_validation` — añade measure con lint DAX + runtime check.
+- `create_semantic_model_from_schema` — scaffold TMDL desde spec JSON/YAML (v2).
+- `add_measure_with_validation` — añade measure con lint DAX + runtime check (v1.1).
 - `refactor_to_calculation_groups` — refactor measures candidatas con reconciliación de totales (v2).
 - `setup_rls_and_roles` — crea roles RLS + matriz de prueba por rol (v2).
 
 ### 4.3 Reporte (3)
-- `create_report_from_dataset` — scaffold PBIR mínimo viable desde dataset.
-- `edit_report_visual` — edición determinística (tipo, fields, format, posición).
+- `create_report_from_dataset` — scaffold PBIR mínimo viable desde dataset (v1.1).
+- `edit_report_visual` — edición determinística (tipo, fields, format, posición) (v1.1).
 - `safe_rename` ⭐ — rename cross-engine (model + DAX + M + report bindings) con rollback atómico.
 
-### 4.4 Nube Fabric / Service (5)
+### 4.4 Nube Fabric / Service (6)
 - `deploy_to_workspace` — publish PBIP a workspace con refresh + gateway + labels.
 - `promote_in_pipeline` — dev→test→prod con quality gate (v2).
 - `run_refresh` — refresh con manejo async + cancel + rollback si falla primera partición.
 - `sync_git_to_workspace` / `commit_workspace_to_git` — Git integration bidireccional (v3).
 - `set_sensitivity_labels` — governance en lote (v3).
+- `execute_dax_query` — ejecución directa de DAX contra modelos semánticos publicados en Fabric/Service con impersonación RLS (v1.11).
 
 ### 4.5 Validación y testing (5)
 - `audit_model_and_report` — auditoría integral: BPA + WCAG + lint + star-schema + naming.
@@ -183,12 +184,12 @@ Config (igual en todos):
 - `optimize_report_performance` — análisis heurístico de performance sin ejecutar (v2).
 - `audit_report_ux_and_storytelling` — auditoría cualitativa: jerarquía, densidad, narrativa (v2).
 
-### 4.7 Documentación y observabilidad (2)
-- `generate_data_dictionary` — ver 4.5.
-- `screenshot_report_pages` — best-effort via Desktop Bridge (v2).
+### 4.7 Documentación y diagnóstico (2)
+- `screenshot_report_pages` — renderizado de visuales (SVGs y PNGs nativos con manifest) (v2/v3).
+- `powerbi_health` — snapshot de salud del servidor MCP, engines disponibles, plan store y audit log (v1.9).
 
-Detalle de cada tool en `specs/tools/`. **MVP incluye 12 tools** (las
-listadas en §6.1; las demás marcadas con `(v2)` o `(v3)` son post-MVP).
+Detalle de cada tool en `specs/tools/`. Todas las 28 herramientas están
+implementadas y operativas en el servidor FastMCP a partir de la versión v1.11.0.
 
 ---
 

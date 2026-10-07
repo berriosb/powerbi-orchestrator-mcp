@@ -2,23 +2,24 @@
 
 > Specs modulares por capa y por tool. Cada spec es un entregable implementable.
 >
-> **Última actualización:** 2026-08-21 (specs v0.1, MVP ambicioso)
+> **Última actualización:** 2026-10-06 (specs v0.4, release v1.11.0)
 
-> Las casillas de esta lista indican que existe la spec, no que todos sus
-> criterios estén verificados. Para estado de implementación consultar
-> [`docs/MVP-STATUS.md`](../docs/MVP-STATUS.md).
+> Las casillas de esta lista indican que existe la spec y su estado de
+> implementación en el servidor FastMCP. Para estado detallado consultar
+> [`docs/status-vs-specs.md`](../docs/status-vs-specs.md).
 
 ---
 
 ## Cómo leer este repo de specs
 
-- **[`SPEC.md`](../SPEC.md)** — visión + arquitectura 6 capas + stack + MVP.
+- **[`SPEC.md`](../SPEC.md)** — visión + arquitectura 6 capas + stack + catálogo completo (28 tools).
 - **[`docs/architecture.md`](../docs/architecture.md)** — arquitectura detallada con diagramas.
 - **Specs por capa (`0X-*.md`)** — cómo se implementa cada capa del servidor.
 - **Specs por tool (`tools/*.md`)** — herramientas individuales de alto nivel.
 - **Specs por workflow (`workflows/*.md`)** — flujos end-to-end compuestos.
+- **Specs de release / CI / QA (`release/`, `ci/`, `qa/`)** — proceso de publicación, política de PyPI, estrategia de tests E2E.
 - **[`docs/MVP-STATUS.md`](../docs/MVP-STATUS.md)** — qué está implementado vs qué es spec.
-- **[`docs/IMPLEMENTATION-PLAN-v1.0.md`](../docs/IMPLEMENTATION-PLAN-v1.0.md)** — roadmap.
+- **[`docs/IMPLEMENTATION-PLAN-v1.0.md`](../docs/IMPLEMENTATION-PLAN-v1.0.md)** — roadmap histórico.
 
 ---
 
@@ -29,11 +30,15 @@
 - [x] `03-validation.md` — Capa 4: BPA, DAX linter, regression runner, accessibility, pre-deploy gate.
 - [x] `04-viz-ux.md` — Capa 5: visual registry, suggester, layout, theme, storytelling.
 - [x] `05-engines-adapters.md` — Cómo se delega a `powerbi-modeling-mcp`, `superbi-mcp`, `te`, `dscmd`, `pbip-validator`, **integración `pbip-validator` (§10)**, **matriz `connect_target` (§11)**.
+- [x] [`architecture/07-http-transport.md`](./architecture/07-http-transport.md) — **Capa 0 (transport)**: Streamable HTTP + Entra ID OAuth, scopes, audience validation, threat model, migration strategy (stdio default, HTTP opt-in vía `--transport http`). Capa nueva — habilita deployments remotos (creado 2026-09-24, post-v1.9.1).
 
 ## Specs cross-cutting
 
 - [x] `06-engine-error-contracts.md` — Jerarquía de errores, timeouts y exit codes canónicos para todos los subprocess engines (creado 2026-08-26, pre-Semana 2).
 - [x] [`../tests/fixtures/README.md`](../tests/fixtures/README.md) — Especificación del fixture PBIP load-bearing (4 tablas, ~15 medidas, 4 visuales, RLS) usado por todos los tests e2e (creado 2026-08-26, pre-Semana 4).
+- [x] [`release/supersede-policy.md`](./release/supersede-policy.md) — Política de supersede / yank en PyPI: cuándo un release nuevo invalida al anterior, decision tree para `pip install` (creado 2026-09-24, post-v1.9.1).
+- [x] [`ci/publish-workflow.md`](./ci/publish-workflow.md) — Diseño del workflow `publish.yml` de GitHub Actions: triggers (tag push + manual), gate de TestPyPI, environments protegidos, OIDC vs API token (creado 2026-09-24, post-v1.9.1).
+- [x] [`qa/e2e-testing-strategy.md`](./qa/e2e-testing-strategy.md) — Estrategia para tests con engines reales (`te`, `dscmd`, `pbip-validator`): binaries pinned por SHA256, nightly vs on-PR, escenarios por tool, CI matrix (creado 2026-09-24, post-v1.9.1).
 
 ## Specs por tool (MVP ambicioso)
 
@@ -68,29 +73,51 @@ duplicación de schemas.
 - [x] `workflows/01-from-csv-to-published-report.md` — De cero a reporte publicado con RLS en un prompt.
 - [x] `workflows/02-refactor-to-calc-groups.md` — Refactor medidas → calc group con reconciliación de totales. **No MVP** (depende de `refactor_to_calculation_groups` v2).
 
-## Specs pendientes (post-MVP)
+## Specs por tool (v1.1, v2, v3 y extensiones)
 
-### v1.1 — Semana 5
+Todas las herramientas de los roadmaps posteriores al MVP están implementadas y operativas en el servidor:
 
-- [ ] `tools/add-measure-with-validation.md` → v1.1 (spec dedicado a crear)
-- [ ] `tools/create-report-from-dataset.md` → v1.1 (spec dedicado a crear)
-- [ ] `tools/edit-report-visual.md` → v1.1 (spec dedicado a crear)
+### v1.1 (Semana 5)
 
-### v2 — Semanas 6-8
+- [x] [`tools/add-measure-with-validation.md`](./tools/add-measure-with-validation.md) — añade medida con lint DAX + validación runtime.
+- [x] [`tools/create-report-from-dataset.md`](./tools/create-report-from-dataset.md) — scaffold PBIR mínimo viable desde dataset.
+- [x] [`tools/edit-report-visual.md`](./tools/edit-report-visual.md) — edición determinística de visuales PBIR.
 
-- [x] `tools/refactor-to-calculation-groups.md` (con reconciliation total) — outline v0.1
-- [x] `tools/promote-in-pipeline.md` (dev→test→prod gates) — outline v0.1
-- [x] `tools/design-report-page-from-requirements.md` (viz/UX completa) — outline v0.1
-- [x] `tools/select-visuals-for-kpis.md` — outline v0.1
-- [x] `tools/audit-report-ux-and-storytelling.md` — outline v0.1
-- [x] `tools/setup-rls-and-roles.md` — outline v0.1
-- [x] `tools/create-semantic-model-from-schema.md` — outline v0.1
-- [x] `tools/screenshot-report-pages.md` — outline v0.1
+### v2 (Semanas 6-8)
 
-### v3 — Semanas 9-12
+- [x] [`tools/refactor-to-calculation-groups.md`](./tools/refactor-to-calculation-groups.md) — refactor de medidas a calculation groups.
+- [x] [`tools/promote-in-pipeline.md`](./tools/promote-in-pipeline.md) — promoción entre stages de deployment pipelines con quality gate.
+- [x] [`tools/design-report-page-from-requirements.md`](./tools/design-report-page-from-requirements.md) — diseño completo de página desde brief NL.
+- [x] [`tools/select-visuals-for-kpis.md`](./tools/select-visuals-for-kpis.md) — recomendador de visuales según data shape + audiencia.
+- [x] [`tools/audit-report-ux-and-storytelling.md`](./tools/audit-report-ux-and-storytelling.md) — auditoría cualitativa de jerarquía, densidad y narrativa.
+- [x] [`tools/setup-rls-and-roles.md`](./tools/setup-rls-and-roles.md) — creación y testing de roles RLS.
+- [x] [`tools/create-semantic-model-from-schema.md`](./tools/create-semantic-model-from-schema.md) — scaffold TMDL determinista desde spec YAML/JSON.
+- [x] [`tools/screenshot-report-pages.md`](./tools/screenshot-report-pages.md) — renderizado de placeholders SVG y PNG puro (stdlib) con manifests.
 
-- [x] `tools/sync-git-to-workspace.md` — outline v0.1
-- [ ] `tools/set-sensitivity-labels.md` (pendiente outline; governance)
+### v3 (Semanas 9-12)
+
+- [x] [`tools/sync-git-to-workspace.md`](./tools/sync-git-to-workspace.md) — sincronización bidireccional Git Fabric con 3-way merge.
+- [x] [`tools/set-sensitivity-labels.md`](./tools/set-sensitivity-labels.md) — Microsoft Purview sensitivity labels en lote (ADMIN scope).
+
+### Extensiones de Diagnóstico y Runtime (v1.9.0 - v1.11.0)
+
+- [x] `powerbi_health` — diagnóstico del servidor MCP, estado de engines, plan store SQLite y tamaño de audit log (v1.9.0).
+- [x] `execute_dax_query` — ejecución directa de DAX contra modelos semánticos en Fabric/Service con soporte para impersonación RLS (v1.11.0).
+
+---
+
+## Cambios v0.4 (audit 2026-10-06)
+
+- ✅ Saneamiento de specs cross-cutting en `main`: incorporados `specs/architecture/07-http-transport.md`, `specs/ci/publish-workflow.md`, `specs/qa/e2e-testing-strategy.md` y `specs/release/supersede-policy.md`.
+- ✅ Catálogo consolidado: 28 herramientas MCP registradas y activas.
+- ✅ Actualización de status: todas las herramientas v1.1, v2 y v3 marcadas como completadas `[x]`.
+
+## Cambios v0.3 (audit 2026-09-24)
+
+- ✅ Nuevo directorio `specs/release/` con `supersede-policy.md` — política de yank vs patch vs leave.
+- ✅ Nuevo directorio `specs/ci/` con `publish-workflow.md` — diseño del workflow `publish.yml` con TestPyPI gate y environments protegidos.
+- ✅ Nuevo directorio `specs/qa/` con `e2e-testing-strategy.md` — estrategia para tests con engines reales (`te`, `dscmd`, `pbip-validator`), binaries pinned por SHA256.
+- ✅ Nuevo directorio `specs/architecture/` con `07-http-transport.md` — **Capa 0** del orquestador: Streamable HTTP transport + Entra ID OAuth.
 
 ## Cambios v0.2 (audit 2026-08-26)
 
