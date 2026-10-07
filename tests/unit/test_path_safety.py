@@ -20,6 +20,10 @@ class TestPathSafety:
         with pytest.raises(ValueError, match="forbidden"):
             validate_safe_pbip_path("/etc/shadow", must_exist=False)
 
+    def test_macos_private_directory_blocked(self) -> None:
+        with pytest.raises(ValueError, match="forbidden"):
+            validate_safe_pbip_path("/private/etc", must_exist=False)
+
     def test_windows_system_directory_blocked(self) -> None:
         with pytest.raises(ValueError, match="forbidden"):
             validate_safe_pbip_path("C:\\Windows\\System32", must_exist=False)
