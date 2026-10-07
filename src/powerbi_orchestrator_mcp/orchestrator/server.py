@@ -15,6 +15,7 @@ to SQLite-backed plan storage.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import json
 import os
@@ -26,6 +27,7 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
+from powerbi_orchestrator_mcp import __version__
 from powerbi_orchestrator_mcp.cloud.auth import AuthConfig, FabricCredential
 from powerbi_orchestrator_mcp.cloud.fabric_client import FabricClient
 from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog
@@ -219,6 +221,7 @@ Rules & Guidelines:
 """
 
 mcp = FastMCP("powerbi-orchestrator-mcp", instructions=MCP_INSTRUCTIONS)
+mcp._mcp_server.version = __version__
 
 
 # ---------------------------------------------------------------------------
@@ -1431,7 +1434,8 @@ async def screenshot_report_pages(
     Returns:
         Dict with output image paths, warnings, and rendering metadata.
     """
-    result = _screenshot(
+    result = await asyncio.to_thread(
+        _screenshot,
         pbip_path=pbip_path,
         pages=pages,
         format=format,

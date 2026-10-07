@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from powerbi_orchestrator_mcp.engines.errors import EngineError
 from powerbi_orchestrator_mcp.validation.accessibility.wcag_auditor import (
     WcagAuditor,
 )
@@ -20,8 +21,8 @@ class AuditCheck(BaseModel):
     bpa: bool = True
     dax_lint: bool = True
     accessibility: bool = True
-    star_schema: bool = False  # placeholder for v2
-    naming: bool = True  # included in BPA via ruleset
+    star_schema: bool = False
+    naming: bool = True
 
 
 class AuditModelAndReport(BaseModel):
@@ -39,7 +40,7 @@ class AuditModelAndReport(BaseModel):
 class AuditResult(BaseModel):
     """Aggregated audit report."""
 
-    overall_score: float  # 0-100
+    overall_score: float = Field(ge=0.0, le=100.0)
     bpa_score: float | None = None
     bpa_findings_count: int = 0
     dax_lint_findings_count: int = 0
@@ -55,6 +56,8 @@ async def audit_model_and_report(
     bpa_ruleset: str = "default",
     dax_measures: dict[str, str] | None = None,
     checks: AuditCheck | None = None,
+    *,
+    bpa_runner: BpaRunner | None = None,
 ) -> AuditResult:
     from powerbi_orchestrator_mcp.validation.path_safety import (
         validate_safe_pbip_path,
@@ -73,20 +76,52 @@ async def audit_model_and_report(
     wcag_findings_count = 0
     auto_fixable_count = 0
 
-    # 1. BPA (mocked — no real subprocess).
-    if checks.bpa:
-        bpa_runner = BpaRunner(
-            mock_findings=[],
-            mock_score=100.0,  # MVP: assume clean when mocked
+    target_p = Path(pbip_path)
+    is_valid_pbip = False
+    if not target_p.exists():
+        warnings.append(f"PBIP path does not exist: {pbip_path}")
+    else:
+        has_report = bool(list(target_p.glob("*.Report"))) or target_p.name.endswith(".Report")
+        has_model = (
+            bool(list(target_p.glob("*.SemanticModel")))
+            or bool(list(target_p.glob("*.Dataset")))
+            or target_p.name.endswith(".SemanticModel")
+            or target_p.name.endswith(".Dataset")
         )
-        bpa_result = await bpa_runner.run(Path(pbip_path), ruleset_name=bpa_ruleset)
-        bpa_score = bpa_result.score
-        bpa_findings_count = len(bpa_result.findings)
-        auto_fixable_count = sum(
-            1 for f in bpa_result.findings if f.auto_fixable
-        )
+        has_pbip_file = bool(list(target_p.glob("*.pbip"))) or target_p.name.endswith(".pbip")
+        if has_report or has_model or has_pbip_file:
+            is_valid_pbip = True
+        else:
+            warnings.append(
+                f"Target directory is not a valid PBIP project (missing .Report, .SemanticModel, or .pbip): {pbip_path}"
+            )
 
-    # 2. DAX lint.
+    if checks.bpa and target_p.exists() and is_valid_pbip:
+        runner = bpa_runner or BpaRunner()
+        try:
+            bpa_result = await runner.run(target_p, ruleset_name=bpa_ruleset)
+            bpa_score = max(0.0, min(100.0, float(bpa_result.score)))
+            bpa_findings_count = len(bpa_result.findings)
+            auto_fixable_count = sum(
+                1 for f in bpa_result.findings if f.auto_fixable
+            )
+            for bf in bpa_result.findings:
+                findings.append(
+                    {
+                        "rule_id": bf.rule_id,
+                        "severity": bf.severity,
+                        "message": bf.message,
+                        "rewrite_suggestion": bf.fix_suggestion,
+                        "object_name": bf.object_name,
+                        "source": "bpa",
+                        "auto_fixable": bf.auto_fixable,
+                    }
+                )
+        except EngineError as exc:
+            warnings.append(f"Tabular Editor CLI (te2) not available; BPA skipped: {exc}")
+            bpa_score = None
+            bpa_findings_count = 0
+
     if checks.dax_lint and dax_measures:
         linter = DaxLinter()
         results = linter.lint_batch(dax_measures)
@@ -104,11 +139,10 @@ async def audit_model_and_report(
                 )
                 dax_lint_findings_count += 1
 
-    # 3. Accessibility (WCAG).
-    if checks.accessibility:
+    if checks.accessibility and target_p.exists() and is_valid_pbip:
         auditor = WcagAuditor()
-        wcag = auditor.audit_pbip(Path(pbip_path))
-        wcag_score = wcag.score
+        wcag = auditor.audit_pbip(target_p)
+        wcag_score = max(0.0, min(100.0, float(wcag.score)))
         wcag_findings_count = len(wcag.findings)
         for wf in wcag.findings:
             findings.append(
@@ -122,18 +156,24 @@ async def audit_model_and_report(
                 }
             )
 
-    # Weighted average: 50% BPA + 25% DAX + 25% WCAG.
-    components: list[tuple[float | None, float]] = [
-        (bpa_score, 0.5),
-        (100.0 - dax_lint_findings_count * 2, 0.25),
-        (wcag_score, 0.25),
-    ]
-    total_weight = sum(w for _, w in components)
-    weighted_sum = sum((s or 0) * w for s, w in components)
-    overall_score = weighted_sum / total_weight if total_weight else 0.0
+    dax_score: float | None = None
+    if checks.dax_lint and dax_measures:
+        dax_score = max(0.0, min(100.0, 100.0 - dax_lint_findings_count * 2.0))
 
-    if not Path(pbip_path).exists():
-        warnings.append(f"PBIP path does not exist: {pbip_path}")
+    active_components: list[tuple[float, float]] = []
+    if bpa_score is not None:
+        active_components.append((bpa_score, 0.5))
+    if dax_score is not None:
+        active_components.append((dax_score, 0.25))
+    if wcag_score is not None:
+        active_components.append((wcag_score, 0.25))
+
+    total_weight = sum(w for _, w in active_components)
+    if total_weight > 0.0 and target_p.exists() and is_valid_pbip:
+        weighted_sum = sum(score * w for score, w in active_components)
+        overall_score = round(max(0.0, min(100.0, weighted_sum / total_weight)), 2)
+    else:
+        overall_score = 0.0
 
     return AuditResult(
         overall_score=overall_score,

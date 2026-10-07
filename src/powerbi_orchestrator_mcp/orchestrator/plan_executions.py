@@ -32,18 +32,17 @@ from powerbi_orchestrator_mcp.orchestrator.identifiers import (
     new_execution_id,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# Per spec §2.8: executions with heartbeat older than this are orphaned.
 ORPHAN_HEARTBEAT_CUTOFF_S: int = 60
 
-# Path next to the audit log so we share infrastructure.
-EXEC_DIR = Path.home() / ".powerbi-orchestrator-mcp" / "executions"
-EXEC_DB = EXEC_DIR / "executions.db"
 
-# Snapshot retention per spec §2.8 rule 3.
+def _resolve_exec_dir() -> Path:
+    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
+
+    return get_orchestrator_home() / "executions"
+
+
+EXEC_DIR = _resolve_exec_dir()
+EXEC_DB = EXEC_DIR / "executions.db"
 SNAPSHOT_GC_DAYS: int = 30
 
 
@@ -101,9 +100,8 @@ def _ensure_exec_dir() -> Path:
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
-    """Open the executions SQLite with WAL mode and ensure schema."""
     path = db_path or EXEC_DB
-    _ensure_exec_dir()
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
@@ -147,11 +145,6 @@ def _row_to_execution(row: sqlite3.Row) -> PlanExecution:
         result_status=row["result_status"],
         target_id=row["target_id"],
     )
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 class PlanExecutionStore:

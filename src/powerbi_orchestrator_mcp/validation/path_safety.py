@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -27,12 +28,22 @@ FORBIDDEN_WINDOWS_DIRS = {
     "programdata",
 }
 
+FORBIDDEN_SENSITIVE_DIRS = {
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".azure",
+    ".kube",
+    ".docker",
+}
+
 
 def validate_safe_pbip_path(
     path_str: str,
     *,
     must_exist: bool = True,
     must_be_dir: bool = True,
+    workspace_root: str | Path | None = None,
 ) -> Path:
     if not path_str or not str(path_str).strip():
         raise ValueError("pbip_path cannot be empty")
@@ -60,6 +71,24 @@ def validate_safe_pbip_path(
                 raise ValueError(f"access to system directory {resolved_str!r} is forbidden")
     if len(resolved.parts) >= 2 and resolved.parts[1].lower() in FORBIDDEN_WINDOWS_DIRS:
         raise ValueError(f"access to system directory {resolved_str!r} is forbidden")
+    for part in resolved.parts:
+        if part.lower() in FORBIDDEN_SENSITIVE_DIRS:
+            raise ValueError(f"access to sensitive directory {resolved_str!r} is forbidden")
+
+    effective_ws = workspace_root or os.environ.get("PBI_WORKSPACE_ROOT")
+    if effective_ws:
+        ws_path = Path(effective_ws).resolve()
+        try:
+            if not resolved.is_relative_to(ws_path):
+                raise ValueError(
+                    f"path {resolved_str!r} is outside allowed workspace root {str(ws_path)!r}"
+                )
+        except AttributeError:
+            if not str(resolved).startswith(str(ws_path)):
+                raise ValueError(
+                    f"path {resolved_str!r} is outside allowed workspace root {str(ws_path)!r}"
+                ) from None
+
     if must_exist and not resolved.exists():
         raise FileNotFoundError(f"PBIP path does not exist: {resolved_str}")
     if must_exist and must_be_dir and not resolved.is_dir():

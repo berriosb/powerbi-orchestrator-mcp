@@ -51,15 +51,16 @@ class SessionContext(BaseModel):
     undo_stack: list[UndoEntry] = Field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# SQLite WAL persistence
-# ---------------------------------------------------------------------------
+def _resolve_sessions_dir() -> Path:
+    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
 
-SESSIONS_DIR = Path.home() / ".powerbi-orchestrator-mcp" / "sessions"
+    return get_orchestrator_home() / "sessions"
+
+
+SESSIONS_DIR = _resolve_sessions_dir()
 
 
 def _ensure_sessions_dir() -> Path:
-    """Create sessions directory if it doesn't exist."""
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     return SESSIONS_DIR
 

@@ -42,6 +42,15 @@ class TestPreDeployCheck:
         with pytest.raises(ValueError):
             pre_deploy_check([], profile="nonexistent")
 
+    def test_blocking_severities_override(self) -> None:
+        findings = [{"severity": "info", "message": "x"}] * 105
+        result_default = pre_deploy_check(findings, profile="standard")
+        assert result_default.passed is True
+        result_blocked = pre_deploy_check(
+            findings, profile="standard", blocking_severities=["info"]
+        )
+        assert result_blocked.passed is False
+
 
 # ---------------------------------------------------------------------------
 # diff_models
@@ -240,6 +249,26 @@ class TestAuditModelAndReport:
             pbip_path=str(tmp_path / "nonexistent.pbip"),
         )
         assert any("does not exist" in w for w in result.warnings)
+        assert result.overall_score == 0.0
+
+    async def test_invalid_directory_returns_score_zero(self, tmp_path: Path) -> None:
+        random_dir = tmp_path / "random_folder"
+        random_dir.mkdir()
+        result = await audit_model_and_report(pbip_path=str(random_dir))
+        assert result.overall_score == 0.0
+        assert any("not a valid PBIP" in w for w in result.warnings)
+
+    async def test_dax_lint_large_findings_clamps_score(self, tmp_path: Path) -> None:
+        pbip = tmp_path / "test.pbip"
+        pbip.mkdir()
+        (pbip / "test.pbip").write_text("{}")
+        measures = {f"M{i}": "X := [A] / [B]" for i in range(100)}
+        result = await audit_model_and_report(
+            pbip_path=str(pbip),
+            dax_measures=measures,
+        )
+        assert result.overall_score >= 0.0
+        assert result.overall_score <= 100.0
 
 
 # ---------------------------------------------------------------------------

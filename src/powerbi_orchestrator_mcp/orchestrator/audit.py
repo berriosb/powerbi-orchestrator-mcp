@@ -19,11 +19,14 @@ from typing import Any
 
 from pydantic import BaseModel
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
-AUDIT_DIR = Path.home() / ".powerbi-orchestrator-mcp" / "audit"
+def _resolve_audit_dir() -> Path:
+    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
+
+    return get_orchestrator_home() / "audit"
+
+
+AUDIT_DIR = _resolve_audit_dir()
 AUDIT_DB = AUDIT_DIR / "audit.db"
 _HMAC_KEY_ENV = "PBI_ORCHESTRATOR_AUDIT_SECRET"
 _LEGACY_HMAC_KEY_ENV = "PBI_ORCHestrATOR_AUDIT_SECRET"
@@ -67,7 +70,6 @@ def _get_hmac_key() -> bytes:
     secret = os.environ.get(_HMAC_KEY_ENV) or os.environ.get(_LEGACY_HMAC_KEY_ENV)
     if secret:
         return secret.encode("utf-8")
-    # Generate a persistent key on first use
     key_path = AUDIT_DIR / ".audit_key"
     if key_path.exists():
         return key_path.read_bytes()
@@ -86,18 +88,12 @@ def _compute_row_hash(key: bytes, prev_hash: str, row_id: int, timestamp: str, r
     return hmac.new(key, message, hashlib.sha256).hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# Database helpers
-# ---------------------------------------------------------------------------
-
-
-def _ensure_audit_dir() -> None:
-    """Create audit directory if needed."""
+def _ensure_audit_dir() -> Path:
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    return AUDIT_DIR
 
 
 def _get_conn() -> sqlite3.Connection:
-    """Get a connection to the audit database with WAL mode."""
     _ensure_audit_dir()
     conn = sqlite3.connect(str(AUDIT_DB))
     conn.execute("PRAGMA journal_mode=WAL")
@@ -120,11 +116,6 @@ def _get_conn() -> sqlite3.Connection:
     return conn
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 class AuditLog:
     """SQLite audit log with HMAC chain."""
 
@@ -132,7 +123,7 @@ class AuditLog:
         self._db_path = db_path or AUDIT_DB
 
     def _connect(self) -> sqlite3.Connection:
-        _ensure_audit_dir()
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(self._db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(

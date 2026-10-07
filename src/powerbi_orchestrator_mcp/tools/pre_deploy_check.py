@@ -19,19 +19,19 @@ class PreDeployCheck(BaseModel):
         default_factory=list,
         description="Findings to evaluate (each must have a 'severity' key).",
     )
-    profile: str = "standard"  # strict | standard | relaxed
-    blocking_severities: list[str] | None = None  # override defaults
+    profile: str = "standard"
+    blocking_severities: list[str] | None = None
 
 
 def pre_deploy_check(
     findings: list[dict[str, Any]],
     profile: str = "standard",
     *,
-    blocking_severities: list[str] | None = None,  # noqa: ARG001
+    blocking_severities: list[str] | None = None,
 ) -> GateResult:
     """Evaluate findings against the pre-deploy gate profile.
 
     Returns pass/fail + per-severity counts + failed_checks.
     """
     gate = PreDeployGate(profile=profile)
-    return gate.evaluate(findings)
+    return gate.evaluate(findings, blocking_severities=blocking_severities)

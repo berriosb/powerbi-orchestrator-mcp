@@ -26,8 +26,14 @@ from pathlib import Path
 from powerbi_orchestrator_mcp.orchestrator.identifiers import new_plan_id
 from powerbi_orchestrator_mcp.orchestrator.plan_models import Plan
 
-# Path next to the audit + executions DBs (same infrastructure).
-PLAN_DIR = Path.home() / ".powerbi-orchestrator-mcp" / "plans"
+
+def _resolve_plan_dir() -> Path:
+    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
+
+    return get_orchestrator_home() / "plans"
+
+
+PLAN_DIR = _resolve_plan_dir()
 PLAN_DB = PLAN_DIR / "plans.db"
 
 
@@ -37,9 +43,8 @@ def _ensure_plan_dir() -> Path:
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
-    """Open the plans SQLite with WAL mode and ensure schema."""
     path = db_path or PLAN_DB
-    _ensure_plan_dir()
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(

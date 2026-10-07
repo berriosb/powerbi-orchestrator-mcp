@@ -70,8 +70,14 @@ from typing import Any
 
 from powerbi_orchestrator_mcp.validation.pre_deploy_gate import GateProfile
 
-# Default plugin directory (next to audit + plan DBs).
-PLUGIN_DIR = Path.home() / ".powerbi-orchestrator-mcp" / "plugins"
+
+def _resolve_plugin_dir() -> Path:
+    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
+
+    return get_orchestrator_home() / "plugins"
+
+
+PLUGIN_DIR = _resolve_plugin_dir()
 
 
 @dataclass
@@ -192,7 +198,7 @@ def load_plugins(plugin_dir: Path | None = None) -> PluginRegistry:
     Failures are collected, not raised: one broken plugin doesn't
     take the others down.
     """
-    target = plugin_dir or PLUGIN_DIR
+    target = plugin_dir or _resolve_plugin_dir()
     registry = PluginRegistry()
     if not target.exists():
         return registry
