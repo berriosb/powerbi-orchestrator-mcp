@@ -162,14 +162,16 @@ def validate_entra_token(
     except PyJWTError as e:
         raise AuthError(401, f"Invalid token: {e}") from e
 
-    scopes = claims.get("scp", "") or claims.get("roles", [])
-    if isinstance(scopes, str):
-        scopes = scopes.split()
+    raw_scp = claims.get("scp", "")
+    scp_list = raw_scp.split() if isinstance(raw_scp, str) else list(raw_scp)
+    raw_roles = claims.get("roles", [])
+    roles_list = raw_roles if isinstance(raw_roles, list) else [str(raw_roles)]
+    scopes = set(scp_list) | set(roles_list)
     if required_scope not in scopes and "Tools.Admin" not in scopes:
         raise AuthError(
             403,
             f"Token missing required scope '{required_scope}'. "
-            f"Present: {scopes or '(none)'}",
+            f"Present: {sorted(scopes) or '(none)'}",
         )
 
     return claims

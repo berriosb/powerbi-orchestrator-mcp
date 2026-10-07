@@ -332,6 +332,84 @@ class TestSafeRenameEndToEndOnRealFixture:
         assert '"Month_DryRun"' not in model_text
         assert '"MonthName"' in model_text
 
+    async def test_safe_rename_nonexistent_column_fails_and_does_not_mutate_report(
+        self, pbip: Path
+    ) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            apply_plan,
+            connect_target,
+            plan_change,
+        )
+
+        await connect_target(
+            target_type="pbip_folder",
+            target_ref=str(pbip),
+        )
+        plan_res = await plan_change(
+            intent="safe_rename",
+            options={
+                "old_path": "FactSales[NoSuchColumn]",
+                "new_path": "FactSales[RenamedCol]",
+                "scope": "report_bindings",
+                "target": str(pbip),
+            },
+        )
+        assert plan_res.plan_id is not None
+        apply_res = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+        assert apply_res.result in ("failed", "rolled_back")
+        assert any(
+            step.get("success") is False
+            and step.get("error_message")
+            and "no column" in str(step.get("error_message"))
+            for step in apply_res.executed_steps
+        )
+
+        model_file = pbip / "sample.Dataset" / "definition.pbism"
+        model_text = model_file.read_text(encoding="utf-8")
+        assert "NoSuchColumn" not in model_text
+        assert "RenamedCol" not in model_text
+
+        page_file = pbip / "sample.Report" / "pages" / "Overview" / "page.json"
+        page_text = page_file.read_text(encoding="utf-8")
+        assert "RenamedCol" not in page_text
+
+    async def test_safe_rename_table_updates_model_measures_and_report_on_disk(
+        self, pbip: Path
+    ) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            apply_plan,
+            connect_target,
+            plan_change,
+        )
+
+        await connect_target(
+            target_type="pbip_folder",
+            target_ref=str(pbip),
+        )
+        plan_res = await plan_change(
+            intent="safe_rename",
+            options={
+                "old_path": "DimDate",
+                "new_path": "DateDimension",
+                "scope": "report_bindings",
+                "target": str(pbip),
+            },
+        )
+        assert plan_res.plan_id is not None
+        apply_res = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+        assert apply_res.result == "success"
+
+        model_file = pbip / "sample.Dataset" / "definition.pbism"
+        model_text = model_file.read_text(encoding="utf-8")
+        assert '"DateDimension"' in model_text
+        assert '"DimDate"' not in model_text
+        assert "DateDimension[Date]" in model_text
+
+        page_file = pbip / "sample.Report" / "pages" / "Overview" / "page.json"
+        page_text = page_file.read_text(encoding="utf-8")
+        assert "DateDimension[MonthName]" in page_text
+        assert "DimDate[MonthName]" not in page_text
+
 
 # Skip subprocess-based CLI tests on Windows: WinError 10106 in the
 # GitHub Actions Windows runner (asyncio event loop fails to initialize

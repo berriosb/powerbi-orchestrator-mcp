@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
@@ -36,6 +38,137 @@ class TestInMemoryModelingAdapterBasics:
             )
         )
         assert handle.target_ref == "/tmp/foo.pbip"
+
+
+class TestInMemoryModelingAdapterDiskMutations:
+    def test_update_column_nonexistent_returns_failure(self, tmp_path: Path) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.context import Target
+
+        dataset_dir = tmp_path / "model.Dataset"
+        dataset_dir.mkdir(parents=True)
+        model_file = dataset_dir / "definition.pbism"
+        model_data = {
+            "model": {
+                "tables": [
+                    {
+                        "name": "Sales",
+                        "columns": [{"name": "Amount"}],
+                    }
+                ]
+            }
+        }
+        model_file.write_text(json.dumps(model_data), encoding="utf-8")
+
+        adapter = InMemoryModelingAdapter()
+        handle = asyncio.run(
+            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
+        )
+        res = asyncio.run(
+            adapter.update_column(
+                handle,
+                table="Sales",
+                column="NonExistent",
+                changes={"new_name": "Renamed"},
+            )
+        )
+        assert res.success is False
+        assert res.error_message is not None
+        assert "no column, measure, or table named 'NonExistent'" in res.error_message
+        assert res.changed_files == []
+
+    def test_update_column_table_rename(self, tmp_path: Path) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.context import Target
+
+        dataset_dir = tmp_path / "model.Dataset"
+        dataset_dir.mkdir(parents=True)
+        model_file = dataset_dir / "definition.pbism"
+        model_data = {
+            "model": {
+                "tables": [
+                    {
+                        "name": "FactSales",
+                        "columns": [{"name": "Amount"}],
+                        "measures": [
+                            {"name": "Total", "expression": "SUM(FactSales[Amount])"}
+                        ],
+                    }
+                ],
+                "relationships": [
+                    {
+                        "fromTable": "FactSales",
+                        "fromColumn": "DateKey",
+                        "toTable": "DimDate",
+                        "toColumn": "DateKey",
+                    }
+                ],
+            }
+        }
+        model_file.write_text(json.dumps(model_data), encoding="utf-8")
+
+        adapter = InMemoryModelingAdapter()
+        handle = asyncio.run(
+            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
+        )
+        res = asyncio.run(
+            adapter.update_column(
+                handle,
+                table="",
+                column="FactSales",
+                changes={"new_name": "Sales"},
+            )
+        )
+        assert res.success is True
+        assert len(res.changed_files) == 1
+
+        updated_data = json.loads(model_file.read_text(encoding="utf-8"))
+        assert updated_data["model"]["tables"][0]["name"] == "Sales"
+        assert updated_data["model"]["relationships"][0]["fromTable"] == "Sales"
+        assert "Sales[Amount]" in updated_data["model"]["tables"][0]["measures"][0]["expression"]
+
+    def test_update_measure_nonexistent_returns_failure(self, tmp_path: Path) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.context import Target
+
+        dataset_dir = tmp_path / "model.Dataset"
+        dataset_dir.mkdir(parents=True)
+        model_file = dataset_dir / "definition.pbism"
+        model_data = {"model": {"tables": [{"name": "Sales", "measures": []}]}}
+        model_file.write_text(json.dumps(model_data), encoding="utf-8")
+
+        adapter = InMemoryModelingAdapter()
+        handle = asyncio.run(
+            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
+        )
+        res = asyncio.run(
+            adapter.update_measure(
+                handle,
+                table="Sales",
+                measure="MissingMeasure",
+                changes={"new_name": "New"},
+            )
+        )
+        assert res.success is False
+        assert res.error_message is not None
+        assert "no measure named 'MissingMeasure'" in res.error_message
+
+    def test_delete_measure_nonexistent_returns_failure(self, tmp_path: Path) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.context import Target
+
+        dataset_dir = tmp_path / "model.Dataset"
+        dataset_dir.mkdir(parents=True)
+        model_file = dataset_dir / "definition.pbism"
+        model_data = {"model": {"tables": [{"name": "Sales", "measures": []}]}}
+        model_file.write_text(json.dumps(model_data), encoding="utf-8")
+
+        adapter = InMemoryModelingAdapter()
+        handle = asyncio.run(
+            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
+        )
+        res = asyncio.run(
+            adapter.delete_measure(handle, table="Sales", measure="MissingMeasure")
+        )
+        assert res.success is False
+        assert res.error_message is not None
+        assert "no measure named 'MissingMeasure'" in res.error_message
 
 
 class TestInMemoryModelingAdapterSpecOps:

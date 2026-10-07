@@ -197,7 +197,7 @@ def _load_model_from_json_file(file_path: Path) -> dict[str, Any] | None:
             "measures": measures,
             "relationships": relationships,
         }
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -327,6 +327,11 @@ class InMemoryModelingAdapter:
         model.setdefault("columns", {}).setdefault(table, []).append(column)
         target_files = _find_dataset_model_files(conn.target_ref)
         if not target_files:
+            if Path(conn.target_ref).exists():
+                return OperationResult(
+                    success=False,
+                    error_message=f"no dataset model files found for target {conn.target_ref}",
+                )
             return OperationResult(success=True, changed_files=[f"{table}.{column}"])
 
         changed_files: list[str] = []
@@ -337,65 +342,128 @@ class InMemoryModelingAdapter:
                 try:
                     data = json.loads(tf.read_text(encoding="utf-8"))
                     model_obj = data.get("model", data)
+                    tables = model_obj.get("tables", [])
                     file_modified = False
-                    for t in model_obj.get("tables", []):
-                        t_name = str(t.get("name", ""))
-                        if not table or t_name.lower() == table.lower():
-                            for c in t.get("columns", []):
-                                if str(c.get("name", "")).lower() == column.lower():
-                                    if new_name:
-                                        c["name"] = new_name
-                                    for k, v in changes.items():
-                                        if k not in ("new_name", "name"):
-                                            c[k] = v
-                                    file_modified = True
-                            if not file_modified:
-                                for m in t.get("measures", []):
-                                    if str(m.get("name", "")).lower() == column.lower():
-                                        if new_name:
-                                            m["name"] = new_name
-                                        for k, v in changes.items():
-                                            if k not in ("new_name", "name"):
-                                                m[k] = v
-                                        file_modified = True
-                    if file_modified and new_name:
-                        for t in model_obj.get("tables", []):
-                            t_name = str(t.get("name", ""))
+
+                    target_table: dict[str, Any] | None = None
+                    if not table:
+                        for t in tables:
+                            if str(t.get("name", "")).lower() == column.lower():
+                                target_table = t
+                                break
+                    elif not column or column.lower() == table.lower():
+                        for t in tables:
+                            if str(t.get("name", "")).lower() == table.lower():
+                                target_table = t
+                                break
+
+                    if target_table is not None:
+                        old_t_name = str(target_table.get("name", ""))
+                        if new_name:
+                            target_table["name"] = new_name
+                        for k, v in changes.items():
+                            if k not in ("new_name", "name"):
+                                target_table[k] = v
+                        file_modified = True
+                        for r in model_obj.get("relationships", []):
+                            if str(r.get("fromTable", "")).lower() == old_t_name.lower():
+                                r["fromTable"] = new_name
+                            if str(r.get("toTable", "")).lower() == old_t_name.lower():
+                                r["toTable"] = new_name
+                        for t in tables:
                             for m in t.get("measures", []):
                                 expr = str(m.get("expression", ""))
                                 if expr:
-                                    prefix = f"{table}[" if table else f"{t_name}["
-                                    updated_expr = expr.replace(
-                                        f"{prefix}{column}]", f"{prefix}{new_name}]"
-                                    )
-                                    if not table or t_name.lower() == table.lower():
-                                        updated_expr = updated_expr.replace(
-                                            f"[{column}]", f"[{new_name}]"
-                                        )
+                                    updated_expr = expr.replace(f"{old_t_name}[", f"{new_name}[")
+                                    updated_expr = updated_expr.replace(f"'{old_t_name}'[", f"'{new_name}'[")
                                     if updated_expr != expr:
                                         m["expression"] = updated_expr
-                        for r in model_obj.get("relationships", []):
-                            if (
-                                not table
-                                or str(r.get("fromTable", "")).lower() == table.lower()
-                            ) and str(r.get("fromColumn", "")).lower() == column.lower():
-                                r["fromColumn"] = new_name
-                            if (
-                                not table
-                                or str(r.get("toTable", "")).lower() == table.lower()
-                            ) and str(r.get("toColumn", "")).lower() == column.lower():
-                                r["toColumn"] = new_name
+                    else:
+                        for t in tables:
+                            t_name = str(t.get("name", ""))
+                            if not table or t_name.lower() == table.lower():
+                                for c in t.get("columns", []):
+                                    if str(c.get("name", "")).lower() == column.lower():
+                                        if new_name:
+                                            c["name"] = new_name
+                                        for k, v in changes.items():
+                                            if k not in ("new_name", "name"):
+                                                c[k] = v
+                                        file_modified = True
+                                if not file_modified:
+                                    for m in t.get("measures", []):
+                                        if str(m.get("name", "")).lower() == column.lower():
+                                            if new_name:
+                                                m["name"] = new_name
+                                            for k, v in changes.items():
+                                                if k not in ("new_name", "name"):
+                                                    m[k] = v
+                                            file_modified = True
+
+                        if file_modified and new_name:
+                            for t in tables:
+                                t_name = str(t.get("name", ""))
+                                for m in t.get("measures", []):
+                                    expr = str(m.get("expression", ""))
+                                    if expr:
+                                        prefix = f"{table}[" if table else f"{t_name}["
+                                        updated_expr = expr.replace(
+                                            f"{prefix}{column}]", f"{prefix}{new_name}]"
+                                        )
+                                        if not table or t_name.lower() == table.lower():
+                                            updated_expr = updated_expr.replace(
+                                                f"[{column}]", f"[{new_name}]"
+                                            )
+                                        if updated_expr != expr:
+                                            m["expression"] = updated_expr
+                            for r in model_obj.get("relationships", []):
+                                if (
+                                    not table
+                                    or str(r.get("fromTable", "")).lower() == table.lower()
+                                ) and str(r.get("fromColumn", "")).lower() == column.lower():
+                                    r["fromColumn"] = new_name
+                                if (
+                                    not table
+                                    or str(r.get("toTable", "")).lower() == table.lower()
+                                ) and str(r.get("toColumn", "")).lower() == column.lower():
+                                    r["toColumn"] = new_name
+
                     if file_modified:
                         tmp = tf.with_suffix(tf.suffix + ".tmp")
                         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
                         tmp.replace(tf)
                         changed_files.append(str(tf))
-                except Exception:
+                except OSError as exc:
+                    return OperationResult(
+                        success=False,
+                        error_message=f"I/O error updating {tf}: {exc}",
+                    )
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
             elif tf.suffix == ".tmdl":
                 try:
                     text = tf.read_text(encoding="utf-8")
-                    if new_name:
+                    is_tbl = (
+                        (not table and tf.stem.lower() == column.lower())
+                        or (table and tf.stem.lower() == table.lower() and (not column or column.lower() == table.lower()))
+                    )
+                    if is_tbl and new_name:
+                        old_t_name = tf.stem
+                        pattern = re.compile(
+                            rf"^(\s*table\s+)(?:{re.escape(old_t_name)}|'{re.escape(old_t_name)}')\b",
+                            re.MULTILINE,
+                        )
+                        new_text = pattern.sub(rf"\g<1>{new_name}", text)
+                        new_text = new_text.replace(f"{old_t_name}[", f"{new_name}[")
+                        new_text = new_text.replace(f"'{old_t_name}'[", f"'{new_name}'[")
+                        new_tf = tf.with_name(f"{new_name}.tmdl")
+                        tmp = new_tf.with_suffix(new_tf.suffix + ".tmp")
+                        tmp.write_text(new_text, encoding="utf-8")
+                        tmp.replace(new_tf)
+                        if new_tf != tf and tf.exists():
+                            tf.unlink()
+                        changed_files.append(str(new_tf))
+                    elif new_name:
                         pattern = re.compile(
                             rf"^(\s*column\s+)(?:{re.escape(column)}|'{re.escape(column)}')\b",
                             re.MULTILINE,
@@ -411,11 +479,19 @@ class InMemoryModelingAdapter:
                             tmp.write_text(new_text, encoding="utf-8")
                             tmp.replace(tf)
                             changed_files.append(str(tf))
-                except Exception:
+                except OSError as exc:
+                    return OperationResult(
+                        success=False,
+                        error_message=f"I/O error updating {tf}: {exc}",
+                    )
+                except UnicodeDecodeError:
                     pass
 
         if not changed_files:
-            changed_files = [f"{table}.{column}"]
+            return OperationResult(
+                success=False,
+                error_message=f"no column, measure, or table named {column!r} found in {table or '<any>'}",
+            )
         return OperationResult(success=True, changed_files=changed_files)
 
     async def create_measure(
@@ -427,6 +503,11 @@ class InMemoryModelingAdapter:
         )
         target_files = _find_dataset_model_files(conn.target_ref)
         if not target_files:
+            if Path(conn.target_ref).exists():
+                return OperationResult(
+                    success=False,
+                    error_message=f"no dataset model files found for target {conn.target_ref}",
+                )
             return OperationResult(
                 success=True, changed_files=[f"{table}.{measure.name}"]
             )
@@ -458,7 +539,12 @@ class InMemoryModelingAdapter:
                         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
                         tmp.replace(tf)
                         changed_files.append(str(tf))
-                except Exception:
+                except OSError as exc:
+                    return OperationResult(
+                        success=False,
+                        error_message=f"I/O error updating {tf}: {exc}",
+                    )
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
             elif tf.suffix == ".tmdl" and (
                 not table or tf.stem.lower() == table.lower()
@@ -470,10 +556,18 @@ class InMemoryModelingAdapter:
                     tmp.write_text(text + block, encoding="utf-8")
                     tmp.replace(tf)
                     changed_files.append(str(tf))
-                except Exception:
+                except OSError as exc:
+                    return OperationResult(
+                        success=False,
+                        error_message=f"I/O error updating {tf}: {exc}",
+                    )
+                except UnicodeDecodeError:
                     pass
         if not changed_files:
-            changed_files = [f"{table}.{measure.name}"]
+            return OperationResult(
+                success=False,
+                error_message=f"table {table!r} not found in model to create measure {measure.name!r}",
+            )
         return OperationResult(success=True, changed_files=changed_files)
 
     async def update_measure(
@@ -485,6 +579,11 @@ class InMemoryModelingAdapter:
     ) -> OperationResult:
         target_files = _find_dataset_model_files(conn.target_ref)
         if not target_files:
+            if Path(conn.target_ref).exists():
+                return OperationResult(
+                    success=False,
+                    error_message=f"no dataset model files found for target {conn.target_ref}",
+                )
             return OperationResult(success=True, changed_files=[f"{table}.{measure}"])
 
         changed_files: list[str] = []
@@ -517,10 +616,18 @@ class InMemoryModelingAdapter:
                         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
                         tmp.replace(tf)
                         changed_files.append(str(tf))
-                except Exception:
+                except OSError as exc:
+                    return OperationResult(
+                        success=False,
+                        error_message=f"I/O error updating {tf}: {exc}",
+                    )
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
         if not changed_files:
-            changed_files = [f"{table}.{measure}"]
+            return OperationResult(
+                success=False,
+                error_message=f"no measure named {measure!r} found in {table or '<any>'}",
+            )
         return OperationResult(success=True, changed_files=changed_files)
 
     async def delete_measure(
@@ -531,6 +638,11 @@ class InMemoryModelingAdapter:
     ) -> OperationResult:
         target_files = _find_dataset_model_files(conn.target_ref)
         if not target_files:
+            if Path(conn.target_ref).exists():
+                return OperationResult(
+                    success=False,
+                    error_message=f"no dataset model files found for target {conn.target_ref}",
+                )
             return OperationResult(success=True, changed_files=[f"{table}.{measure}"])
 
         changed_files: list[str] = []
@@ -559,10 +671,18 @@ class InMemoryModelingAdapter:
                         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
                         tmp.replace(tf)
                         changed_files.append(str(tf))
-                except Exception:
+                except OSError as exc:
+                    return OperationResult(
+                        success=False,
+                        error_message=f"I/O error updating {tf}: {exc}",
+                    )
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
         if not changed_files:
-            changed_files = [f"{table}.{measure}"]
+            return OperationResult(
+                success=False,
+                error_message=f"no measure named {measure!r} found in {table or '<any>'}",
+            )
         return OperationResult(success=True, changed_files=changed_files)
 
     async def execute_dax(
@@ -613,7 +733,7 @@ class InMemoryModelingAdapter:
                 if isinstance(data, dict) and "disk_files" in data:
                     for fpath, fcontent in data.get("disk_files", {}).items():
                         Path(fpath).write_text(fcontent, encoding="utf-8")
-            except Exception:
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 pass
             self.snapshots.setdefault(handle.label, [])
 
