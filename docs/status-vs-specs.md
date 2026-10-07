@@ -1,9 +1,9 @@
-# Status vs Specs — Release v1.11.0 (2026-10-01)
+# Status vs Specs — Release v1.14.2 (2026-10-07)
 
 > Snapshot of what the codebase delivers vs what the specs require.
 > Supersedes the post-Sprint 12 / post-Sprint 14 gap analysis.
 
-**TL;DR:** v1.11.0 delivers **28 tools DONE** (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + `powerbi_health` diagnóstico + `execute_dax_query` DAX en vivo), **9/9 acceptance criteria PASS**, **v2 y v3 milestones COMPLETE**, y enterprise hardening listo para producción.
+**TL;DR:** v1.14.2 delivers **28 tools DONE** (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + `powerbi_health` diagnóstico + `execute_dax_query` DAX en vivo), **9/9 acceptance criteria PASS**, **v2 y v3 milestones COMPLETE**, y enterprise hardening listo para producción.
 
 ---
 

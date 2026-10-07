@@ -264,19 +264,21 @@ class TestRpcSuccess:
 
 
 class TestReadStdoutLoop:
-    async def test_non_json_line_raises_output_parse_error(
+    async def test_non_json_line_buffered_and_reader_continues(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        proc = _FakeProcess()  # no responses initially
+        proc = _FakeProcess()
         _spawn_patched(monkeypatch, proc)
         e = _make_engine()
         await e._start()
-        # Feed a non-JSON line directly to stdout.
-        proc._stdout.feed_data(b"this is not json\n")
+        proc._stdout.feed_data(
+            b"npm update warning: banner log line\n"
+            b'{"jsonrpc": "2.0", "id": 1, "result": {"ok": true}}\n'
+        )
         proc._stdout.feed_eof()
-        # Wait for the reader task to consume and raise.
-        await asyncio.sleep(0.05)
-        # Process still tracked; reader task should have ended.
+        res = await e._rpc("test_method")
+        assert res == {"ok": True}
+        assert any("banner log line" in line for line in e._stdout_buffer)
         assert e._process is not None
 
     async def test_notification_line_ignored(

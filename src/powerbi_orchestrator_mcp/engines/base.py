@@ -35,7 +35,6 @@ from pydantic import BaseModel, Field
 from powerbi_orchestrator_mcp.engines.errors import (
     EngineCrashedError,
     EngineError,
-    EngineOutputParseError,
     EngineTimeoutError,
 )
 from powerbi_orchestrator_mcp.engines.exit_codes import map_exit_code_to_error
@@ -306,6 +305,7 @@ class JsonRpcSubprocessEngine:
         self._process: asyncio.subprocess.Process | None = None
         self._next_id = 1
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._stdout_buffer: collections.deque[str] = collections.deque(maxlen=100)
         self._stderr_buffer: collections.deque[str] = collections.deque(maxlen=100)
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -321,7 +321,7 @@ class JsonRpcSubprocessEngine:
             "capabilities": {},
             "clientInfo": {
                 "name": "powerbi-orchestrator-mcp",
-                "version": getattr(self, "_version", "1.14.0"),
+                "version": getattr(self, "_version", "1.14.2"),
             },
         }
         res = await self._rpc("initialize", init_params)
@@ -333,7 +333,6 @@ class JsonRpcSubprocessEngine:
         """Start the subprocess. Idempotent (no-op if already running)."""
         if self._process is not None and self._process.returncode is None:
             return
-        _ = timeout_s
         try:
             self._process = await asyncio.create_subprocess_exec(
                 self._binary,
@@ -386,8 +385,29 @@ class JsonRpcSubprocessEngine:
             raise err
 
         if self._mcp_handshake:
+            effective_start_timeout = 30
             try:
-                await self._perform_mcp_handshake()
+                effective_start_timeout = resolve_timeout(
+                    self._engine_name, requested_s=timeout_s
+                )
+            except Exception:
+                effective_start_timeout = timeout_s or 30
+            try:
+                await asyncio.wait_for(
+                    self._perform_mcp_handshake(),
+                    timeout=effective_start_timeout,
+                )
+            except TimeoutError as exc:
+                await self._stop()
+                raise EngineTimeoutError(
+                    f"{self._engine_name} handshake timed out after {effective_start_timeout}s",
+                    engine=self._engine_name,
+                    code="engine_handshake_timeout",
+                    remediation_hint=(
+                        f"Check if {self._engine_name} is responsive or increase timeout"
+                    ),
+                    timeout_s=effective_start_timeout,
+                ) from exc
             except Exception:
                 await self._stop()
                 raise
@@ -485,7 +505,7 @@ class JsonRpcSubprocessEngine:
             self._process.stdin.write(message.encode("utf-8"))  # type: ignore[union-attr]
             await self._process.stdin.drain()  # type: ignore[union-attr]
         except (BrokenPipeError, ConnectionResetError, OSError) as exc:
-            del self._pending[request_id]
+            self._pending.pop(request_id, None)
             raise EngineCrashedError(
                 f"{self._engine_name} stdin closed: {exc}",
                 engine=self._engine_name,
@@ -497,7 +517,7 @@ class JsonRpcSubprocessEngine:
         try:
             response = await asyncio.wait_for(fut, timeout=effective_timeout)
         except TimeoutError as exc:
-            del self._pending[request_id]
+            self._pending.pop(request_id, None)
             raise EngineTimeoutError(
                 f"{self._engine_name} {method}() timed out after "
                 f"{effective_timeout}s",
@@ -590,16 +610,12 @@ class JsonRpcSubprocessEngine:
                     continue
                 try:
                     response = json.loads(line_str)
-                except json.JSONDecodeError as exc:
-                    raise EngineOutputParseError(
-                        f"{self._engine_name} stdout not JSON: {line_str[:200]}",
-                        engine=self._engine_name,
-                        code="engine_output_parse_error",
-                        remediation_hint=(
-                            f"Inspect raw stdout; likely a {self._engine_name} "
-                            f"contract violation"
-                        ),
-                    ) from exc
+                except json.JSONDecodeError:
+                    self._stdout_buffer.append(line_str)
+                    continue
+                if not isinstance(response, dict):
+                    self._stdout_buffer.append(line_str)
+                    continue
                 request_id = response.get("id")
                 if request_id is None:
                     continue

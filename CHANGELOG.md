@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.14.2] — 2026-10-07
+
+### Fixed
+- **Subprocess Engine Stdout Resilience**: Filter and buffer non-JSON lines (e.g. Node/NPM startup banners, warnings) to prevent premature reader loop crashes and handshake timeouts.
+- **Subprocess RPC Dict Safety**: Replaced unsafe dict key deletion with `pop(request_id, None)` to eliminate potential race conditions during concurrent response processing.
+- **BPA Runner Real Integration**: Replaced static mock BPA scoring with real `BpaRunner` invocation in `audit_model_and_report`, gracefully falling back with actionable warnings when Tabular Editor 2 is unavailable.
+- **PBIP Path & Structure Verification**: Enforced strict validation of PBIP folder artifacts, eliminating false pass scores (previously 75.0) on arbitrary non-PBIP directories.
+- **Audit Score Bounds & Dynamic Weighting**: Clamped `overall_score` strictly to `[0.0, 100.0]` and re-normalized score weighting dynamically across enabled checks.
+- **Path Safety Workspace Allowlist**: Added `PBI_WORKSPACE_ROOT` directory allowlisting and protected sensitive user configuration directories.
+- **Pre-Deploy Gate Filtering**: Connected `blocking_severities` parameter in `pre_deploy_check` to `PreDeployGate.evaluate()`.
+- **Hermetic Test Isolation**: Centralized orchestrator home resolution in `paths.py` via `PBI_ORCHESTRATOR_HOME`, sandboxing all database writes during testing.
+- **FastMCP Protocol Parity**: Explicitly updated underlying `mcp._mcp_server.version` to match server release version in MCP initialize handshakes.
+- **Asynchronous PNG Rendering**: Offloaded CPU-bound report screenshot image rendering to `asyncio.to_thread` to keep the main event loop non-blocking.
+
+---
+
 ## [1.14.1] — 2026-10-07
 
 ### Fixed

@@ -217,8 +217,11 @@ class TestCountAuditEntries:
 class TestPathConstants:
     def test_audit_db_is_under_user_home(self) -> None:
         from powerbi_orchestrator_mcp.orchestrator.audit import AUDIT_DB
+        from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
 
-        assert str(AUDIT_DB).startswith(str(Path.home()))
+        assert str(AUDIT_DB).startswith(str(get_orchestrator_home()))
 
     def test_plan_db_is_under_user_home(self) -> None:
-        assert str(PLAN_DB).startswith(str(Path.home()))
+        from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
+
+        assert str(PLAN_DB).startswith(str(get_orchestrator_home()))

@@ -104,7 +104,10 @@ class PreDeployGate:
         return self._profile
 
     def evaluate(
-        self, findings: list[Any]
+        self,
+        findings: list[Any],
+        *,
+        blocking_severities: list[str] | None = None,
     ) -> GateResult:
         """Evaluate a list of findings against the profile.
 
@@ -127,7 +130,12 @@ class PreDeployGate:
             ("info", self._profile.info),
         ]:
             count = counts[severity_name]
-            if threshold.blocking and count > threshold.max_findings:
+            is_blocking = (
+                (severity_name in blocking_severities)
+                if blocking_severities is not None
+                else threshold.blocking
+            )
+            if is_blocking and count > threshold.max_findings:
                 failed.append(
                     f"{severity_name}: {count} findings "
                     f"(max {threshold.max_findings})"
