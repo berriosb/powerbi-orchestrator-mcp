@@ -16,7 +16,6 @@ FORBIDDEN_SYSTEM_PATHS = {
     "/lib",
     "/lib64",
     "/private/etc",
-    "/private/var",
 }
 
 FORBIDDEN_WINDOWS_DIRS = {
