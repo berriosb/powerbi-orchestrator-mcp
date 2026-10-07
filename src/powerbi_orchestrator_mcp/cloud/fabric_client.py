@@ -259,6 +259,7 @@ class FabricClient:
         await self._breaker.check()
         http_client = self._select_client(service)
 
+        is_idempotent = method.upper() in {"GET", "HEAD", "OPTIONS", "PUT", "DELETE"}
         for attempt in range(max_retries + 1):
             acquired = await bucket.acquire()
             if not acquired:
@@ -275,33 +276,54 @@ class FabricClient:
                     params=params,
                     headers={"Authorization": f"Bearer {token}"},
                 )
-            except httpx.HTTPError:
-                if attempt < max_retries:
+            except httpx.HTTPError as exc:
+                if is_idempotent and attempt < max_retries:
                     await asyncio.sleep(2**attempt)
                     continue
-                raise
+                raise FabricAPIError(
+                    f"Fabric API connection error: {exc}",
+                    status_code=503,
+                    response_body=str(exc),
+                ) from exc
 
             if response.status_code == 429:
-                # Honor Retry-After.
-                retry_after = float(response.headers.get("Retry-After", "1"))
-                await asyncio.sleep(min(retry_after, 30.0))
+                raw_retry = response.headers.get("Retry-After", "1")
+                try:
+                    retry_after = float(raw_retry)
+                except ValueError:
+                    import time
+                    from email.utils import parsedate_to_datetime
+
+                    try:
+                        dt = parsedate_to_datetime(raw_retry)
+                        retry_after = max(0.0, dt.timestamp() - time.time())
+                    except Exception:
+                        retry_after = 1.0
+                await asyncio.sleep(min(max(retry_after, 0.0), 30.0))
                 continue
 
             if response.status_code in (502, 503, 504):
                 await self._breaker.record_5xx()
-                if attempt < max_retries:
+                if is_idempotent and attempt < max_retries:
                     await asyncio.sleep(2**attempt)
                     continue
-                response.raise_for_status()
+                raise FabricAPIError(
+                    f"Fabric API error: {response.status_code} {response.text}",
+                    status_code=response.status_code,
+                    response_body=response.text,
+                )
 
             if response.status_code >= 500:
                 await self._breaker.record_5xx()
-                response.raise_for_status()
+                raise FabricAPIError(
+                    f"Fabric API error: {response.status_code} {response.text}",
+                    status_code=response.status_code,
+                    response_body=response.text,
+                )
 
             await self._breaker.record_success()
 
             if response.status_code >= 400:
-                # 4xx — surface immediately.
                 raise FabricAPIError(
                     f"Fabric API error: {response.status_code} {response.text}",
                     status_code=response.status_code,
@@ -310,7 +332,6 @@ class FabricClient:
 
             return response.json() if response.content else {}
 
-        # Exhausted retries on 429.
         raise FabricAPIError(
             f"Fabric API 429 after {max_retries} retries",
             status_code=429,

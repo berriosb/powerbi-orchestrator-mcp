@@ -85,9 +85,17 @@ class TestHmacKey:
     def test_env_var_takes_precedence(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("PBI_ORCHestrATOR_AUDIT_SECRET", "my-env-secret")
+        monkeypatch.setenv("PBI_ORCHESTRATOR_AUDIT_SECRET", "my-env-secret")
         key = _get_hmac_key()
         assert key == b"my-env-secret"
+
+    def test_legacy_env_var_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("PBI_ORCHESTRATOR_AUDIT_SECRET", raising=False)
+        monkeypatch.setenv("PBI_ORCHestrATOR_AUDIT_SECRET", "legacy-secret")
+        key = _get_hmac_key()
+        assert key == b"legacy-secret"
 
     def test_generates_and_persists_key(
         self, isolated_audit: tuple[Path, Path]

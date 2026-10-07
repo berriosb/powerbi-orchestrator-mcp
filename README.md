@@ -7,22 +7,22 @@
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-[![Tests](https://img.shields.io/badge/tests-920%20passing-brightgreen)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-943%20passing-brightgreen)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen)](./tests/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](./pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.13.0 — Beta. 28 tools (`execute_dax_query` added), 89% cobertura,
+**Status:** v1.14.0 — Beta. 28 tools (`execute_dax_query` added), 89% cobertura,
 product-readiness pass (CLI, Dockerfile, examples, plugin system).
-See [release notes](./RELEASE-NOTES-v1.13.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./RELEASE-NOTES-v1.14.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
 ## Quickstart (60 segundos)
 
 ```bash
-# 1. Install from PyPI (v1.13.0).
+# 1. Install from PyPI (v1.14.0).
 pip install powerbi-orchestrator-mcp
 
 # 2. Configure your MCP client (Claude Desktop shown).
@@ -227,7 +227,7 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 (sin engines externos) o cualquier Fabric workspace (con
 `powerbi-modeling-mcp` instalado).
 
-## Estado actual (v1.13.0)
+## Estado actual (v1.14.0)
 
 - ✅ 28 tools implementadas (modelado, reportes, nube, auditoría, UX, DAX)
 - ✅ Cross-engine rollback
@@ -235,13 +235,14 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 - ✅ PlanBuilder con templates versionables
 - ✅ Engine adapters: `python_report` (built-in), `powerbi-modeling-mcp`,
   `superbi-mcp`, `te` (Tabular Editor)
+- ✅ Modificaciones y mutaciones atómicas en disco para PBIP en fallback sin motores externos
 - ✅ Story variance analysis (detección de regresiones visuales)
 - ✅ mypy --strict clean, ruff clean, CI matrix Linux/macOS/Windows
 - ✅ Backlog de hardening cerrado (0 items pendientes)
 - ✅ Publicado en PyPI: https://pypi.org/project/powerbi-orchestrator-mcp/
 - ⏳ Pendiente: tests E2E con binaries reales (`te`, `dscmd`)
 
-Ver [`RELEASE-NOTES-v1.13.0.md`](./RELEASE-NOTES-v1.13.0.md) para detalles completos.
+Ver [`RELEASE-NOTES-v1.14.0.md`](./RELEASE-NOTES-v1.14.0.md) para detalles completos.
 
 ## Licencia
 

@@ -225,6 +225,114 @@ class TestPropagateRenameOnRealFixture:
         assert "[YTD Sales]" not in json.dumps(page_data)
 
 
+class TestSafeRenameEndToEndOnRealFixture:
+    async def test_safe_rename_modifies_both_model_and_report_on_disk(
+        self, pbip: Path
+    ) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            apply_plan,
+            connect_target,
+            plan_change,
+        )
+
+        conn_res = await connect_target(
+            target_type="pbip_folder",
+            target_ref=str(pbip),
+        )
+        assert conn_res.session_id is not None
+
+        plan_res = await plan_change(
+            intent="safe_rename",
+            options={
+                "old_path": "DimDate[MonthName]",
+                "new_path": "DimDate[Month_Name]",
+                "scope": "report_bindings",
+                "target": str(pbip),
+            },
+        )
+        assert plan_res.plan_id is not None
+        assert len(plan_res.steps) >= 3
+
+        apply_res = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+        assert apply_res.result == "success"
+        assert len(apply_res.executed_steps) >= 3
+
+        model_file = pbip / "sample.Dataset" / "definition.pbism"
+        model_text = model_file.read_text(encoding="utf-8")
+        assert '"Month_Name"' in model_text
+        assert '"MonthName"' not in model_text
+
+        page_file = pbip / "sample.Report" / "pages" / "Overview" / "page.json"
+        page_text = page_file.read_text(encoding="utf-8")
+        assert "DimDate[Month_Name]" in page_text
+        assert "DimDate[MonthName]" not in page_text
+
+    async def test_safe_rename_column_updates_measure_expression_on_disk(
+        self, pbip: Path
+    ) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            apply_plan,
+            connect_target,
+            plan_change,
+        )
+
+        conn_res = await connect_target(
+            target_type="pbip_folder",
+            target_ref=str(pbip),
+        )
+        assert conn_res.session_id is not None
+
+        plan_res = await plan_change(
+            intent="safe_rename",
+            options={
+                "old_path": "FactSales.TotalAmount",
+                "new_path": "FactSales.Revenue",
+                "scope": "report_bindings",
+                "target": str(pbip),
+            },
+        )
+        assert plan_res.plan_id is not None
+
+        apply_res = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+        assert apply_res.result == "success"
+
+        model_file = pbip / "sample.Dataset" / "definition.pbism"
+        model_text = model_file.read_text(encoding="utf-8")
+        assert '"Revenue"' in model_text
+        assert '"TotalAmount"' not in model_text
+        assert "FactSales[Revenue]" in model_text
+
+    async def test_dry_run_does_not_modify_disk(
+        self, pbip: Path
+    ) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            apply_plan,
+            connect_target,
+            plan_change,
+        )
+
+        await connect_target(
+            target_type="pbip_folder",
+            target_ref=str(pbip),
+        )
+        plan_res = await plan_change(
+            intent="safe_rename",
+            options={
+                "old_path": "DimDate[MonthName]",
+                "new_path": "DimDate[Month_DryRun]",
+                "scope": "report_bindings",
+                "target": str(pbip),
+            },
+        )
+        apply_res = await apply_plan(plan_id=plan_res.plan_id, dry_run=True)
+        assert apply_res.result == "success"
+
+        model_file = pbip / "sample.Dataset" / "definition.pbism"
+        model_text = model_file.read_text(encoding="utf-8")
+        assert '"Month_DryRun"' not in model_text
+        assert '"MonthName"' in model_text
+
+
 # Skip subprocess-based CLI tests on Windows: WinError 10106 in the
 # GitHub Actions Windows runner (asyncio event loop fails to initialize
 # inside a subprocess spawned from inside pytest). The unit tests in
