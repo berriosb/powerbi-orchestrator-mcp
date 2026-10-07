@@ -164,6 +164,34 @@ class EngineSelector:
             DEFAULT_REPORT_CHAIN,
         )
 
+    def _check_engine_available(self, name: str, engine: Any) -> None:
+        if hasattr(engine, "is_available"):
+            avail = engine.is_available() if callable(engine.is_available) else bool(engine.is_available)
+            if not avail:
+                hint = getattr(
+                    engine,
+                    "remediation_hint",
+                    f"Install or enable engine {name!r}",
+                )
+                raise EngineNotFoundError(
+                    f"engine {name!r} is not available",
+                    engine=name,
+                    code="engine_not_found",
+                    remediation_hint=hint,
+                )
+        elif hasattr(engine, "_binary"):
+            import os
+            import shutil
+
+            binary = str(getattr(engine, "_binary", ""))
+            if binary and not (shutil.which(binary) or os.path.exists(binary)):
+                raise EngineNotFoundError(
+                    f"{name} binary not found: {binary}",
+                    engine=name,
+                    code="engine_not_found",
+                    remediation_hint=f"Install {name} binary {binary}",
+                )
+
     def _select(
         self,
         operation: str,
@@ -189,15 +217,13 @@ class EngineSelector:
             if engine is None:
                 continue
             try:
-                # We don't actually run health_check here (would block);
-                # we rely on the engine's own lazy health.
+                self._check_engine_available(name, engine)
                 self._cache[cache_key] = name
                 return engine
             except EngineNotFoundError as exc:
                 last_not_found = exc
                 continue
             except EngineError:
-                # Non-availability errors propagate.
                 raise
 
         if last_not_found is not None:

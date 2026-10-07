@@ -75,10 +75,21 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
             binary=binary,
             args=("-y", f"superbi-mcp@{version}"),
             env=env,
+            mcp_handshake=True,
         )
         self._version = version
         self._mock_responses = mock_responses or {}
         self.dispatch_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def is_available(self) -> bool:
+        if (
+            os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in ("1", "true", "yes")
+            or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes")
+        ):
+            return False
+        import shutil
+
+        return bool(shutil.which(self._binary) or os.path.exists(self._binary))
 
     # ------------------------------------------------------------------
     # ReportEngine Protocol

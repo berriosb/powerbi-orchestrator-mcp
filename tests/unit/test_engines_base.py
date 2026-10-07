@@ -122,6 +122,7 @@ class _FakeSubprocessEngine(JsonRpcSubprocessEngine):
         self._start_raises = start_raises
         self._rpc_raises = rpc_raises
         self._calls: list[tuple[str, dict[str, Any]]] = []
+        self._notifications: list[tuple[str, dict[str, Any]]] = []
         self._started = False
 
     async def _start(self, *, timeout_s: int | None = None) -> None:  # noqa: ARG002
@@ -141,6 +142,13 @@ class _FakeSubprocessEngine(JsonRpcSubprocessEngine):
         if self._rpc_raises is not None:
             raise self._rpc_raises
         return self._responses.get(method, {"result": "ok"})
+
+    async def _notify(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        self._notifications.append((method, params or {}))
 
     @property
     def started(self) -> bool:
@@ -278,3 +286,35 @@ class TestOutputParseError:
             remediation_hint="check upstream",
         )
         assert "stdout was not JSON" in err.message
+
+
+class TestMcpHandshake:
+    async def test_perform_mcp_handshake_sends_initialize_and_notification(self) -> None:
+        engine = _FakeSubprocessEngine(
+            responses={"initialize": {"protocolVersion": "2024-11-05"}}
+        )
+        await engine._perform_mcp_handshake()
+        assert len(engine._calls) == 1
+        assert engine._calls[0][0] == "initialize"
+        assert engine._calls[0][1]["protocolVersion"] == "2024-11-05"
+        assert len(engine._notifications) == 1
+        assert engine._notifications[0][0] == "notifications/initialized"
+
+    def test_is_available_returns_true_for_existing_binary(self) -> None:
+        import sys
+
+        engine = JsonRpcSubprocessEngine(
+            engine_name="test",
+            binary=sys.executable,
+            args=(),
+        )
+        assert engine.is_available() is True
+
+    def test_is_available_returns_false_for_missing_binary(self) -> None:
+        engine = JsonRpcSubprocessEngine(
+            engine_name="test",
+            binary="/nonexistent/missing/binary",
+            args=(),
+        )
+        assert engine.is_available() is False
+

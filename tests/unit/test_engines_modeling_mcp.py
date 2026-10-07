@@ -389,7 +389,8 @@ class TestDispatch:
         engine._rpc = fake_rpc  # type: ignore[assignment]
         res = await engine._dispatch("database_operations", "list_tables", conn=None)
         assert captured["method"] == "tools/call"
-        assert captured["params"]["name"] == "list_tables"
+        assert captured["params"]["name"] == "table_operations"
+        assert captured["params"]["arguments"] == {"request": {"operation": "List"}}
         assert res == {"tables": [{"name": "Sales"}]}
 
 

@@ -32,9 +32,18 @@ from powerbi_orchestrator_mcp.orchestrator.context import EngineStatus, Target
 class _FakeModelingEngine:
     """Minimal ModelingEngine stand-in for selector tests."""
 
-    def __init__(self, name: str = "powerbi-modeling-mcp", version: str = "1.0.0") -> None:
+    def __init__(
+        self,
+        name: str = "powerbi-modeling-mcp",
+        version: str = "1.0.0",
+        available: bool = True,
+    ) -> None:
         self._name = name
         self._version = version
+        self._available = available
+
+    def is_available(self) -> bool:
+        return self._available
 
     @property
     def name(self) -> str:
@@ -122,9 +131,18 @@ class _FakeModelingEngine:
 class _FakeReportEngine:
     """Minimal ReportEngine stand-in for selector tests."""
 
-    def __init__(self, name: str = "python_report", version: str = "1.0.0") -> None:
+    def __init__(
+        self,
+        name: str = "python_report",
+        version: str = "1.0.0",
+        available: bool = True,
+    ) -> None:
         self._name = name
         self._version = version
+        self._available = available
+
+    def is_available(self) -> bool:
+        return self._available
 
     @property
     def name(self) -> str:
@@ -342,3 +360,30 @@ class TestDefaultChain:
         preferred, fallbacks = DEFAULT_REPORT_CHAIN
         assert preferred == "python_report"
         assert "superbi-mcp" in fallbacks
+
+
+class TestFallbackChain:
+    def test_falls_back_when_preferred_engine_unavailable(self, target: Target) -> None:
+        sel = EngineSelector()
+        sel.register_modeling(
+            "powerbi-modeling-mcp",
+            _FakeModelingEngine("powerbi-modeling-mcp", available=False),
+        )
+        sel.register_modeling("te", _FakeModelingEngine("te", available=True))
+        engine = sel.select_modeling_engine("update_column", target)
+        assert engine.name == "te"
+
+    def test_raises_last_not_found_when_all_engines_unavailable(self, target: Target) -> None:
+        sel = EngineSelector()
+        sel.register_modeling(
+            "powerbi-modeling-mcp",
+            _FakeModelingEngine("powerbi-modeling-mcp", available=False),
+        )
+        sel.register_modeling(
+            "te",
+            _FakeModelingEngine("te", available=False),
+        )
+        with pytest.raises(EngineNotFoundError) as exc_info:
+            sel.select_modeling_engine("update_column", target)
+        assert "engine 'te' is not available" in str(exc_info.value)
+

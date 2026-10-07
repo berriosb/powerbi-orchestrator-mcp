@@ -48,17 +48,17 @@ from powerbi_orchestrator_mcp.orchestrator.context import (
 DEFAULT_PINNED_VERSION = "1.0.0"
 
 _RPC_TO_MCP_TOOL: dict[str, str] = {
-    "database_operations/list_tables": "list_tables",
-    "column_operations/list": "list_columns",
-    "measure_operations/list": "list_measures",
-    "database_operations/list_relationships": "list_relationships",
-    "column_operations/update": "update_column",
-    "measure_operations/create": "create_measure",
-    "measure_operations/update": "update_measure",
-    "measure_operations/delete": "delete_measure",
-    "dax_query_operations/run": "execute_dax",
-    "database_operations/export_tmdl": "export_tmdl",
-    "database_operations/import_tmdl": "import_tmdl",
+    "database_operations/list_tables": "table_operations",
+    "column_operations/list": "column_operations",
+    "measure_operations/list": "measure_operations",
+    "database_operations/list_relationships": "relationship_operations",
+    "column_operations/update": "column_operations",
+    "measure_operations/create": "measure_operations",
+    "measure_operations/update": "measure_operations",
+    "measure_operations/delete": "measure_operations",
+    "dax_query_operations/run": "dax_query_operations",
+    "database_operations/export_tmdl": "database_operations",
+    "database_operations/import_tmdl": "database_operations",
 }
 
 
@@ -103,12 +103,10 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
                 "--accept-eula",
             ),
             env=effective_env,
+            mcp_handshake=True,
         )
         self._version = version
         self._mock_responses = mock_responses or {}
-        # Records every (method, params) passed to _dispatch — useful
-        # for tests that need to assert the params built by the adapter
-        # (since mock_responses short-circuit _rpc).
         self.dispatch_calls: list[tuple[str, dict[str, Any]]] = []
 
     # ------------------------------------------------------------------
@@ -152,11 +150,29 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
 
     async def list_tables(self, conn: ConnectionHandle) -> list[Table]:
         result = await self._dispatch("database_operations", "list_tables", conn)
-        return [Table(**t) for t in result.get("tables", [])]
+        raw_tables = result.get("tables") or result.get("data", [])
+        return [
+            Table(
+                name=t["name"],
+                is_hidden=t.get("isHidden") if "isHidden" in t else t.get("is_hidden", False),
+            )
+            for t in raw_tables
+        ]
 
     async def list_measures(self, conn: ConnectionHandle) -> list[Measure]:
         result = await self._dispatch("measure_operations", "list", conn)
-        return [Measure(**m) for m in result.get("measures", [])]
+        raw_measures = result.get("measures") or result.get("data", [])
+        return [
+            Measure(
+                name=m["name"],
+                table=m.get("tableName") or m.get("table", ""),
+                expression=m.get("expression", ""),
+                format_string=m.get("formatString") or m.get("format_string"),
+                description=m.get("description"),
+                is_hidden=m.get("isHidden") if "isHidden" in m else m.get("is_hidden", False),
+            )
+            for m in raw_measures
+        ]
 
     async def list_columns(
         self, conn: ConnectionHandle, table: str
@@ -164,7 +180,18 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
         result = await self._dispatch(
             "column_operations", "list", conn, extra={"table": table}
         )
-        return [Column(**c) for c in result.get("columns", [])]
+        raw_columns = result.get("columns") or result.get("data", [])
+        return [
+            Column(
+                name=c["name"],
+                data_type=c.get("dataType") or c.get("data_type", "string"),
+                description=c.get("description"),
+                is_hidden=c.get("isHidden") if "isHidden" in c else c.get("is_hidden", False),
+                is_key=c.get("isKey") if "isKey" in c else c.get("is_key", False),
+                format_string=c.get("formatString") or c.get("format_string"),
+            )
+            for c in raw_columns
+        ]
 
     async def list_relationships(
         self, conn: ConnectionHandle
@@ -172,17 +199,18 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
         result = await self._dispatch(
             "database_operations", "list_relationships", conn
         )
+        raw_rels = result.get("relationships") or result.get("data", [])
         return [
             Relationship(
-                from_table=r["from_table"],
-                from_column=r["from_column"],
-                to_table=r["to_table"],
-                to_column=r["to_column"],
+                from_table=r.get("fromTable") or r.get("from_table", ""),
+                from_column=r.get("fromColumn") or r.get("from_column", ""),
+                to_table=r.get("toTable") or r.get("to_table", ""),
+                to_column=r.get("toColumn") or r.get("to_column", ""),
                 cardinality=r.get("cardinality", "many_to_one"),
-                cross_filter=r.get("cross_filter", "single"),
-                is_active=r.get("is_active", True),
+                cross_filter=r.get("crossFilteringBehavior") or r.get("cross_filter", "single"),
+                is_active=r.get("isActive") if "isActive" in r else r.get("is_active", True),
             )
-            for r in result.get("relationships", [])
+            for r in raw_rels
         ]
 
     # ------------------------------------------------------------------
@@ -309,6 +337,94 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
     # Internal dispatch
     # ------------------------------------------------------------------
 
+    def _build_mcp_call(
+        self,
+        rpc_method: str,
+        conn: ConnectionHandle | None,
+        extra: dict[str, Any] | None,
+    ) -> tuple[str, dict[str, Any]]:
+        tool_name = _RPC_TO_MCP_TOOL.get(rpc_method, rpc_method)
+        _ = conn
+        req: dict[str, Any] = {}
+        payload = extra or {}
+
+        if rpc_method == "database_operations/list_tables":
+            req["operation"] = "List"
+        elif rpc_method == "column_operations/list":
+            req["operation"] = "List"
+            if "table" in payload:
+                req["filter"] = {"tableNames": [payload["table"]]}
+        elif rpc_method == "column_operations/update":
+            changes = payload.get("changes", {})
+            if "new_name" in changes:
+                req["operation"] = "Rename"
+                req["renameDefinitions"] = [
+                    {
+                        "tableName": payload.get("table", ""),
+                        "currentName": payload.get("column", ""),
+                        "newName": changes["new_name"],
+                    }
+                ]
+            else:
+                def_item = {
+                    "tableName": payload.get("table", ""),
+                    "name": payload.get("column", ""),
+                    **changes,
+                }
+                req["operation"] = "Update"
+                req["definitions"] = [def_item]
+        elif rpc_method == "measure_operations/list":
+            req["operation"] = "List"
+        elif rpc_method == "measure_operations/create":
+            req["operation"] = "Create"
+            meas = payload.get("measure", {})
+            req["definitions"] = [
+                {
+                    "tableName": payload.get("table", ""),
+                    "name": meas.get("name", ""),
+                    "expression": meas.get("expression", ""),
+                }
+            ]
+        elif rpc_method == "measure_operations/update":
+            req["operation"] = "Update"
+            changes = payload.get("changes", {})
+            def_item = {
+                "tableName": payload.get("table", ""),
+                "name": payload.get("measure", ""),
+                **changes,
+            }
+            req["definitions"] = [def_item]
+        elif rpc_method == "measure_operations/delete":
+            req["operation"] = "Delete"
+            req["references"] = [
+                {
+                    "tableName": payload.get("table", ""),
+                    "name": payload.get("measure", ""),
+                }
+            ]
+        elif rpc_method == "database_operations/list_relationships":
+            req["operation"] = "List"
+        elif rpc_method == "dax_query_operations/run":
+            req["operation"] = "Execute"
+            req["query"] = payload.get("query", "")
+            req["resultMode"] = "Inline"
+            if payload.get("effective_identity"):
+                req["impersonation"] = payload["effective_identity"]
+        elif rpc_method == "database_operations/export_tmdl":
+            req["operation"] = "ExportToTmdlFolder"
+            folder = payload.get("path") or payload.get("label", "")
+            req["tmdlFolderPath"] = str(folder)
+        elif rpc_method == "database_operations/import_tmdl":
+            req["operation"] = "ImportFromTmdlFolder"
+            folder = payload.get("path", "")
+            req["tmdlFolderPath"] = str(folder)
+        else:
+            op_name = rpc_method.split("/")[-1]
+            req["operation"] = op_name
+            req.update(payload)
+
+        return tool_name, {"request": req}
+
     async def _dispatch(
         self,
         namespace: str,
@@ -334,18 +450,30 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
         if rpc_method in self._mock_responses:
             return self._mock_responses[rpc_method]  # type: ignore[no-any-return]
         try:
-            mcp_tool = _RPC_TO_MCP_TOOL.get(rpc_method)
-            if mcp_tool:
-                resp = await self._rpc("tools/call", {"name": mcp_tool, "arguments": params})
-                if isinstance(resp, dict) and "content" in resp:
-                    for item in resp.get("content", []):
-                        if isinstance(item, dict) and item.get("type") == "text":
-                            try:
-                                parsed = json.loads(item.get("text", "{}"))
-                                if isinstance(parsed, dict):
-                                    return parsed
-                            except Exception:
-                                pass
+            if rpc_method in _RPC_TO_MCP_TOOL:
+                mcp_tool, mcp_args = self._build_mcp_call(rpc_method, conn, extra)
+                resp = await self._rpc("tools/call", {"name": mcp_tool, "arguments": mcp_args})
+                if isinstance(resp, dict):
+                    if resp.get("isError"):
+                        err_msg = ""
+                        for item in resp.get("content", []):
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                err_msg += item.get("text", "")
+                        raise EngineError(
+                            f"{self._engine_name} error in {mcp_tool}: {err_msg}",
+                            engine=self._engine_name,
+                            code="engine_mcp_tool_error",
+                            remediation_hint=err_msg,
+                        )
+                    if "content" in resp:
+                        for item in resp.get("content", []):
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                try:
+                                    parsed = json.loads(item.get("text", "{}"))
+                                    if isinstance(parsed, dict):
+                                        return parsed
+                                except Exception:
+                                    pass
                 return resp
             return await self._rpc(rpc_method, params)
         except EngineError:
