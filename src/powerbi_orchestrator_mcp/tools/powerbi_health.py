@@ -135,11 +135,14 @@ async def powerbi_health(
         # Cheap: select COUNT(*) via direct SQL (no Pydantic roundtrip).
         import sqlite3
 
-        with sqlite3.connect(str(EXEC_DB)) as conn:
+        conn = sqlite3.connect(str(EXEC_DB))
+        try:
             row = conn.execute(
                 "SELECT COUNT(*) FROM plan_executions"
             ).fetchone()
             exec_count = int(row[0]) if row else 0
+        finally:
+            conn.close()
     except Exception as exc:  # noqa: BLE001
         exec_count = 0
         warnings.append(f"execution store unavailable: {exc}")

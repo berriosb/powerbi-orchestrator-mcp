@@ -190,15 +190,18 @@ class ModelingStepExecutor:
             )
 
         try:
-            if action == "column.update":
-                old_path = str(args.get("old_path", ""))
-                new_name = args.get("new_name")
+            if action in ("column.update", "table.update", "update_table", "update_column"):
+                old_path = str(args.get("old_path") or args.get("table", ""))
+                new_name = args.get("new_name") or args.get("new_table")
                 if "[" in old_path and old_path.endswith("]"):
                     table = old_path.split("[")[0]
                     column = old_path.rsplit("[", 1)[1][:-1]
                 elif "." in old_path:
                     table = old_path.rsplit(".", 1)[0]
                     column = old_path.split(".")[-1]
+                elif action in ("table.update", "update_table"):
+                    table = old_path
+                    column = ""
                 else:
                     table = ""
                     column = old_path

@@ -321,10 +321,12 @@ class JsonRpcSubprocessEngine:
             "capabilities": {},
             "clientInfo": {
                 "name": "powerbi-orchestrator-mcp",
-                "version": getattr(self, "_version", "1.12.0"),
+                "version": getattr(self, "_version", "1.14.0"),
             },
         }
-        await self._rpc("initialize", init_params)
+        res = await self._rpc("initialize", init_params)
+        if isinstance(res, dict) and "protocolVersion" in res:
+            self._negotiated_protocol_version = str(res["protocolVersion"])
         await self._notify("notifications/initialized", {})
 
     async def _start(self, *, timeout_s: int | None = None) -> None:

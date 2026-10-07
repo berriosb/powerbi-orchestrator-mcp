@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.14.1] — 2026-10-07
+
+### Fixed
+- **Strict Modeling Operation Reporting**: `InMemoryModelingAdapter` now returns `success=False` with clear diagnostics whenever an operation does not match any table, column, or measure, eliminating false-positive success reports on nonexistent objects.
+- **Table Rename Support in Local PBIP Fallback**: Added full support for renaming tables in `InMemoryModelingAdapter` across semantic models (`definition.pbism`, `model.bim`, TMDL), relationships (`fromTable`, `toTable`), measure expressions (`Table[Column]`), and report visuals in `safe_rename`.
+- **I/O Error Transparency**: Replaced broad exception swallowing with precise exception handling and explicit `OperationResult(success=False, error_message=...)` reporting on write failures (disk full, permissions).
+- **Transport Auth Claim Union**: Unified `scp` (delegated) and `roles` (app-role) claims so tokens containing both do not ignore assigned application roles.
+- **SQLite Connection Resource Cleanup**: Wrapped CLI verify and health check sqlite queries in `try ... finally: conn.close()` to prevent file descriptor leaks and database lock retention.
+
+---
+
 ## [1.14.0] — 2026-10-07
 
 ### Fixed

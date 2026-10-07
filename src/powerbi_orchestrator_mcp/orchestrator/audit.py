@@ -287,9 +287,12 @@ def count_entries(db_path: Path | None = None) -> int:
     if not path.exists():
         return 0
     try:
-        with sqlite3.connect(str(path)) as conn:
+        conn = sqlite3.connect(str(path))
+        try:
             row = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
             return int(row[0]) if row else 0
+        finally:
+            conn.close()
     except sqlite3.DatabaseError:
         return 0
 
