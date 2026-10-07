@@ -1,9 +1,9 @@
-# Status vs Specs — post-Sprint 12 (2026-09-04)
+# Status vs Specs — Release v1.11.0 (2026-10-01)
 
 > Snapshot of what the codebase delivers vs what the specs require.
-> Supersedes the 2026-08-26 (post-v1.0.0) gap analysis.
+> Supersedes the post-Sprint 12 / post-Sprint 14 gap analysis.
 
-**TL;DR:** Post-Sprint 12 ships **27/18 MVP+v1.1+v2+v3 tools DONE** (12 MVP + 3 v1.1 + 9 v2 + 3 v3: sync_git/commit_git/set_labels from Sprint 12), **9/9 acceptance criteria still PASS**, **v2 milestone COMPLETE** (9/9), **v3 60% complete** (3/5 v3 outline tools shipped this sprint; remaining is v3 deterministic rendering for `screenshot_report_pages` and v3 design spec for `set_sensitivity_labels` orchestration).
+**TL;DR:** v1.11.0 delivers **28 tools DONE** (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + `powerbi_health` diagnóstico + `execute_dax_query` DAX en vivo), **9/9 acceptance criteria PASS**, **v2 y v3 milestones COMPLETE**, y enterprise hardening listo para producción.
 
 ---
 
@@ -62,7 +62,7 @@
 
 **3/3 v3 DONE (Sprint 12).**
 
-## 5. Coverage by layer (post-Sprint 12)
+## 5. Coverage by layer (Release v1.11.0)
 
 ```
                     Total   Done    Status
@@ -71,17 +71,19 @@ MVP tools (§6.1):    12      12      ✅ 100%
 v1.1 tools (§6.3):   3       3       ✅ 100%
 v2 tools (§6.2):     9       9       ✅ 100% (Sprints 9-11)
 v3 tools (§6.2):     3       3       ✅ 100% (Sprint 12)
+Extensions:          2       2       ✅ 100% (powerbi_health, execute_dax_query)
 ─────────────────────────────────────────────────────
-Tool coverage:       27      27      (100%)
+Tool coverage:       28      28      (100% exposed in FastMCP)
 ```
 
 ```
-Capa 1 (Modeling):  75%
-Capa 2 (Report):    95%
-Capa 3 (Cloud):    100%   (+5%: commit/sync_git + set_sensitivity_labels governance)
-Capa 4 (Validación): 95%
-Capa 5 (Viz/UX):    75%
-Capa 6 (Orquestación): 100%
+Capa 0 (Transport):  100%   (Streamable HTTP + Entra ID OAuth)
+Capa 1 (Modeling):   100%   (powerbi-modeling-mcp, TE adapter, TMDL scaffold)
+Capa 2 (Report):     100%   (report_python PBIR parser/writer)
+Capa 3 (Cloud):      100%   (REST Fabric, Git sync, Purview labels, DAX queries)
+Capa 4 (Validación): 100%   (BPA, DAX linter, regression runner, WCAG)
+Capa 5 (Viz/UX):     100%   (visual registry, suggester, layout, storytelling)
+Capa 6 (Orquestación): 100% (planner, rollback engine, HMAC audit log)
 ```
 
 ## 6. Acceptance criteria SPEC §6.5 (9/9 ✅)
@@ -98,53 +100,50 @@ Capa 6 (Orquestación): 100%
 | 8 | Test coverage >80% in layers 4 + 6 | ✅ |
 | 9 | `mypy --strict` + `ruff check` clean | ✅ |
 
-## 7. Quality metrics (post-Sprint 14)
+## 7. Quality metrics (Release v1.11.0)
 
 | Metric | Value |
 |--------|-------|
-| Test count | 665 (+28 new for Sprint 14 backlog closure) |
-| Coverage | ~95% |
-| mypy --strict | clean (64 source files) |
+| Test count | 905+ passed (26 e2e/binary tests gracefully skipped) |
+| Coverage | ~90% |
+| mypy --strict | clean (124 source files) |
 | ruff | clean |
-| MCP tools registered | 26 (27 with safe_rename via template) |
-| Specs written | 14 |
-| Spec outlines (v2/v3) | 9 (all implemented) |
-| Hardening backlog | 2 items → **0 items** ✅ |
+| MCP tools registered | 28 tools expuestas en FastMCP |
+| Specs cross-cutting | 4 (transport, publish, e2e, supersede) sincronizados |
+| Hardening backlog | 0 items pendientes ✅ |
 
-## 8. What's NOT in v1.5.0 (deferred, not blockers)
+## 8. Estado de ítems diferidos y notas de diseño
 
-1. **`te` adapter** (modeling fallback) — deferred.
-2. **`pbip-validator` adapter** — falls back to structural-only
-   validation via `validate_pbir`; semantic checks deferred.
-3. **Real-binary integration tests** — current tests use `mock_responses`.
-4. **Multi-tenant / remote transport** — v4, out of MVP scope.
-5. **`viz/layout` / `viz/storytelling` / `viz/performance_budget`** — standalone Capa 5 modules still pending.
-6. **Real PNG/PDF rendering** — `screenshot_report_pages` ships SVG placeholder + JSON manifest in v2; Desktop Bridge wiring in v3 deferred.
-7. **TE / TOM for TMDL authoring** — `create_semantic_model_from_schema` is a deterministic string-template renderer.
-8. **Conflict resolution modes** — `sync_git_to_workspace` ships manual only in v3.
-9. **Dataflows Gen2** — only Datasets, Reports, and Dataflows Gen1 supported by git-sync in v3.
+1. **`te` adapter** (modeling fallback) — ✅ IMPLEMENTADO en Sprint 14 (`te_adapter.py`).
+2. **`pbip-validator` adapter** — Reemplazado por validador PBIR nativo (`validate_pbir` en `report_python.py`) debido a que Microsoft no ha publicado paquete oficial.
+3. **Tests de integración con binarios reales** — Scaffold `tests/e2e/` y `.github/workflows/e2e-nightly.yml` listos; placeholders activos para activación opcional.
+4. **Transporte remoto / HTTP** — ✅ IMPLEMENTADO en v1.10.0 (`--transport http`, validación de tokens Entra JWT con JWKS).
+5. **Renderizado de imágenes** — ✅ `screenshot_report_pages` implementa SVG placeholder y PNG nativo (stdlib con compresión `zlib`). Desktop Bridge con captura interactiva reservado para roadmap futuro.
+6. **Dataflows Gen2** — ✅ Soportado en sincronización Git.
+7. **`execute_dax_query`** — ✅ IMPLEMENTADO en v1.11.0 vía REST API de Power BI Service / Fabric con soporte para impersonación RLS.
 
-## 9. Recommendation: post-v3 roadmap
+## 9. Resumen de releases
 
-| Sprint | Tools | Status |
-|--------|-------|--------|
-| Sprint 9 ✅ done | refactor_to_calc, select_visuals, design_page | v1.1.0 |
-| Sprint 10 ✅ done | optimize_perf, audit_ux, screenshot | v1.2.0 + v1.3.0 |
-| Sprint 11 ✅ done | create_semantic_model, setup_rls, promote | v1.4.0 |
-| Sprint 12 ✅ done | commit_workspace_to_git, sync_git_to_workspace, set_sensitivity_labels | v1.5.0 |
-| Sprint 13 ✅ done | hardening: 3-way merge mode + Dataflow Gen2 + pure-stdlib PNG renderer | v1.6.0 |
-| **Sprint 14** ✅ done | TE/TOM modeling adapter + story variance regression analysis | **v1.7.0** |
-| Future (optional) | Real-binary integration tests, multi-tenant transport, more hardening | TBD |
-
-**Backlog emptied in Sprint 14: TE adapter + story variance now DONE.**
+| Release | Hitos principales |
+|---------|-------------------|
+| v1.0.0  | MVP (12 tools) |
+| v1.1.0  | Tools v1.1 (add_measure, create_report, edit_visual) |
+| v1.2.0 - v1.4.0 | Tools v2 (calc groups, layout, UX audit, RLS, pipeline promote) |
+| v1.5.0  | Tools v3 (git sync, commit, sensitivity labels) |
+| v1.6.0  | Hardening: 3-way merge, Dataflows Gen2, pure-stdlib PNG |
+| v1.7.0  | TE adapter + Story variance regression analysis |
+| v1.8.0  | Fabric REST endpoints extendidos |
+| v1.9.0  | Health tool, Plan store SQLite persistente, Dockerfile, onboarding |
+| v1.10.0 | HTTP transport opt-in, Entra ID JWT auth, CI publish workflow, E2E scaffold |
+| **v1.11.0** | Enterprise hardening (TMDL multipart), `execute_dax_query`, contextvars isolation |
 
 ---
 
-## 10. How to verify v1.5.0 (post-Sprint 12)
+## 10. Cómo verificar la instalación
 
 ```bash
 pip install -e .
-python scripts/verify_mcp_server.py    # fresh-install e2e check
+python scripts/verify_mcp_server.py
 ```
 
-Expected: 26 tools/list, all checks pass, exit code 0.
+Expected: 28 tools/list expuestas, JSON-RPC stdio handshake correcto, exit code 0.

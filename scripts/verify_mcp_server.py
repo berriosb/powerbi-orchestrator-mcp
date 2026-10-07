@@ -38,7 +38,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Add repo root to sys.path so we can import directly from the source
 # tree when run via `python scripts/verify_mcp_server.py` without pip
@@ -93,7 +93,7 @@ def _read_message(proc: subprocess.Popen[bytes], timeout: float = 10.0) -> dict[
     line = proc.stdout.readline()
     if not line:
         raise RuntimeError("server closed stdout unexpectedly")
-    return json.loads(line.decode("utf-8"))
+    return cast(dict[str, Any], json.loads(line.decode("utf-8")))
 
 
 def _check(label: str, condition: bool, detail: str = "") -> bool:
