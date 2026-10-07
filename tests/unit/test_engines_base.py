@@ -301,9 +301,11 @@ class TestMcpHandshake:
         assert engine._notifications[0][0] == "notifications/initialized"
 
     def test_is_available_returns_true_for_existing_binary(self) -> None:
+        import sys
+
         engine = JsonRpcSubprocessEngine(
             engine_name="test",
-            binary="/bin/echo",
+            binary=sys.executable,
             args=(),
         )
         assert engine.is_available() is True
