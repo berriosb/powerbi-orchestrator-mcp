@@ -134,8 +134,10 @@ class PythonReportEngine:
     def name(self) -> str:
         return "python_report"
 
+    def is_available(self) -> bool:
+        return True
+
     async def health_check(self) -> EngineStatus:
-        # No external dependency → always available.
         return EngineStatus(
             name=self.name,
             available=True,

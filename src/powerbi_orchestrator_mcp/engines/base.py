@@ -295,26 +295,38 @@ class JsonRpcSubprocessEngine:
         args: tuple[str, ...],
         *,
         env: dict[str, str] | None = None,
+        mcp_handshake: bool = False,
     ) -> None:
         self._engine_name = engine_name
         self._binary = binary
         self._args = args
         self._env = env or dict(os.environ)
+        self._mcp_handshake = mcp_handshake
         self._process: asyncio.subprocess.Process | None = None
         self._next_id = 1
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
 
-    # ------------------------------------------------------------------
-    # Subprocess lifecycle
-    # ------------------------------------------------------------------
+    def is_available(self) -> bool:
+        import shutil
+
+        return bool(shutil.which(self._binary) or os.path.exists(self._binary))
+
+    async def _perform_mcp_handshake(self) -> None:
+        init_params = {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "powerbi-orchestrator-mcp",
+                "version": getattr(self, "_version", "1.12.0"),
+            },
+        }
+        await self._rpc("initialize", init_params)
+        await self._notify("notifications/initialized", {})
 
     async def _start(self, *, timeout_s: int | None = None) -> None:
         """Start the subprocess. Idempotent (no-op if already running)."""
         if self._process is not None and self._process.returncode is None:
             return
-        # NOTE: timeout_s here is a placeholder for future start-time probes
-        # (e.g. "did the engine print 'ready' within 5s?"). For now the
-        # spawn itself is sync; the per-RPC timeout is applied in _rpc().
         _ = timeout_s
         try:
             self._process = await asyncio.create_subprocess_exec(
@@ -346,10 +358,8 @@ class JsonRpcSubprocessEngine:
                 ),
             ) from exc
 
-        # Spawn reader task for stdout.
         asyncio.create_task(self._read_stdout_loop())
 
-        # Wait briefly for the process to stabilize.
         await asyncio.sleep(0.05)
         if self._process.returncode is not None:
             stderr_bytes = await self._process.stderr.read() if self._process.stderr else b""
@@ -365,6 +375,13 @@ class JsonRpcSubprocessEngine:
                     remediation_hint="Check engine logs / installation",
                 )
             raise err
+
+        if self._mcp_handshake:
+            try:
+                await self._perform_mcp_handshake()
+            except Exception:
+                await self._stop()
+                raise
 
     async def _stop(self) -> None:
         """Gracefully stop the subprocess."""
@@ -493,6 +510,40 @@ class JsonRpcSubprocessEngine:
             )
 
         return response.get("result", {})  # type: ignore[no-any-return]
+
+    async def _notify(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        if self._process is None or self._process.returncode is not None:
+            await self._start()
+
+        if self._process is None or self._process.stdin is None:
+            raise EngineCrashedError(
+                f"{self._engine_name} stdin unavailable",
+                engine=self._engine_name,
+                code="engine_stdin_closed",
+                remediation_hint="Restart the engine process",
+            )
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params or {},
+        }
+        message = json.dumps(payload) + "\n"
+        try:
+            self._process.stdin.write(message.encode("utf-8"))
+            await self._process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+            raise EngineCrashedError(
+                f"{self._engine_name} stdin closed: {exc}",
+                engine=self._engine_name,
+                code="engine_stdin_closed",
+                remediation_hint="Restart the engine process",
+            ) from exc
+
 
     async def _read_stdout_loop(self) -> None:
         """Background task: read JSON-RPC responses from subprocess stdout."""

@@ -160,6 +160,9 @@ class InMemoryModelingAdapter:
 
     # -- ModelingEngine protocol surface ----------------------------------
 
+    def is_available(self) -> bool:
+        return True
+
     async def health_check(self) -> EngineStatus:
         return EngineStatus(
             name=self._name, available=True, version=self._version
@@ -396,6 +399,13 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
     @property
     def version(self) -> str:
         return "stub-0.1.0"  # real version would come from `TabularEditor --version`
+
+    def is_available(self) -> bool:
+        if self._mode == "skeleton":
+            return True
+        import shutil
+
+        return bool(shutil.which(self._binary) or os.path.exists(self._binary))
 
     def _binary_missing_message(self, op: str) -> str:
         _ = op

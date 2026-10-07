@@ -53,3 +53,5 @@ logs/
 *.log
 audit.sqlite
 regression.sqlite
+# Local Pi runtime state
+.atl/

@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.12.0] — 2026-10-06
+
+### Fixed
+- **Subprocess MCP Handshake**: Implemented JSON-RPC MCP handshake (`initialize` request followed by `notifications/initialized`) in `JsonRpcSubprocessEngine` before sending `tools/call`.
+- **`@microsoft/powerbi-modeling-mcp` Real Tool Mapping**: Aligned modeling adapter tool dispatch with the official Microsoft MCP server's 21 category tools (`table_operations`, `column_operations`, `measure_operations`, `relationship_operations`, `dax_query_operations`, `database_operations`), formatting calls with the required `{"request": {"operation": ...}}` payload structure and response normalization.
+- **Engine Selector Fallback Chain**: Corrected engine candidate evaluation in `EngineSelector` by adding synchronous availability verification (`is_available`), allowing graceful degradation when preferred engines or binaries are unavailable.
+
+---
+
 ## [1.11.0] — 2026-10-01
 
 ### Added
