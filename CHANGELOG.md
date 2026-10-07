@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.13.0] — 2026-10-07
+
+### Fixed
+- **Production Step Executors**: Implemented `ValidationStepExecutor`, `ModelingStepExecutor`, `ReportStepExecutor`, and `CloudStepExecutor` in `step_executor.py`, enabling complete, autonomous plan execution (`apply_plan`) across all standard intents without missing engine failures.
+- **`dry_run` Safety Verification**: Enforced that `dry_run=True` validates that the required engine is registered before reporting success, eliminating misleading false positives on unregistered engines.
+- **HTTP Multi-client Session Isolation**: Eliminated cross-tenant session leaks by preventing fallback to module-level globals when running under HTTP transport.
+- **Path Traversal Guards**: Added `validate_safe_pbip_path` to reject system paths (`/etc`, `/proc`, `/sys`) across all tools accepting filesystem paths.
+- **Data Dictionary Auto-inspection**: Connected `generate_data_dictionary` to automatically extract tables, columns, measures, and relationships from PBIP definitions (`definition.pbism`, `model.bim`) when no custom inspector is provided.
+- **E2E Fixture Resolution**: Pointed `tests/e2e/conftest.py` to `sample.pbip` with automatic fixture generation if missing.
+- **Plan Target Tracking**: Added `target` attribute to `Plan` and preserved target path in generated YAML.
+
+---
+
 ## [1.12.0] — 2026-10-06
 
 ### Fixed

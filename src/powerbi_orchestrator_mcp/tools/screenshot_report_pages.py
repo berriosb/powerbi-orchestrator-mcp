@@ -317,7 +317,12 @@ def screenshot_report_pages(
     Real bitmap PNG / PDF rendering requires the Power BI Desktop Bridge
     (Windows-only); absence is reported via ``rendering_warnings``.
     """
-    pbip = Path(pbip_path)
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        validate_safe_pbip_path,
+    )
+
+    resolved_path = validate_safe_pbip_path(pbip_path, must_exist=False)
+    pbip = resolved_path
     if not pbip.exists():
         return ScreenshotReportPagesResult(
             warnings=[f"PBIP path does not exist: {pbip_path}"],

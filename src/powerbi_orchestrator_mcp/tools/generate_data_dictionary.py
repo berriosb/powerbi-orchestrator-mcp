@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,77 @@ def _escape_mermaid(text: str) -> str:
     return text.replace('"', "'").replace("\n", " ").replace(";", ",")
 
 
+class _PbipFolderInspector:
+    def __init__(self, pbip_dir: Path) -> None:
+        self.pbip_dir = pbip_dir
+        self.tables_data: list[dict[str, Any]] = []
+        self.columns_data: dict[str, list[dict[str, Any]]] = {}
+        self.measures_data: list[dict[str, Any]] = []
+        self.relationships_data: list[dict[str, Any]] = []
+        self._load()
+
+    def _load(self) -> None:
+        candidates = (
+            list(self.pbip_dir.glob("*.Dataset/definition.pbism"))
+            + list(self.pbip_dir.glob("*.SemanticModel/definition.pbism"))
+            + list(self.pbip_dir.glob("*.Dataset/model.bim"))
+            + list(self.pbip_dir.glob("*.SemanticModel/model.bim"))
+        )
+        for cand in candidates:
+            try:
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                model = data.get("model", data)
+                for t in model.get("tables", []):
+                    tname = t.get("name", "")
+                    self.tables_data.append(
+                        {"name": tname, "description": t.get("description")}
+                    )
+                    cols = []
+                    for c in t.get("columns", []):
+                        cols.append(
+                            {
+                                "name": c.get("name", ""),
+                                "data_type": c.get("dataType", "string"),
+                                "description": c.get("description"),
+                            }
+                        )
+                    self.columns_data[tname] = cols
+                    for m in t.get("measures", []):
+                        self.measures_data.append(
+                            {
+                                "name": m.get("name", ""),
+                                "table": tname,
+                                "expression": m.get("expression", ""),
+                                "description": m.get("description"),
+                            }
+                        )
+                for r in model.get("relationships", []):
+                    self.relationships_data.append(
+                        {
+                            "from_table": r.get("fromTable", ""),
+                            "from_column": r.get("fromColumn", ""),
+                            "to_table": r.get("toTable", ""),
+                            "to_column": r.get("toColumn", ""),
+                        }
+                    )
+                if self.tables_data:
+                    return
+            except Exception:
+                pass
+
+    def list_tables(self) -> list[dict[str, Any]]:
+        return self.tables_data
+
+    def list_columns(self, table_name: str) -> list[dict[str, Any]]:
+        return self.columns_data.get(table_name, [])
+
+    def list_measures(self) -> list[dict[str, Any]]:
+        return self.measures_data
+
+    def list_relationships(self) -> list[dict[str, Any]]:
+        return self.relationships_data
+
+
 def generate_data_dictionary(
     pbip_path: str,
     output_path: str | None = None,
@@ -40,30 +112,30 @@ def generate_data_dictionary(
     inspector: Any = None,
     format: str = "markdown",  # noqa: ARG001
 ) -> DataDictionaryResult:
-    """Generate a Markdown data dictionary for a PBIP folder.
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        validate_safe_pbip_path,
+    )
 
-    For MVP, the inspector is injected (tests provide a mock; production
-    wraps the modeling engine's list_tables/list_columns/list_measures).
+    resolved_path = validate_safe_pbip_path(pbip_path, must_exist=False)
+    pbip_path = str(resolved_path)
 
-    The output includes:
-    - Mermaid ER diagram (tables + relationships).
-    - Per-table sections with column details.
-    - Coverage score (description presence).
-    - List of columns missing description (elicits user to fill in).
-    """
     if inspector is None:
-        # Without an inspector, return an empty result + warning.
-        return DataDictionaryResult(
-            markdown=(
-                "# Data Dictionary\n\n_No model data available; "
-                "pass an ``inspector`` to populate._\n"
-            ),
-            coverage_score=0.0,
-            warnings=[
-                "no inspector provided — pass modeling_engine "
-                "from production"
-            ],
-        )
+        if resolved_path.exists() and resolved_path.is_dir():
+            folder_insp = _PbipFolderInspector(resolved_path)
+            if folder_insp.list_tables():
+                inspector = folder_insp
+        if inspector is None:
+            return DataDictionaryResult(
+                markdown=(
+                    "# Data Dictionary\n\n_No model data available; "
+                    "pass an ``inspector`` to populate._\n"
+                ),
+                coverage_score=0.0,
+                warnings=[
+                    "no inspector provided — pass modeling_engine "
+                    "from production"
+                ],
+            )
 
     tables = inspector.list_tables()
     columns_by_table = {

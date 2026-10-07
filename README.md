@@ -13,16 +13,16 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.11.0 — Beta. 28 tools (`execute_dax_query` added), 89% cobertura,
+**Status:** v1.13.0 — Beta. 28 tools (`execute_dax_query` added), 89% cobertura,
 product-readiness pass (CLI, Dockerfile, examples, plugin system).
-See [release notes](./RELEASE-NOTES-v1.11.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./RELEASE-NOTES-v1.13.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
 ## Quickstart (60 segundos)
 
 ```bash
-# 1. Install from PyPI (v1.11.0).
+# 1. Install from PyPI (v1.13.0).
 pip install powerbi-orchestrator-mcp
 
 # 2. Configure your MCP client (Claude Desktop shown).
@@ -227,7 +227,7 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 (sin engines externos) o cualquier Fabric workspace (con
 `powerbi-modeling-mcp` instalado).
 
-## Estado actual (v1.11.0)
+## Estado actual (v1.13.0)
 
 - ✅ 28 tools implementadas (modelado, reportes, nube, auditoría, UX, DAX)
 - ✅ Cross-engine rollback
@@ -241,7 +241,7 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 - ✅ Publicado en PyPI: https://pypi.org/project/powerbi-orchestrator-mcp/
 - ⏳ Pendiente: tests E2E con binaries reales (`te`, `dscmd`)
 
-Ver [`RELEASE-NOTES-v1.11.0.md`](./RELEASE-NOTES-v1.11.0.md) para detalles completos.
+Ver [`RELEASE-NOTES-v1.13.0.md`](./RELEASE-NOTES-v1.13.0.md) para detalles completos.
 
 ## Licencia
 

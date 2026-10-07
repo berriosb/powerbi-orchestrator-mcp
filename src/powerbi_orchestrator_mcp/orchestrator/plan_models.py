@@ -50,6 +50,7 @@ class Plan(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: str
+    target: str = ""
     yaml: str = ""
     steps: list[PlanStep]
     rollback_steps: list[PlanStep] = Field(default_factory=list)

@@ -114,9 +114,9 @@ class PlanBuilder:
         old_path: str,
         new_path: str,
         scope: str = "report_bindings",
+        target: str = "",
         options: PlanOptions | None = None,
     ) -> Plan:
-        """Build the ``safe_rename`` plan (spec §3.2 + tools/safe-rename.md)."""
         opts = options or PlanOptions()
         self._require_nonempty("old_path", old_path)
         self._require_nonempty("new_path", new_path)
@@ -124,64 +124,88 @@ class PlanBuilder:
 
         plan_id = new_plan_id()
 
+        snapshot_args: dict[str, Any] = {"label": f"pre-rename-{plan_id}"}
+        if target:
+            snapshot_args["pbip_path"] = target
+
         snapshot_step = PlanStep(
             id=f"{plan_id}:s1",
             engine="validation",
             action="create_snapshot",
-            args={"label": f"pre-rename-{plan_id}"},
+            args=snapshot_args,
         )
+
+        model_args: dict[str, Any] = {
+            "old_path": old_path,
+            "new_name": _extract_name(new_path),
+        }
+        revert_model_args: dict[str, Any] = {
+            "old_path": new_path,
+            "new_name": _extract_name(old_path),
+        }
+        if target:
+            model_args["pbip_path"] = target
+            revert_model_args["pbip_path"] = target
 
         rename_model = PlanStep(
             id=f"{plan_id}:s2",
             engine="modeling",
             action="column.update",
-            args={"old_path": old_path, "new_name": _extract_name(new_path)},
+            args=model_args,
             depends_on=[snapshot_step.id],
             validators=["pbip_validate_model"],
             rollback_step=PlanStep(
                 id=f"{plan_id}:s2-revert",
                 engine="modeling",
                 action="column.update",
-                args={
-                    "old_path": new_path,
-                    "new_name": _extract_name(old_path),
-                },
+                args=revert_model_args,
             ),
         )
+
+        report_args: dict[str, Any] = {
+            "old_path": old_path,
+            "new_path": new_path,
+            "scope": scope,
+        }
+        revert_report_args: dict[str, Any] = {
+            "old_path": new_path,
+            "new_path": old_path,
+            "scope": scope,
+        }
+        if target:
+            report_args["pbip_path"] = target
+            revert_report_args["pbip_path"] = target
 
         propagate_bindings = PlanStep(
             id=f"{plan_id}:s3",
             engine="report",
             action="propagate_rename",
-            args={
-                "old_path": old_path,
-                "new_path": new_path,
-                "scope": scope,
-            },
+            args=report_args,
             depends_on=[rename_model.id],
             validators=["pbir_validate"],
             rollback_step=PlanStep(
                 id=f"{plan_id}:s3-revert",
                 engine="report",
                 action="propagate_rename",
-                args={
-                    "old_path": new_path,
-                    "new_path": old_path,
-                    "scope": scope,
-                },
+                args=revert_report_args,
             ),
         )
+
+        validate_args: dict[str, Any] = {}
+        if target:
+            validate_args["pbip_path"] = target
 
         validate_all = PlanStep(
             id=f"{plan_id}:s4",
             engine="validation",
             action="pbip_validate_full",
-            args={},
+            args=validate_args,
             depends_on=[propagate_bindings.id],
         )
 
         plan = Plan(
             id=plan_id,
+            target=target,
             steps=[snapshot_step, rename_model, propagate_bindings, validate_all],
             rollback_steps=[
                 rb
@@ -241,6 +265,7 @@ class PlanBuilder:
         risk = min(0.1 + 0.05 * len(checks), 0.6)
         plan = Plan(
             id=plan_id,
+            target=target,
             steps=[gather, run_checks, aggregate],
             rollback_steps=[],
             risk_score=risk,
@@ -263,7 +288,6 @@ class PlanBuilder:
         refresh_daily_hour: int = 6,
         options: PlanOptions | None = None,
     ) -> Plan:
-        """Build the ``deploy`` plan (spec §3.2 + tools/deploy-to-workspace.md)."""
         opts = options or PlanOptions()
         self._require_nonempty("pbip_path", pbip_path)
         self._require_nonempty("workspace_id", workspace_id)
@@ -278,7 +302,7 @@ class PlanBuilder:
             id=f"{plan_id}:s1",
             engine="validation",
             action="pre_deploy_check",
-            args={"profile": "standard"},
+            args={"profile": "standard", "pbip_path": pbip_path},
         )
 
         publish = PlanStep(
@@ -324,6 +348,7 @@ class PlanBuilder:
 
         plan = Plan(
             id=plan_id,
+            target=pbip_path,
             steps=[pre, publish, bind, schedule, refresh],
             rollback_steps=(
                 [publish.rollback_step] if publish.rollback_step else []
@@ -347,7 +372,6 @@ class PlanBuilder:
         queries: list[str],
         options: PlanOptions | None = None,
     ) -> Plan:
-        """Build the ``dax_regression`` plan (spec §3.2)."""
         opts = options or PlanOptions()
         self._require_nonempty("baseline_path", baseline_path)
         if not queries:
@@ -359,14 +383,14 @@ class PlanBuilder:
             id=f"{plan_id}:s1",
             engine="validation",
             action="load_baseline",
-            args={"path": baseline_path},
+            args={"path": baseline_path, "pbip_path": baseline_path},
         )
 
         exec_q = PlanStep(
             id=f"{plan_id}:s2",
             engine="modeling",
             action="execute_queries_parallel",
-            args={"queries": queries},
+            args={"queries": queries, "pbip_path": baseline_path},
             depends_on=[load.id],
         )
 
@@ -374,13 +398,14 @@ class PlanBuilder:
             id=f"{plan_id}:s3",
             engine="validation",
             action="diff_baseline",
-            args={"tolerance_pct": 0.1},
+            args={"tolerance_pct": 0.1, "pbip_path": baseline_path},
             depends_on=[exec_q.id],
         )
 
         risk = min(0.2 + 0.05 * len(queries), 0.6)
         plan = Plan(
             id=plan_id,
+            target=baseline_path,
             steps=[load, exec_q, diff],
             rollback_steps=[],
             risk_score=risk,

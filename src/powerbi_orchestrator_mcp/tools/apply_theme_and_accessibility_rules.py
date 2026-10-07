@@ -7,7 +7,6 @@ Composes WCAG auditor (find issues) + theme generator (write theme.json)
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -104,11 +103,15 @@ def apply_theme_and_accessibility_rules(
     3. Backfill alt text on visuals missing it (if requested).
     4. Re-run WCAG audit (after-score).
     """
-    pbip = Path(pbip_path)
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        validate_safe_pbip_path,
+    )
+
+    resolved_path = validate_safe_pbip_path(pbip_path, must_exist=False)
+    pbip = resolved_path
     files_changed: list[str] = []
     warnings: list[str] = []
 
-    # 1. Baseline WCAG audit.
     auditor = WcagAuditor()
     if not pbip.exists():
         return AccessibilityResult(

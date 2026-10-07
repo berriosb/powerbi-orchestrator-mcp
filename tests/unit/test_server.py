@@ -333,16 +333,23 @@ class TestApplyPlan:
 
     @pytest.mark.asyncio
     async def test_dry_run_with_no_engines_succeeds(self) -> None:
-        """Even when no real engines are registered, dry_run works via DryRunExecutor."""
+        get_default_registry().unregister("validation")
         plan_res = await plan_change(
             intent="audit",
             options={"target": "x", "checks": ["a"]},
         )
         result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
-        # The audit plan has all `validation` steps; no executor registered.
-        # Each step fails with MissingEngineExecutor → rollback kicks in
-        # but no rollback_step exists, so we get "failed" status.
         assert result.result == "failed"
+
+    @pytest.mark.asyncio
+    async def test_apply_plan_with_default_executors_succeeds(self) -> None:
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": "x", "checks": ["a"]},
+        )
+        result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+        assert result.result == "success"
+        assert len(result.executed_steps) == 3
 
 
 class ScriptedEngineExecutor:

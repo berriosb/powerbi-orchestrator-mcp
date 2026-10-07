@@ -56,12 +56,13 @@ async def audit_model_and_report(
     dax_measures: dict[str, str] | None = None,
     checks: AuditCheck | None = None,
 ) -> AuditResult:
-    """Run a composite audit (BPA + DAX lint + WCAG) on a PBIP folder.
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        validate_safe_pbip_path,
+    )
 
-    For MVP, BPA is mocked (no real te binary required); DAX lint runs
-    over the supplied measures; WCAG walks pages/*.json. The overall
-    score is a weighted average.
-    """
+    resolved_path = validate_safe_pbip_path(pbip_path, must_exist=False)
+    pbip_path = str(resolved_path)
+
     checks = checks or AuditCheck()
     findings: list[dict[str, Any]] = []
     warnings: list[str] = []

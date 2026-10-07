@@ -20,23 +20,16 @@ import pytest
 FIXTURE_PBIP_SOURCE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
-    / "load_bearing_pip"
+    / "sample.pbip"
 )
 
 
 @pytest.fixture(scope="session")
 def fixture_pbip_source() -> Path:
-    """Path to the source load-bearing PBIP fixture.
-
-    See `tests/fixtures/README.md` for the spec (4 tables, ~15
-    measures, 4 visuals, RLS, baseline WCAG, 1 intentional DAX
-    error).
-    """
     if not FIXTURE_PBIP_SOURCE.exists():
-        pytest.skip(
-            f"Fixture PBIP source not found at {FIXTURE_PBIP_SOURCE}. "
-            f"See tests/fixtures/README.md for how to generate it."
-        )
+        from tests.fixtures.generate import generate
+
+        generate(FIXTURE_PBIP_SOURCE)
     return FIXTURE_PBIP_SOURCE
 
 
