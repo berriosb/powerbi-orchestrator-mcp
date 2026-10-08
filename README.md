@@ -13,10 +13,11 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.15.0 — Beta. 28 tools (`execute_dax_query` added), 86% cobertura,
+**Status:** v1.16.0 — Beta. 28 tools (`execute_dax_query` added), 88% cobertura,
 product-readiness pass (CLI, Dockerfile, examples, plugin system).
-Write tools are safe-by-default (`dry_run=True`).
-See [release notes](./RELEASE-NOTES-v1.15.0.md) · [changelog](./CHANGELOG.md).
+Write tools are safe-by-default (`dry_run=True`); `apply_plan` supports
+per-step confirmation via `confirm_each_step`.
+See [release notes](./RELEASE-NOTES-v1.16.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 

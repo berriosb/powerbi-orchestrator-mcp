@@ -87,6 +87,22 @@ def json_blob(label: str) -> str:
 
 
 class TestCommitWorkspaceToGit:
+    def test_snapshot_failure_is_reported_not_silent_noop(self, empty_git_repo: Path) -> None:
+        """A failed snapshot must not look like an empty workspace."""
+
+        class _BrokenClient:
+            def snapshot_workspace(self, workspace_id: str) -> dict[str, dict[str, Any]]:
+                raise RuntimeError("fabric API 500")
+
+        r = commit_workspace_to_git(
+            workspace_id="ws",
+            output_repo_path=str(empty_git_repo),
+            fabric_client=_BrokenClient(),
+            dry_run=False,
+        )
+        assert any("could not snapshot workspace" in w for w in r.warnings)
+        assert any("500" in w for w in r.warnings)
+
     def test_missing_git_repo_returns_warning(self, tmp_path: Path) -> None:
         r = commit_workspace_to_git(workspace_id="ws-1", output_repo_path=str(tmp_path / "nope"))
         assert any("not a git repo" in w for w in r.warnings)
@@ -300,6 +316,28 @@ def _populate_repo_with_pbips(repo: Path, items: dict[str, str]) -> None:
 
 
 class TestSyncGitToWorkspace:
+    def test_api_failure_is_reported_not_treated_as_empty_workspace(
+        self, empty_git_repo: Path
+    ) -> None:
+        """A failed workspace listing must not read as a pristine workspace.
+
+        Returning {} silently made a broken API indistinguishable from an
+        empty target, which would deploy straight over existing content.
+        """
+
+        class _BrokenClient:
+            def list_workspace_items(self, workspace_id: str) -> list[dict[str, Any]]:
+                raise RuntimeError("fabric API 403")
+
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/SalesModel.pbip": "{}"})
+        r = sync_git_to_workspace(
+            repo_path=str(empty_git_repo),
+            workspace_id="ws",
+            fabric_client=_BrokenClient(),
+        )
+        assert any("could not list workspace items" in w for w in r.warnings)
+        assert any("403" in w for w in r.warnings)
+
     def test_missing_repo_returns_warning(self, tmp_path: Path) -> None:
         r = sync_git_to_workspace(repo_path=str(tmp_path / "nope"), workspace_id="ws")
         assert any("not a git repo" in w for w in r.warnings)

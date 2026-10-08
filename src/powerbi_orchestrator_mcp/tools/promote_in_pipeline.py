@@ -109,16 +109,29 @@ def _next_promotion_id() -> str:
     return f"prom_{uuid.uuid4().hex[:12]}"
 
 
-def _enumerate_items(pipeline_id: str, source_stage: str, fabric_client: Any) -> list[str]:
-    """Resolve items to promote; the fabric_client may return None (legacy pipeline)."""
+def _enumerate_items(
+    pipeline_id: str, source_stage: str, fabric_client: Any, warnings: list[str] | None = None
+) -> list[str]:
+    """Resolve items to promote; the fabric_client may return None (legacy pipeline).
+
+    A failure while listing pipeline items means the stage contents are
+    unknown, not empty. Swallowing it hides that the stage was never
+    inspected, so the failure is reported through ``warnings``.
+    """
     if fabric_client is None:
         # Without a real client, assume an empty pipeline.
         return []
     try:
         result = fabric_client.list_pipeline_items(pipeline_id, source_stage)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        if warnings is not None:
+            warnings.append(
+                f"could not list pipeline items for {pipeline_id}@{source_stage}: {exc}"
+            )
         return []
     if not isinstance(result, (list, tuple)):
+        if warnings is not None:
+            warnings.append(f"list_pipeline_items returned {type(result).__name__}, expected list")
         return []
     return [str(item) for item in result]
 
@@ -264,7 +277,7 @@ def promote_in_pipeline(
     custom = custom_gates or []
 
     # Resolve candidate items.
-    candidate_items = items or _enumerate_items(pipeline_id, source_stage, fabric_client)
+    candidate_items = items or _enumerate_items(pipeline_id, source_stage, fabric_client, warnings)
     if not candidate_items and not dry_run:
         warnings.append("no items to promote (pipeline may be empty or fabric_client absent)")
 

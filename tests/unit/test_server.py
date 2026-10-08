@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from powerbi_orchestrator_mcp.orchestrator import server as srv
+from powerbi_orchestrator_mcp.orchestrator.elicitation import ElicitationSchema
 from powerbi_orchestrator_mcp.orchestrator.plan_models import (
     EstimatedChanges,
     PlanStep,
@@ -324,6 +325,103 @@ class TestApplyPlan:
         result = await apply_plan(plan_id=plan_res.plan_id)
         assert result.result == "success"
         assert all(not s.get("changed_files") for s in result.executed_steps)
+
+    @pytest.mark.asyncio
+    async def test_confirm_each_step_without_context_fails_closed(self) -> None:
+        """A confirmation flag that cannot ask must NOT execute.
+
+        Failing open here would make confirm_each_step a no-op flag that
+        silently executes everything — worse than not having the flag.
+        """
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": "x", "checks": ["a"]},
+        )
+        result = await apply_plan(
+            plan_id=plan_res.plan_id,
+            dry_run=False,
+            confirm_each_step=True,
+            ctx=None,
+        )
+        assert result.result == "stopped_by_user"
+        assert result.failed_step is not None
+        assert "not run" in result.failed_step["error_message"]
+        # No step may have actually executed.
+        assert all(s.get("skipped") for s in result.executed_steps)
+
+    @pytest.mark.asyncio
+    async def test_confirm_each_step_declined_stops_and_skips_rest(self) -> None:
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": "x", "checks": ["a"]},
+        )
+
+        class _DecliningCtx:
+            async def elicit(self, **kwargs: Any) -> Any:
+                return type("R", (), {"action": "decline", "data": None})()
+
+        result = await apply_plan(
+            plan_id=plan_res.plan_id,
+            dry_run=False,
+            confirm_each_step=True,
+            ctx=_DecliningCtx(),  # type: ignore[arg-type]
+        )
+        assert result.result == "stopped_by_user"
+        assert result.failed_step is not None
+        assert "declined by user" in result.failed_step["error_message"]
+        # Every step reported as skipped; none executed.
+        assert result.executed_steps
+        assert all(s.get("skipped") for s in result.executed_steps)
+
+    @pytest.mark.asyncio
+    async def test_confirm_each_step_accepted_runs_all_steps(self) -> None:
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": "x", "checks": ["a"]},
+        )
+
+        class _ApprovingCtx:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def elicit(self, **kwargs: Any) -> Any:
+                self.prompts.append(kwargs.get("message", ""))
+                data = ElicitationSchema(response="yes")
+                return type("R", (), {"action": "accept", "data": data})()
+
+        ctx = _ApprovingCtx()
+        result = await apply_plan(
+            plan_id=plan_res.plan_id,
+            dry_run=False,
+            confirm_each_step=True,
+            ctx=ctx,  # type: ignore[arg-type]
+        )
+        assert result.result == "success"
+        assert len(ctx.prompts) == 3, "one prompt per plan step"
+        assert all(not s.get("skipped") for s in result.executed_steps)
+
+    @pytest.mark.asyncio
+    async def test_confirm_each_step_non_yes_answer_is_not_approval(self) -> None:
+        """A vague answer must not be read as consent."""
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": "x", "checks": ["a"]},
+        )
+
+        class _VagueCtx:
+            async def elicit(self, **kwargs: Any) -> Any:
+                data = ElicitationSchema(response="maybe?")
+                return type("R", (), {"action": "accept", "data": data})()
+
+        result = await apply_plan(
+            plan_id=plan_res.plan_id,
+            dry_run=False,
+            confirm_each_step=True,
+            ctx=_VagueCtx(),  # type: ignore[arg-type]
+        )
+        assert result.result == "stopped_by_user"
+        assert result.failed_step is not None
+        assert "not an explicit yes" in result.failed_step["error_message"]
 
     @pytest.mark.asyncio
     async def test_unknown_plan_id_returns_failed(self) -> None:

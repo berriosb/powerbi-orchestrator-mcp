@@ -77,17 +77,29 @@ class ElicitationRateLimitError(Exception):
 async def elicit(
     ctx: Context[Any, Any, Any],
     request: ElicitationRequest,
+    *,
+    bypass_rate_limit: bool = False,
 ) -> ElicitationResponse:
     """Elicit user input via MCP 2025-06-18.
 
     Args:
         ctx: The MCP Context (from tool function).
         request: The elicitation request with question, choices, etc.
+        bypass_rate_limit: Skip the inter-elicitation cooldown. Use ONLY when
+            the user is already in a live confirmation loop (e.g. approving
+            each step of a running plan), where the cooldown would stall an
+            interactive session and every prompt is answerable.
 
     Returns:
         ElicitationResponse with accepted status and values.
     """
-    _check_rate_limit()
+    if bypass_rate_limit:
+        # Advance the clock so a preceding rate-limited elicitation does not
+        # penalise this one.
+        global _last_elicit_time  # noqa: PLW0603
+        _last_elicit_time = time.monotonic()
+    else:
+        _check_rate_limit()
 
     message = request.question
     if request.choices:

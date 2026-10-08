@@ -42,6 +42,29 @@ class _FabricClientStub:
 
 
 class TestPromoteInPipeline:
+    def test_api_failure_is_reported_not_silently_empty(self) -> None:
+        """A failed item listing must not look like an empty pipeline.
+
+        Swallowing the exception made a broken API indistinguishable from a
+        pipeline with nothing in it.
+        """
+
+        class _BrokenClient:
+            def list_pipeline_items(self, pipeline_id: str, source_stage: str) -> list[str]:
+                raise RuntimeError("fabric API 503")
+
+        r = promote_in_pipeline("pipe", fabric_client=_BrokenClient())
+        assert any("could not list pipeline items" in w for w in r.warnings)
+        assert any("503" in w for w in r.warnings)
+
+    def test_non_list_response_is_reported(self) -> None:
+        class _BadTypeClient:
+            def list_pipeline_items(self, pipeline_id: str, source_stage: str) -> object:
+                return {"not": "a list"}
+
+        r = promote_in_pipeline("pipe", fabric_client=_BadTypeClient())
+        assert any("expected list" in w for w in r.warnings)
+
     def test_defaults_to_dry_run(self) -> None:
         """Safety default: promotion must not execute without opt-in.
 
