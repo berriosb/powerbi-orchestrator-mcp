@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "powerbi-orchestrator-mcp"
-version = "1.14.2"
+version = "1.15.0"
 description = "High-level orchestration MCP server for Power BI and Microsoft Fabric"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -51,6 +51,7 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.10.0",
     "types-pyyaml>=6.0.12",
+    "pip-audit>=2.7.0",
 ]
 
 [project.scripts]

@@ -122,9 +122,7 @@ class DaxRegressionRunner:
         """True if no diff has sample entries (i.e. all passed)."""
         return all(not d.sample_diff for d in diffs)
 
-    def _compare(
-        self, query: BaselineQuery, actual_rows: list[dict[str, Any]]
-    ) -> QueryDiff:
+    def _compare(self, query: BaselineQuery, actual_rows: list[dict[str, Any]]) -> QueryDiff:
         """Compare actual vs expected with tolerance."""
         expected = query.expected_rows
         if len(expected) != len(actual_rows):
@@ -136,8 +134,7 @@ class DaxRegressionRunner:
                 actual_row_count=len(actual_rows),
                 tolerance_pct=self._tolerance,
                 diff_summary=(
-                    f"row count mismatch: expected {len(expected)}, "
-                    f"got {len(actual_rows)}"
+                    f"row count mismatch: expected {len(expected)}, got {len(actual_rows)}"
                 ),
                 sample_diff=actual_rows[:5],
             )
@@ -162,9 +159,7 @@ class DaxRegressionRunner:
             expected_row_count=len(expected),
             actual_row_count=len(actual_rows),
             tolerance_pct=self._tolerance,
-            diff_summary=(
-                "OK" if not sample else f"{len(sample)} value diff(s)"
-            ),
+            diff_summary=("OK" if not sample else f"{len(sample)} value diff(s)"),
             sample_diff=sample[:5],
         )
 

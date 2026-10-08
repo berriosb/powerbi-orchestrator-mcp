@@ -83,10 +83,12 @@ class TestDiffModels:
             "relationships": [],
         }
         result = diff_models("A", "B", inspector=_inspector_with(a))
+
         # Override to use the OTHER snapshot — but with one snapshot we
         # only see one side of the diff. Use a smarter inspector.
         def inspector2(path: str) -> dict[str, Any]:
             return a if "A" in path else b
+
         result = diff_models("modelA", "modelB", inspector=inspector2)
         assert result.total_changes == 2
         assert result.added_objects == 1
@@ -101,7 +103,7 @@ class TestDiffModels:
 class TestRunDaxRegression:
     async def test_creates_baseline_when_missing(self, tmp_path: Path) -> None:
         baseline = tmp_path / "baseline.json"
-        queries = [{"name": "Q1", "query": "EVALUATE ROW(\"x\", 1)"}]
+        queries = [{"name": "Q1", "query": 'EVALUATE ROW("x", 1)'}]
         result = await run_dax_regression(
             baseline_path=str(baseline),
             queries=queries,
@@ -110,9 +112,7 @@ class TestRunDaxRegression:
         assert result.passed is True
         assert result.total_queries == 0  # baseline created, no comparison
 
-    async def test_existing_baseline_passes_with_injected_executor(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_existing_baseline_passes_with_injected_executor(self, tmp_path: Path) -> None:
         baseline = tmp_path / "baseline.json"
         baseline.write_text(
             json.dumps(
@@ -122,7 +122,7 @@ class TestRunDaxRegression:
                     "queries": [
                         {
                             "name": "Q1",
-                            "query": "EVALUATE ROW(\"x\", 100)",
+                            "query": 'EVALUATE ROW("x", 100)',
                             "expected_rows": [{"x": 100}],
                         }
                     ],
@@ -139,9 +139,7 @@ class TestRunDaxRegression:
         )
         assert result.passed is True
 
-    async def test_existing_baseline_fails_on_drift(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_existing_baseline_fails_on_drift(self, tmp_path: Path) -> None:
         baseline = tmp_path / "baseline.json"
         baseline.write_text(
             json.dumps(
@@ -151,7 +149,7 @@ class TestRunDaxRegression:
                     "queries": [
                         {
                             "name": "Q1",
-                            "query": "EVALUATE ROW(\"x\", 100)",
+                            "query": 'EVALUATE ROW("x", 100)',
                             "expected_rows": [{"x": 100}],
                         }
                     ],
@@ -240,9 +238,7 @@ class TestAuditModelAndReport:
             },
         )
         assert result.dax_lint_findings_count >= 1
-        assert any(
-            f["rule_id"] == "BP_DIVIDE_VS_SLASH" for f in result.findings
-        )
+        assert any(f["rule_id"] == "BP_DIVIDE_VS_SLASH" for f in result.findings)
 
     async def test_warns_on_missing_path(self, tmp_path: Path) -> None:
         result = await audit_model_and_report(
@@ -365,9 +361,7 @@ def pbip_with_pages(tmp_path: Path) -> Path:
                         "altText": "Total Sales by Region for 2024 Q4",
                         "visual": {
                             "$type": "card",
-                            "projections": {
-                                "Values": [{"queryRef": "Sales[Total Sales]"}]
-                            },
+                            "projections": {"Values": [{"queryRef": "Sales[Total Sales]"}]},
                         },
                     },
                     {
@@ -413,9 +407,7 @@ class TestApplyThemeAndAccessibility:
         assert result.alt_texts_added == 2
         # After backfill, WCAG score should improve (still not 100%
         # because backfill uses placeholder template, but warnings go away).
-        page_path = (
-            pbip_with_pages / "test.Report" / "pages" / "Overview" / "page.json"
-        )
+        page_path = pbip_with_pages / "test.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_path.read_text(encoding="utf-8"))
         for vc in data["visualContainers"]:
             assert vc.get("altText"), f"visual {vc['id']} still missing alt"
@@ -454,9 +446,7 @@ class TestDeployToWorkspace:
         assert result.publish_ok is False
         assert any("gate_blocked" in e for e in result.errors)
 
-    async def test_passes_gate_and_publishes_in_mock(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_passes_gate_and_publishes_in_mock(self, tmp_path: Path) -> None:
         from powerbi_orchestrator_mcp.tools.deploy_to_workspace import (
             deploy_to_workspace,
         )
@@ -485,9 +475,7 @@ class TestDeployToWorkspace:
         refresh_dataset (no TODOs / fake successes)."""
         import importlib
 
-        dt_module = importlib.import_module(
-            "powerbi_orchestrator_mcp.tools.deploy_to_workspace"
-        )
+        dt_module = importlib.import_module("powerbi_orchestrator_mcp.tools.deploy_to_workspace")
         deploy_to_workspace = dt_module.deploy_to_workspace
 
         captured: dict[str, Any] = {}
@@ -496,7 +484,9 @@ class TestDeployToWorkspace:
             def __init__(self, *_a: Any, **_kw: Any) -> None:
                 pass
 
-            async def create_item(self, ws_id: str, display_name: str, item_type: str, **_kw: Any) -> dict[str, Any]:
+            async def create_item(
+                self, ws_id: str, display_name: str, item_type: str, **_kw: Any
+            ) -> dict[str, Any]:
                 captured["create"] = {
                     "ws": ws_id,
                     "name": display_name,
@@ -517,9 +507,7 @@ class TestDeployToWorkspace:
                 captured["closed"] = True
 
         monkeypatch.setattr(dt_module, "FabricClient", FakeClient)
-        monkeypatch.setattr(
-            dt_module, "FabricCredential", lambda *_a, **_kw: object()
-        )
+        monkeypatch.setattr(dt_module, "FabricCredential", lambda *_a, **_kw: object())
 
         pbip = tmp_path / "sales.pbip"
         pbip.mkdir()
@@ -553,9 +541,7 @@ class TestDeployToWorkspace:
         schedule + refresh (which may still succeed)."""
         import importlib
 
-        dt_module = importlib.import_module(
-            "powerbi_orchestrator_mcp.tools.deploy_to_workspace"
-        )
+        dt_module = importlib.import_module("powerbi_orchestrator_mcp.tools.deploy_to_workspace")
         deploy_to_workspace = dt_module.deploy_to_workspace
 
         class FakeClient:
@@ -575,9 +561,7 @@ class TestDeployToWorkspace:
                 pass
 
         monkeypatch.setattr(dt_module, "FabricClient", FakeClient)
-        monkeypatch.setattr(
-            dt_module, "FabricCredential", lambda *_a, **_kw: object()
-        )
+        monkeypatch.setattr(dt_module, "FabricCredential", lambda *_a, **_kw: object())
 
         pbip = tmp_path / "sales.pbip"
         pbip.mkdir()
@@ -600,9 +584,7 @@ class TestDeployToWorkspace:
     ) -> None:
         import importlib
 
-        dt_module = importlib.import_module(
-            "powerbi_orchestrator_mcp.tools.deploy_to_workspace"
-        )
+        dt_module = importlib.import_module("powerbi_orchestrator_mcp.tools.deploy_to_workspace")
         deploy_to_workspace = dt_module.deploy_to_workspace
         captured: dict[str, Any] = {}
 
@@ -631,9 +613,7 @@ class TestDeployToWorkspace:
                 }
                 return {}
 
-            async def refresh_dataset(
-                self, ws_id: str, ds_id: str, **_kw: Any
-            ) -> dict[str, Any]:
+            async def refresh_dataset(self, ws_id: str, ds_id: str, **_kw: Any) -> dict[str, Any]:
                 captured["refresh"] = {"ws_id": ws_id, "ds_id": ds_id}
                 return {"refreshId": "rf-100"}
 
@@ -641,9 +621,7 @@ class TestDeployToWorkspace:
                 pass
 
         monkeypatch.setattr(dt_module, "FabricClient", FakeClient)
-        monkeypatch.setattr(
-            dt_module, "FabricCredential", lambda *_a, **_kw: object()
-        )
+        monkeypatch.setattr(dt_module, "FabricCredential", lambda *_a, **_kw: object())
 
         pbip = tmp_path / "sales.pbip"
         pbip.mkdir()

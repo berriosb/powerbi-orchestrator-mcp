@@ -129,9 +129,7 @@ def _anti_rec_penalty(entry: VisualTypeEntry, input: SuggesterInput) -> float:
     penalty = 0.0
     rules = _ANTI_REC_PENALTIES.get(entry.type_id, [])
     for rule_code, _msg in rules:
-        if rule_code == "card_high" and (
-            input.cardinality is not None and input.cardinality > 5
-        ):
+        if rule_code == "card_high" and (input.cardinality is not None and input.cardinality > 5):
             penalty += 1.5
         elif rule_code == "with_time" and input.has_time:
             penalty += 2.0
@@ -145,10 +143,7 @@ def _build_justification(entry: VisualTypeEntry, input: SuggesterInput) -> str:
     if input.cardinality is not None:
         lo, hi = entry.cardinality_range
         if lo <= input.cardinality <= hi:
-            parts.append(
-                f"Cardinality ({input.cardinality}) fits in range "
-                f"({lo}-{hi})."
-            )
+            parts.append(f"Cardinality ({input.cardinality}) fits in range ({lo}-{hi}).")
         else:
             parts.append(
                 f"Cardinality ({input.cardinality}) is outside the "
@@ -185,10 +180,7 @@ def suggest_many(
     inputs: list[SuggesterInput], max_alternatives: int = 3
 ) -> dict[str, list[VisualSuggestion]]:
     """Suggest visuals for many KPIs; returns {kpi_name: suggestions}."""
-    return {
-        inp.name: suggest(inp, max_alternatives=max_alternatives)
-        for inp in inputs
-    }
+    return {inp.name: suggest(inp, max_alternatives=max_alternatives) for inp in inputs}
 
 
 __all__ = [

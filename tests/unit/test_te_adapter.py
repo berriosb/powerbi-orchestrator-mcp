@@ -32,11 +32,7 @@ class TestInMemoryModelingAdapterBasics:
         from powerbi_orchestrator_mcp.orchestrator.context import Target
 
         a = InMemoryModelingAdapter()
-        handle = asyncio.run(
-            a.connect(
-                Target(target_type="pbip", target_ref="/tmp/foo.pbip")
-            )
-        )
+        handle = asyncio.run(a.connect(Target(target_type="pbip", target_ref="/tmp/foo.pbip")))
         assert handle.target_ref == "/tmp/foo.pbip"
 
 
@@ -60,9 +56,7 @@ class TestInMemoryModelingAdapterDiskMutations:
         model_file.write_text(json.dumps(model_data), encoding="utf-8")
 
         adapter = InMemoryModelingAdapter()
-        handle = asyncio.run(
-            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
-        )
+        handle = asyncio.run(adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path))))
         res = asyncio.run(
             adapter.update_column(
                 handle,
@@ -88,9 +82,7 @@ class TestInMemoryModelingAdapterDiskMutations:
                     {
                         "name": "FactSales",
                         "columns": [{"name": "Amount"}],
-                        "measures": [
-                            {"name": "Total", "expression": "SUM(FactSales[Amount])"}
-                        ],
+                        "measures": [{"name": "Total", "expression": "SUM(FactSales[Amount])"}],
                     }
                 ],
                 "relationships": [
@@ -106,9 +98,7 @@ class TestInMemoryModelingAdapterDiskMutations:
         model_file.write_text(json.dumps(model_data), encoding="utf-8")
 
         adapter = InMemoryModelingAdapter()
-        handle = asyncio.run(
-            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
-        )
+        handle = asyncio.run(adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path))))
         res = asyncio.run(
             adapter.update_column(
                 handle,
@@ -135,9 +125,7 @@ class TestInMemoryModelingAdapterDiskMutations:
         model_file.write_text(json.dumps(model_data), encoding="utf-8")
 
         adapter = InMemoryModelingAdapter()
-        handle = asyncio.run(
-            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
-        )
+        handle = asyncio.run(adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path))))
         res = asyncio.run(
             adapter.update_measure(
                 handle,
@@ -160,12 +148,8 @@ class TestInMemoryModelingAdapterDiskMutations:
         model_file.write_text(json.dumps(model_data), encoding="utf-8")
 
         adapter = InMemoryModelingAdapter()
-        handle = asyncio.run(
-            adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path)))
-        )
-        res = asyncio.run(
-            adapter.delete_measure(handle, table="Sales", measure="MissingMeasure")
-        )
+        handle = asyncio.run(adapter.connect(Target(target_type="pbip", target_ref=str(tmp_path))))
+        res = asyncio.run(adapter.delete_measure(handle, table="Sales", measure="MissingMeasure"))
         assert res.success is False
         assert res.error_message is not None
         assert "no measure named 'MissingMeasure'" in res.error_message
@@ -200,9 +184,7 @@ class TestInMemoryModelingAdapterSpecOps:
             ),
         ]
         res = asyncio.run(
-            a.refactor_to_calculation_groups(
-                pbip_path="/tmp/x.pbip", spec=spec, auto_apply=True
-            )
+            a.refactor_to_calculation_groups(pbip_path="/tmp/x.pbip", spec=spec, auto_apply=True)
         )
         assert isinstance(res, RefactorCalcGroupsResult)
         assert res.success is True
@@ -222,11 +204,7 @@ class TestInMemoryModelingAdapterSpecOps:
         )
         from powerbi_orchestrator_mcp.orchestrator.context import Target
 
-        handle = asyncio.run(
-            a.connect(
-                Target(target_type="pbip", target_ref="/tmp/x.pbip")
-            )
-        )
+        handle = asyncio.run(a.connect(Target(target_type="pbip", target_ref="/tmp/x.pbip")))
         tables = asyncio.run(a.list_tables(handle))
         names = {t.name for t in tables}
         assert "Foo" in names
@@ -262,9 +240,7 @@ tables:
         # But we still keep `output_pbip_path` for callers.
         assert result.pbip_path == str(tmp_path / "demo.pbip")
 
-    def test_create_with_engine_failure_records_warning(
-        self, tmp_path
-    ) -> None:
+    def test_create_with_engine_failure_records_warning(self, tmp_path) -> None:
         from powerbi_orchestrator_mcp.tools.create_semantic_model_from_schema import (
             create_semantic_model_from_schema,
         )
@@ -279,9 +255,7 @@ tables:
                 return "x"
 
             async def apply_model_spec(self, **kw):
-                return ApplyModelSpecResult(
-                    success=False, error_message="binary missing"
-                )
+                return ApplyModelSpecResult(success=False, error_message="binary missing")
 
         yaml_spec = """\
 name: d
@@ -299,9 +273,7 @@ tables:
         assert result.validation_passed is False
         assert any("binary missing" in w for w in result.warnings)
 
-    def test_create_without_engine_uses_string_template_renderer(
-        self, tmp_path
-    ) -> None:
+    def test_create_without_engine_uses_string_template_renderer(self, tmp_path) -> None:
         from powerbi_orchestrator_mcp.tools.create_semantic_model_from_schema import (
             create_semantic_model_from_schema,
         )
@@ -324,9 +296,7 @@ tables:
 
 
 class TestRefactorDelegatesToEngine:
-    def test_refactor_with_te_engine_merges_remappings(
-        self, tmp_path
-    ) -> None:
+    def test_refactor_with_te_engine_merges_remappings(self, tmp_path) -> None:
         """When `measure_writer` is a TE adapter, the tool delegates."""
         from powerbi_orchestrator_mcp.tools.refactor_to_calculation_groups import (
             refactor_to_calculation_groups,
@@ -395,9 +365,7 @@ class TestTabularEditorAdapterSkeleton:
         assert a.name == "te"
         assert a.version == "stub-0.1.0"
 
-    def test_apply_model_spec_without_subprocess(
-        self, tmp_path
-    ) -> None:
+    def test_apply_model_spec_without_subprocess(self, tmp_path) -> None:
         # Without a real TE binary the stub path returns the
         # would-be-written file path.
         a = TabularEditorAdapter()

@@ -91,9 +91,7 @@ async def powerbi_health(
             HealthCheck(
                 name=f"engine.{name}",
                 ok=ok,
-                detail=None
-                if ok
-                else (status.reason_unavailable or "unknown"),
+                detail=None if ok else (status.reason_unavailable or "unknown"),
             )
         )
         engine_dict[name] = {
@@ -105,8 +103,7 @@ async def powerbi_health(
             warnings.append(f"engine {name!r} unavailable")
             if name == "powerbi-modeling-mcp":
                 remediation.append(
-                    "Install powerbi-modeling-mcp: "
-                    "`npx -y @microsoft/powerbi-modeling-mcp`"
+                    "Install powerbi-modeling-mcp: `npx -y @microsoft/powerbi-modeling-mcp`"
                 )
             elif name == "te":
                 remediation.append(
@@ -114,10 +111,7 @@ async def powerbi_health(
                     "https://github.com/TabularEditor/TabularEditor/releases"
                 )
             elif name == "dscmd":
-                remediation.append(
-                    "Install DAX Studio CLI (Windows-only): "
-                    "https://daxstudio.org/"
-                )
+                remediation.append("Install DAX Studio CLI (Windows-only): https://daxstudio.org/")
 
     # Plan store.
     plan_store = PlanStore()
@@ -137,9 +131,7 @@ async def powerbi_health(
 
         conn = sqlite3.connect(str(EXEC_DB))
         try:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM plan_executions"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM plan_executions").fetchone()
             exec_count = int(row[0]) if row else 0
         finally:
             conn.close()

@@ -99,13 +99,9 @@ class TestLoadPlugins:
         assert len(plugin.gate_profiles) == 1
         assert plugin.gate_profiles[0].name == "custom-strict"
         assert len(plugin.bpa_rules) == 1
-        assert plugin.bpa_rules[0]["rule_id"] == (
-            "CUSTOM_NO_LEADING_UNDERSCORE"
-        )
+        assert plugin.bpa_rules[0]["rule_id"] == ("CUSTOM_NO_LEADING_UNDERSCORE")
 
-    def test_broken_plugin_does_not_take_others_down(
-        self, tmp_path: Path
-    ) -> None:
+    def test_broken_plugin_does_not_take_others_down(self, tmp_path: Path) -> None:
         _write_plugin(tmp_path, "good", VALID_PLUGIN)
         _write_plugin(tmp_path, "bad", BROKEN_PLUGIN)
         registry = load_plugins(plugin_dir=tmp_path)
@@ -121,15 +117,11 @@ class TestLoadPlugins:
         _write_plugin(tmp_path, "custom_rules", VALID_PLUGIN)
         registry = load_plugins(plugin_dir=tmp_path)
         assert len(registry.loaded) == 1
-        assert all(
-            p.name != "__init__" for p in registry.loaded
-        )
+        assert all(p.name != "__init__" for p in registry.loaded)
 
 
 class TestInvalidBpaRules:
-    def test_missing_rule_id_caught(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_rule_id_caught(self, tmp_path: Path) -> None:
         bad = """
 from powerbi_orchestrator_mcp.validation.pre_deploy_gate import GateProfile
 GATE_PROFILES = []
@@ -143,9 +135,7 @@ BPA_RULES = [
         assert len(registry.errors) == 1
         assert "rule_id" in registry.errors[0].error
 
-    def test_non_callable_fn_caught(
-        self, tmp_path: Path
-    ) -> None:
+    def test_non_callable_fn_caught(self, tmp_path: Path) -> None:
         bad = """
 GATE_PROFILES = []
 BPA_RULES = [
@@ -158,9 +148,7 @@ BPA_RULES = [
         assert len(registry.errors) == 1
         assert "callable" in registry.errors[0].error
 
-    def test_wrong_gate_profile_type_caught(
-        self, tmp_path: Path
-    ) -> None:
+    def test_wrong_gate_profile_type_caught(self, tmp_path: Path) -> None:
         bad = """
 GATE_PROFILES = [{"not": "a GateProfile"}]
 BPA_RULES = []
@@ -187,9 +175,7 @@ class TestMergeGateProfiles:
                 )
             ]
         )
-        merged = merge_gate_profiles(
-            registry, dict(BUILTIN_PROFILES)
-        )
+        merged = merge_gate_profiles(registry, dict(BUILTIN_PROFILES))
         # The plugin overrode 'standard'.
         assert merged["standard"].description == "overridden"
         # Other builtins are still there.
@@ -205,9 +191,7 @@ class TestMergeGateProfiles:
 class TestPluginRuleInvocation:
     """Exercise the loaded callable end-to-end on a synthetic model."""
 
-    def test_rule_fn_returns_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rule_fn_returns_findings(self, tmp_path: Path) -> None:
         _write_plugin(tmp_path, "custom_rules", VALID_PLUGIN)
         registry = load_plugins(plugin_dir=tmp_path)
         assert len(registry.loaded) == 1
@@ -226,7 +210,5 @@ class TestPluginRuleInvocation:
         }
         findings = rule["fn"](model_state)
         assert len(findings) == 1
-        assert findings[0]["rule_id"] == (
-            "CUSTOM_NO_LEADING_UNDERSCORE"
-        )
+        assert findings[0]["rule_id"] == ("CUSTOM_NO_LEADING_UNDERSCORE")
         assert findings[0]["object_name"] == "Sales[_internal]"

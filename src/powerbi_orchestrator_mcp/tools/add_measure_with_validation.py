@@ -27,7 +27,8 @@ class AddMeasureWithValidation(BaseModel):
     description: str | None = None
     is_hidden: bool = False
     fail_on_severity: str = "warning"  # error | warning | info
-    dry_run: bool = False
+    # Safety default: writes require an explicit dry_run=False.
+    dry_run: bool = True
     runtime_check: bool = False
     # In production, the modeling engine is wired via the orchestrator's
     # step_executor registry. Tests inject `measure_writer` (a callable
@@ -49,7 +50,7 @@ def add_measure_with_validation(
     description: str | None = None,
     is_hidden: bool = False,
     fail_on_severity: str = "warning",
-    dry_run: bool = False,
+    dry_run: bool = True,
     runtime_check: bool = False,
     measure_writer: Any = None,
 ) -> dict[str, Any]:
@@ -61,8 +62,7 @@ def add_measure_with_validation(
     """
     if fail_on_severity not in SEVERITY_ORDER:
         raise ValueError(
-            f"fail_on_severity must be one of {sorted(SEVERITY_ORDER)}, "
-            f"got {fail_on_severity!r}"
+            f"fail_on_severity must be one of {sorted(SEVERITY_ORDER)}, got {fail_on_severity!r}"
         )
 
     # 1. Lint.
@@ -83,11 +83,7 @@ def add_measure_with_validation(
 
     # 2. Gate on severity.
     threshold = SEVERITY_ORDER[fail_on_severity]
-    blocking = [
-        f
-        for f in lint_findings
-        if SEVERITY_ORDER.get(f["severity"], 0) >= threshold
-    ]
+    blocking = [f for f in lint_findings if SEVERITY_ORDER.get(f["severity"], 0) >= threshold]
 
     if blocking and not dry_run:
         return {
@@ -97,8 +93,7 @@ def add_measure_with_validation(
             "runtime_check": {"ran": False},
             "changed_files": [],
             "error_message": (
-                f"lint found {len(blocking)} blocking finding(s) at "
-                f"severity ≥ {fail_on_severity}"
+                f"lint found {len(blocking)} blocking finding(s) at severity ≥ {fail_on_severity}"
             ),
             "dry_run": False,
         }
@@ -111,27 +106,27 @@ def add_measure_with_validation(
             "runtime_check": {"ran": False},
             "changed_files": [],
             "error_message": (
-                f"dry-run: {len(blocking)} blocking finding(s)"
-                if blocking
-                else None
+                f"dry-run: {len(blocking)} blocking finding(s)" if blocking else None
             ),
             "dry_run": True,
         }
 
     # 3. Write via injected measure_writer.
     if measure_writer is None:
-        # Without a writer, we can't actually persist — return lint result
-        # only. This is the unit-test path; production wires the modeling
-        # engine.
+        # No writer wired: we cannot persist anything. Report FAILURE —
+        # returning success=True here would tell the caller (and any LLM
+        # driving this tool) that the measure was created when nothing was
+        # written to disk.
         return {
-            "success": True,  # lint passed
+            "success": False,
             "measure_name": measure_name,
             "lint_findings": lint_findings,
             "runtime_check": {"ran": False},
             "changed_files": [],
             "error_message": (
-                "no measure_writer provided; measure NOT persisted "
-                "(test path)"
+                "no measure_writer available; measure was NOT persisted. "
+                "Lint passed but no engine is wired for this target — "
+                "use dry_run=True or connect a modeling engine first."
             ),
             "dry_run": False,
         }
@@ -160,12 +155,19 @@ def add_measure_with_validation(
         }
 
     # 4. Optional runtime check (best-effort).
-    runtime = {"ran": False}
+    # `ran` is only True when something actually executed. Reporting
+    # ran=True alongside an "unsupported" error would read as "validation
+    # ran and failed" to any caller — including an LLM — when in fact no
+    # engine was ever invoked.
+    runtime: dict[str, Any] = {"ran": False, "supported": False}
     if runtime_check:
         runtime = {
-            "ran": True,
-            "parsed_ok": False,
-            "error": "runtime_check requires modeling engine integration (v2)",  # type: ignore[dict-item]
+            "ran": False,
+            "supported": False,
+            "error": (
+                "runtime_check is not supported: no live engine is wired "
+                "for this target (requires modeling engine integration)"
+            ),
         }
 
     return {

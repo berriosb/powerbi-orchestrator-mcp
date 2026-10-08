@@ -51,9 +51,7 @@ def pbip_dir(tmp_path: Path) -> Path:
     """Create a minimal PBIP folder with a page that references a column."""
     pbip_root = tmp_path / "sample.pbip"
     pbip_root.mkdir()
-    (pbip_root / "sample.pbip").write_text(
-        json.dumps({"version": "1.0"}), encoding="utf-8"
-    )
+    (pbip_root / "sample.pbip").write_text(json.dumps({"version": "1.0"}), encoding="utf-8")
     report_dir = pbip_root / "sample.Report"
     report_dir.mkdir()
     (report_dir / "report.json").write_text("{}", encoding="utf-8")
@@ -151,7 +149,6 @@ def _register_engines(
                         changed_files=result.changed_files,
                     )
                 if action == "snapshot":
-
                     handle = await self._eng.snapshot(conn, step.args["label"])
                     return StepOutcome(
                         success=True,
@@ -253,12 +250,8 @@ class TestSafeRenameEndToEnd:
     ) -> None:
         """Build a plan, mock modeling, run report propagate, verify PBIR changed."""
         modeling_responses = {
-            "column_operations/update": {
-                "changed_files": ["sample.Dataset/definition.tmdl"]
-            },
-            "database_operations/export_tmdl": {
-                "path": "/tmp/snap.tmdl"
-            },
+            "column_operations/update": {"changed_files": ["sample.Dataset/definition.tmdl"]},
+            "database_operations/export_tmdl": {"path": "/tmp/snap.tmdl"},
         }
         modeling, report = _register_engines(modeling_responses)
 
@@ -287,9 +280,7 @@ class TestSafeRenameEndToEnd:
         assert all(o.success for o in executed), [o.error_message for o in executed]
 
         # The PBIR file should now reference CustomerKey instead of Customer.ID.
-        page_json = (
-            pbip_dir / "sample.Report" / "pages" / "Overview" / "page.json"
-        )
+        page_json = pbip_dir / "sample.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text())
         page_str = json.dumps(data)
         assert "CustomerKey" in page_str
@@ -314,9 +305,7 @@ class TestSafeRenameEndToEnd:
         """If propagate_rename succeeds but a later step fails, rollback."""
         # Modeling succeeds; snapshot succeeds.
         modeling_responses = {
-            "column_operations/update": {
-                "changed_files": ["sample.Dataset/definition.tmdl"]
-            },
+            "column_operations/update": {"changed_files": ["sample.Dataset/definition.tmdl"]},
             "database_operations/export_tmdl": {"path": "/tmp/snap.tmdl"},
         }
         _register_engines(modeling_responses)
@@ -416,9 +405,7 @@ class TestSafeRenameEndToEnd:
         assert len(rb_result.failed_rollbacks) == 0
 
         # The PBIR file should be back to "Customer[ID]" (original).
-        page_json = (
-            pbip_dir / "sample.Report" / "pages" / "Overview" / "page.json"
-        )
+        page_json = pbip_dir / "sample.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text())
         page_str = json.dumps(data)
         assert "Customer[ID]" in page_str

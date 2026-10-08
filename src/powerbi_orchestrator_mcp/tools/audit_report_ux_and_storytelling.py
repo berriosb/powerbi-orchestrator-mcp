@@ -232,8 +232,7 @@ def _check_density(ctx: PageContext, findings: list[UxFinding]) -> float:
                 f"{ctx.max_visuals}); consider splitting"
             ),
             suggestion=(
-                "Split into multiple drill-through pages, or move secondary "
-                "details to a tooltip"
+                "Split into multiple drill-through pages, or move secondary details to a tooltip"
             ),
             auto_fixable=False,
         )
@@ -276,8 +275,7 @@ def _check_narrative(ctx: PageContext, findings: list[UxFinding]) -> float:
                 f"(y={int(first_kpi_y)}); broken narrative flow"
             ),
             suggestion=(
-                "Move KPIs/cards to the top of the page; tables/matrices "
-                "go below summaries"
+                "Move KPIs/cards to the top of the page; tables/matrices go below summaries"
             ),
             auto_fixable=False,
         )
@@ -303,9 +301,7 @@ def _check_mobile(ctx: PageContext, findings: list[UxFinding]) -> float:
                     f"Page has {len(ctx.visuals)} visuals; mobile rendering "
                     "will be cramped (>4 stacked)"
                 ),
-                suggestion=(
-                    "Reduce to <=4 visuals OR enable mobileLayout with proper gaps"
-                ),
+                suggestion=("Reduce to <=4 visuals OR enable mobileLayout with proper gaps"),
                 auto_fixable=True,
             )
         )
@@ -313,17 +309,11 @@ def _check_mobile(ctx: PageContext, findings: list[UxFinding]) -> float:
     return score
 
 
-def _check_cohesion(
-    ctx: PageContext, audience: str, findings: list[UxFinding]
-) -> float:
+def _check_cohesion(ctx: PageContext, audience: str, findings: list[UxFinding]) -> float:
     """Score 0-100 for visual-style cohesion."""
-    vtypes = [
-        v.get("visual", {}).get("$type", "unknown") for v in ctx.visuals
-    ]
+    vtypes = [v.get("visual", {}).get("$type", "unknown") for v in ctx.visuals]
     unknown_count = sum(1 for v in vtypes if v == "unknown")
-    style_count = sum(
-        1 for v in vtypes if any(v in s for s in _VISUAL_STYLE_BUCKETS.values())
-    )
+    style_count = sum(1 for v in vtypes if any(v in s for s in _VISUAL_STYLE_BUCKETS.values()))
     if not vtypes:
         return 100.0
     if unknown_count > 0:
@@ -334,12 +324,10 @@ def _check_cohesion(
                 severity="info",
                 location=f"{unknown_count} visuals",
                 message=(
-                    f"{unknown_count} visual(s) use an unknown $type; "
-                    "cohesion check incomplete"
+                    f"{unknown_count} visual(s) use an unknown $type; cohesion check incomplete"
                 ),
                 suggestion=(
-                    "Use native visuals from the viz/visual_registry catalog "
-                    "where possible"
+                    "Use native visuals from the viz/visual_registry catalog where possible"
                 ),
                 auto_fixable=False,
             )
@@ -371,13 +359,8 @@ def _check_pie_categories(ctx: PageContext, findings: list[UxFinding]) -> None:
         vtype = v.get("visual", {}).get("$type", "")
         if vtype not in {"pieChart", "donutChart"}:
             continue
-        projections = (
-            v.get("visual", {}).get("projections", {}) or {}
-        )
-        category_count = sum(
-            len(p) if isinstance(p, list) else 1
-            for p in projections.values()
-        )
+        projections = v.get("visual", {}).get("projections", {}) or {}
+        category_count = sum(len(p) if isinstance(p, list) else 1 for p in projections.values())
         if category_count > 7:
             findings.append(
                 UxFinding(
@@ -385,9 +368,7 @@ def _check_pie_categories(ctx: PageContext, findings: list[UxFinding]) -> None:
                     category="pie_size",
                     severity="warning",
                     location=v.get("id", "?"),
-                    message=(
-                        f"{vtype} has {category_count} slices; >7 is hard to read"
-                    ),
+                    message=(f"{vtype} has {category_count} slices; >7 is hard to read"),
                     suggestion="Use a bar chart or filter to top-N categories",
                     auto_fixable=True,
                 )
@@ -448,9 +429,7 @@ def audit_report_ux_and_storytelling(
         category_sums["density"].append(_check_density(ctx, all_findings))
         category_sums["narrative"].append(_check_narrative(ctx, all_findings))
         category_sums["mobile"].append(_check_mobile(ctx, all_findings))
-        category_sums["cohesion"].append(
-            _check_cohesion(ctx, ctx.audience, all_findings)
-        )
+        category_sums["cohesion"].append(_check_cohesion(ctx, ctx.audience, all_findings))
         _check_pie_categories(ctx, all_findings)
 
     def avg(xs: list[float]) -> float:
@@ -459,9 +438,7 @@ def audit_report_ux_and_storytelling(
     category_scores = {k: avg(v) for k, v in category_sums.items()}
     # Narrative score derived from category_scores["narrative"].
     narrative_score = category_scores["narrative"]
-    overall = round(
-        sum(category_scores.values()) / len(category_scores), 1
-    )
+    overall = round(sum(category_scores.values()) / len(category_scores), 1)
 
     meets_target = overall >= 70.0
 

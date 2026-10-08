@@ -72,8 +72,7 @@ def map_exit_code_to_error(
             engine=engine,
             code="engine_validation_failed",
             remediation_hint=(
-                f"Fix the input that {engine} rejected and retry. "
-                f"See stderr excerpt for details."
+                f"Fix the input that {engine} rejected and retry. See stderr excerpt for details."
             ),
         )
 
@@ -132,15 +131,13 @@ def map_exit_code_to_error(
             engine=engine,
             code="engine_not_found",
             remediation_hint=(
-                f"Install {engine} per docs/engines-setup.md, or fall back "
-                f"to an available engine."
+                f"Install {engine} per docs/engines-setup.md, or fall back to an available engine."
             ),
         )
 
     if exit_code >= EXIT_CONTRACT_VIOLATION_BASE:
         return EngineContractError(
-            f"{engine} contract violation (exit {exit_code}): "
-            f"{stderr_excerpt or 'no stderr'}",
+            f"{engine} contract violation (exit {exit_code}): {stderr_excerpt or 'no stderr'}",
             engine=engine,
             code=f"engine_contract_violation_{exit_code}",
             remediation_hint=(

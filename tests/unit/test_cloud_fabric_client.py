@@ -134,9 +134,7 @@ class TestFabricClient:
         client = FabricClient(cred, rpm=10_000, burst=10_000)
         client._request = fake_request  # type: ignore[method-assign]  # noqa: SLF001
         try:
-            result = await client.refresh_dataset(
-                "ws-abc", "ds-xyz", refresh_type="full"
-            )
+            result = await client.refresh_dataset("ws-abc", "ds-xyz", refresh_type="full")
             assert captured["long_running"] is True
             assert captured["body"]["refreshType"] == "full"
             assert result["refreshId"] == "abc"
@@ -221,9 +219,7 @@ class TestFabricClientSprint14B:
             )
             assert captured["service"] == "pbi"
             assert captured["method"] == "PATCH"
-            assert captured["path"] == (
-                "/groups/ws-1/datasets/ds-1/refreshSchedule"
-            )
+            assert captured["path"] == ("/groups/ws-1/datasets/ds-1/refreshSchedule")
             assert captured["json"]["enabled"] is True
             assert captured["json"]["value"]["localTimeZoneId"] == "UTC"
         finally:
@@ -245,18 +241,14 @@ class TestFabricClientSprint14B:
             await client.cancel_refresh("ws-1", "ds-1")
             assert captured["service"] == "pbi"
             assert captured["method"] == "POST"
-            assert captured["path"] == (
-                "/groups/ws-1/datasets/ds-1/refreshes/cancel"
-            )
+            assert captured["path"] == ("/groups/ws-1/datasets/ds-1/refreshes/cancel")
         finally:
             await client.aclose()
 
     async def test_get_refresh_history_passes_query(self) -> None:
         client, captured = await self._make_client()
         try:
-            history = await client.get_refresh_history(
-                "ws-1", "ds-1", top=5
-            )
+            history = await client.get_refresh_history("ws-1", "ds-1", top=5)
             assert captured["service"] == "pbi"
             assert captured["method"] == "GET"
             assert captured["path"] == "/groups/ws-1/datasets/ds-1/refreshes"
@@ -271,16 +263,14 @@ class TestFabricClientSprint14B:
             await client.execute_queries(
                 "ws-1",
                 "ds-1",
-                queries=[{"query": "EVALUATE ROW(\"x\", 1)"}],
+                queries=[{"query": 'EVALUATE ROW("x", 1)'}],
                 impersonated_user_name="alice@contoso.com",
             )
             assert captured["service"] == "pbi"
             assert captured["method"] == "POST"
             assert captured["path"] == "/groups/ws-1/datasets/ds-1/queries"
             assert captured["json"]["impersonatedUserName"] == "alice@contoso.com"
-            assert captured["json"]["queries"] == [
-                {"query": "EVALUATE ROW(\"x\", 1)"}
-            ]
+            assert captured["json"]["queries"] == [{"query": 'EVALUATE ROW("x", 1)'}]
         finally:
             await client.aclose()
 
@@ -316,9 +306,7 @@ class TestFabricClientSprint14B:
             )
             assert captured["service"] == "pbi"
             assert captured["method"] == "PATCH"
-            assert captured["path"] == (
-                "/groups/ws-1/datasets/ds-1/datasources/dsrc-1"
-            )
+            assert captured["path"] == ("/groups/ws-1/datasets/ds-1/datasources/dsrc-1")
             assert captured["json"]["credentialDetails"]["credentials"] == "{}"
         finally:
             await client.aclose()
@@ -358,19 +346,20 @@ class TestRetrySafety:
             attempts += 1
             if attempts == 1:
                 return FakeResponse()
+
             class OkResponse:
                 status_code = 200
                 headers: dict[str, str] = {}
                 content = b'{"ok": true}'
+
                 def json(self):
                     return {"ok": True}
+
             return OkResponse()
 
         monkeypatch.setattr(client._select_client("fabric"), "request", fake_request)
         try:
-            res = await client._request(
-                "GET", "/test", service="fabric", max_retries=1
-            )
+            res = await client._request("GET", "/test", service="fabric", max_retries=1)
             assert res == {"ok": True}
             assert attempts == 2
         finally:
@@ -404,9 +393,7 @@ class TestRetrySafety:
         monkeypatch.setattr(client._select_client("fabric"), "request", fake_request)
         try:
             with pytest.raises(FabricAPIError) as exc_info:
-                await client._request(
-                    "POST", "/test", service="fabric", max_retries=3
-                )
+                await client._request("POST", "/test", service="fabric", max_retries=3)
             assert exc_info.value.status_code == 502
             assert calls == 1
         finally:

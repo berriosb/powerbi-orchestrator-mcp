@@ -95,9 +95,7 @@ def _run_git(
 ) -> subprocess.CompletedProcess[str]:
     """Run a git command in the given repo; raise on failure (unless check=False)."""
     cmd = ["git", "-C", str(repo_path), *args]
-    proc = subprocess.run(
-        cmd, capture_output=True, text=True, check=check, timeout=30
-    )
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=30)
     return proc
 
 
@@ -129,9 +127,7 @@ def _detect_local_changes(repo_path: Path) -> _LocalChangeSnapshot:
     return _LocalChangeSnapshot(dirty_paths=dirty, branch=branch)
 
 
-def _snapshot_workspace(
-    workspace_id: str, fabric_client: Any
-) -> dict[str, dict[str, Any]]:
+def _snapshot_workspace(workspace_id: str, fabric_client: Any) -> dict[str, dict[str, Any]]:
     """Call fabric_client.snapshot_workspace or return an empty stub.
 
     The client must return a mapping ``item_id -> {name, type, blob}``.
@@ -159,9 +155,7 @@ def _render_pbip(item: dict[str, Any]) -> str:
     return json.dumps(item, indent=2, sort_keys=True)
 
 
-def _detect_target_conflict(
-    repo_path: Path, target_path: Path, dirty_paths: list[str]
-) -> bool:
+def _detect_target_conflict(repo_path: Path, target_path: Path, dirty_paths: list[str]) -> bool:
     """True if the working tree has unstaged changes on the target file.
 
     ``dirty_paths`` from ``git status --porcelain`` are repo-relative;
@@ -180,9 +174,7 @@ def _detect_target_conflict(
     return False
 
 
-def _commit_to_git(
-    repo_path: Path, target_paths: list[Path], message: str
-) -> str | None:
+def _commit_to_git(repo_path: Path, target_paths: list[Path], message: str) -> str | None:
     """Run git add + commit; return the resulting commit SHA or None."""
     rel_paths = [str(p.relative_to(repo_path)) for p in target_paths]
     _run_git(repo_path, ["add", "--", *rel_paths])
@@ -291,9 +283,7 @@ def commit_workspace_to_git(
 
         if _detect_target_conflict(repo_path, target, local.dirty_paths):
             conflicts.append(str(target))
-            warnings.append(
-                f"local changes on {target}; abort to avoid clobbering"
-            )
+            warnings.append(f"local changes on {target}; abort to avoid clobbering")
             continue
 
         size = len(blob.encode("utf-8"))

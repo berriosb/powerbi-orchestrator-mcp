@@ -53,8 +53,7 @@ class SyncGitToWorkspace(BaseModel):
     def _check_resolution(cls, v: str) -> str:
         if v not in _VALID_RESOLUTION:
             raise ValueError(
-                f"invalid conflict_resolution {v!r}; expected one of "
-                f"{sorted(_VALID_RESOLUTION)}"
+                f"invalid conflict_resolution {v!r}; expected one of {sorted(_VALID_RESOLUTION)}"
             )
         return v
 
@@ -173,9 +172,7 @@ def _diff_local_blob_vs_workspace(
 # ---------------------------------------------------------------------------
 
 
-def _three_way_merge(
-    base: str, ours: str, theirs: str
-) -> tuple[str | None, str]:
+def _three_way_merge(base: str, ours: str, theirs: str) -> tuple[str | None, str]:
     """Return ``(merged_text, status)``.
 
     ``merged_text`` is the resolved content; ``None`` means the merge
@@ -218,11 +215,7 @@ def _three_way_merge(
 
         ``opcodes`` are 5-tuples: ``(tag, i1, i2, j1, j2)``.
         """
-        return [
-            (i1, i2 - i1)
-            for op, i1, i2, _j1, _j2 in matcher.get_opcodes()
-            if op != "equal"
-        ]
+        return [(i1, i2 - i1) for op, i1, i2, _j1, _j2 in matcher.get_opcodes() if op != "equal"]
 
     a_ranges = _hunk_ranges(matcher_a)
     b_ranges = _hunk_ranges(matcher_b)
@@ -320,8 +313,7 @@ def sync_git_to_workspace(
             pre_deploy_check_result = result.model_dump(mode="json")
             if not result.passed:
                 warnings.append(
-                    f"pre_deploy_check blocked the deployment "
-                    f"(profile={pre_deploy_profile})"
+                    f"pre_deploy_check blocked the deployment (profile={pre_deploy_profile})"
                 )
                 return SyncGitToWorkspaceResult(
                     dry_run=dry_run,
@@ -353,9 +345,7 @@ def sync_git_to_workspace(
         item_type, item_name = parsed
         if not path.exists():
             # ref-only path (commit not checked out locally); skip for v3
-            warnings.append(
-                f"ref-only path {path}; cannot deploy without local checkout"
-            )
+            warnings.append(f"ref-only path {path}; cannot deploy without local checkout")
             continue
         local_blob = path.read_text(encoding="utf-8", errors="replace")
         ws_match = workspace_items.get((item_type, item_name))

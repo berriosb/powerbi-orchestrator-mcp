@@ -54,9 +54,7 @@ class _FakeModelingEngine:
         return self._version
 
     async def health_check(self) -> EngineStatus:
-        return EngineStatus(
-            name=self._name, available=True, version=self._version
-        )
+        return EngineStatus(name=self._name, available=True, version=self._version)
 
     async def connect(self, target: Target) -> ConnectionHandle:
         return ConnectionHandle(
@@ -75,9 +73,7 @@ class _FakeModelingEngine:
     async def list_measures(self, conn: ConnectionHandle) -> list:
         return []
 
-    async def list_columns(
-        self, conn: ConnectionHandle, table: str
-    ) -> list[Column]:
+    async def list_columns(self, conn: ConnectionHandle, table: str) -> list[Column]:
         return []
 
     async def list_relationships(self, conn: ConnectionHandle) -> list:
@@ -119,9 +115,7 @@ class _FakeModelingEngine:
     ) -> Any:
         return None
 
-    async def snapshot(
-        self, conn: ConnectionHandle, label: str
-    ) -> Any:
+    async def snapshot(self, conn: ConnectionHandle, label: str) -> Any:
         return None
 
     async def restore_snapshot(self, handle: Any) -> None:
@@ -149,9 +143,7 @@ class _FakeReportEngine:
         return self._name
 
     async def health_check(self) -> EngineStatus:
-        return EngineStatus(
-            name=self._name, available=True, version=self._version
-        )
+        return EngineStatus(name=self._name, available=True, version=self._version)
 
     async def connect(self, pbip_path: Path) -> ConnectionHandle:
         return ConnectionHandle(
@@ -281,9 +273,7 @@ class TestReportSelection:
     def test_plan_compatibility_kind_report(self, target: Target) -> None:
         sel = EngineSelector()
         sel.register_report("python_report", _FakeReportEngine())
-        result = sel.plan_compatibility(
-            [("propagate_rename", target)], kind="report"
-        )
+        result = sel.plan_compatibility([("propagate_rename", target)], kind="report")
         assert result["ready"] is True
 
 
@@ -386,4 +376,3 @@ class TestFallbackChain:
         with pytest.raises(EngineNotFoundError) as exc_info:
             sel.select_modeling_engine("update_column", target)
         assert "engine 'te' is not available" in str(exc_info.value)
-

@@ -132,9 +132,7 @@ class TestConnect:
 
 
 class TestPageCrud:
-    async def test_add_page_delegates_to_python_report(
-        self, pbip_dir: Path
-    ) -> None:
+    async def test_add_page_delegates_to_python_report(self, pbip_dir: Path) -> None:
         engine = _engine()
         conn = ConnectionHandle(
             engine="superbi-mcp",
@@ -181,9 +179,7 @@ class TestPageCrud:
             position={"x": 0, "y": 0, "width": 400, "height": 200},
         )
         await engine.add_visual(conn, "NewPage", spec)
-        result = await engine.update_visual(
-            conn, "NewPage", "known_id_1", {"x": 50}
-        )
+        result = await engine.update_visual(conn, "NewPage", "known_id_1", {"x": 50})
         assert result.success is True
 
 
@@ -193,9 +189,7 @@ class TestPageCrud:
 
 
 class TestDispatch:
-    async def test_propagate_rename_uses_mock_response(
-        self, pbip_dir: Path
-    ) -> None:
+    async def test_propagate_rename_uses_mock_response(self, pbip_dir: Path) -> None:
         engine = _engine(
             responses={
                 "report/propagate_rename": {
@@ -214,9 +208,7 @@ class TestDispatch:
             conn, "Customer[ID]", "Customer[CustomerKey]", "report_bindings"
         )
         assert result.success is True
-        assert result.changed_files == [
-            "sample.Report/pages/Overview/page.json"
-        ]
+        assert result.changed_files == ["sample.Report/pages/Overview/page.json"]
 
         # The dispatch should have recorded the call with pbip_path.
         last_method, last_params = engine.dispatch_calls[-1]
@@ -224,9 +216,7 @@ class TestDispatch:
         assert last_params["pbip_path"] == str(pbip_dir)
         assert last_params["old_path"] == "Customer[ID]"
 
-    async def test_validate_pbir_via_mock(
-        self, pbip_dir: Path
-    ) -> None:
+    async def test_validate_pbir_via_mock(self, pbip_dir: Path) -> None:
         engine = _engine(
             responses={
                 "report/validate": {

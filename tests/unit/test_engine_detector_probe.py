@@ -30,9 +30,7 @@ class TestProbeVersion:
         # The detector skips probing entirely when there are no args.
         assert await _probe_version("/bin/echo", ()) is None
 
-    async def test_successful_run_returns_first_line(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_successful_run_returns_first_line(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class FakeProc:
             returncode = 0
 
@@ -49,9 +47,7 @@ class TestProbeVersion:
         result = await _probe_version("/bin/echo", ("--version",))
         assert result == "version 1.2.3"
 
-    async def test_empty_stdout_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_empty_stdout_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class FakeProc:
             returncode = 0
 
@@ -67,9 +63,7 @@ class TestProbeVersion:
         _spawn(monkeypatch, FakeProc())
         assert await _probe_version("/bin/echo", ("--version",)) is None
 
-    async def test_nonzero_exit_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_nonzero_exit_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class FakeProc:
             returncode = 1
 
@@ -85,18 +79,14 @@ class TestProbeVersion:
         _spawn(monkeypatch, FakeProc())
         assert await _probe_version("/bin/echo", ("--version",)) is None
 
-    async def test_oserror_during_spawn_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_oserror_during_spawn_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         async def fake_exec(*_a: Any, **_kw: Any) -> None:
             raise FileNotFoundError("nope")
 
         monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
         assert await _probe_version("/bin/missing", ("--version",)) is None
 
-    async def test_timeout_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_timeout_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class FakeProc:
             returncode = 0
 
@@ -112,9 +102,7 @@ class TestProbeVersion:
         _spawn(monkeypatch, FakeProc())
         assert await _probe_version("/bin/echo", ("--version",)) is None
 
-    async def test_decode_error_returns_stripped(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_decode_error_returns_stripped(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class FakeProc:
             returncode = 0
 

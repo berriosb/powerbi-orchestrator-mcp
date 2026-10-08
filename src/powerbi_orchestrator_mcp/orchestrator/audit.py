@@ -146,9 +146,7 @@ class AuditLog:
 
     def _get_last_hash(self, conn: sqlite3.Connection) -> str:
         """Get the row_hash of the last entry (or '0' for genesis)."""
-        row = conn.execute(
-            "SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
         return row[0] if row else "0"
 
     def insert(
@@ -197,8 +195,17 @@ class AuditLog:
                     target_id, result_status, prev_hash, row_hash, payload_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (new_id, ts, tool_name, args_hash, target_id, result_status,
-                 prev_hash, row_hash, payload_json),
+                (
+                    new_id,
+                    ts,
+                    tool_name,
+                    args_hash,
+                    target_id,
+                    result_status,
+                    prev_hash,
+                    row_hash,
+                    payload_json,
+                ),
             )
             conn.commit()
 
@@ -236,7 +243,17 @@ class AuditLog:
 
             prev_hash = "0"
             for row in rows:
-                row_id, ts, tool_name, args_hash, target_id, result_status, stored_prev, stored_hash, payload = row
+                (
+                    row_id,
+                    ts,
+                    tool_name,
+                    args_hash,
+                    target_id,
+                    result_status,
+                    stored_prev,
+                    stored_hash,
+                    payload,
+                ) = row
 
                 # Verify prev_hash chain
                 if stored_prev != prev_hash:

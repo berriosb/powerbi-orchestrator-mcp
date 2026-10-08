@@ -185,9 +185,7 @@ class ModelingStepExecutor:
         try:
             conn = await engine.connect(target)
         except Exception as exc:
-            return StepOutcome(
-                success=False, error_message=str(exc), changed_files=[]
-            )
+            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
 
         try:
             if action in ("column.update", "table.update", "update_table", "update_column"):
@@ -208,9 +206,7 @@ class ModelingStepExecutor:
                 changes = dict(args.get("changes", {}))
                 if new_name is not None:
                     changes["new_name"] = str(new_name)
-                res = await engine.update_column(
-                    conn, table=table, column=column, changes=changes
-                )
+                res = await engine.update_column(conn, table=table, column=column, changes=changes)
                 return StepOutcome(
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
@@ -233,9 +229,7 @@ class ModelingStepExecutor:
                 table = str(args.get("table", ""))
                 name = str(args.get("name") or args.get("measure", ""))
                 changes = dict(args.get("changes", {}))
-                res = await engine.update_measure(
-                    conn, table=table, measure=name, changes=changes
-                )
+                res = await engine.update_measure(conn, table=table, measure=name, changes=changes)
                 return StepOutcome(
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
@@ -251,12 +245,8 @@ class ModelingStepExecutor:
                     changed_files=res.changed_files,
                 )
             if action == "snapshot":
-                handle = await engine.snapshot(
-                    conn, str(args.get("label", "snapshot"))
-                )
-                return StepOutcome(
-                    success=True, changed_files=[str(handle.path)]
-                )
+                handle = await engine.snapshot(conn, str(args.get("label", "snapshot")))
+                return StepOutcome(success=True, changed_files=[str(handle.path)])
             if action == "restore_snapshot":
                 if hasattr(engine, "restore_snapshot"):
                     from powerbi_orchestrator_mcp.engines.base import (
@@ -274,9 +264,7 @@ class ModelingStepExecutor:
                 return StepOutcome(success=True, changed_files=[])
             return StepOutcome(success=True, changed_files=[])
         except Exception as exc:
-            return StepOutcome(
-                success=False, error_message=str(exc), changed_files=[]
-            )
+            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
         finally:
             if hasattr(engine, "disconnect"):
                 with contextlib.suppress(Exception):
@@ -343,25 +331,13 @@ class ReportStepExecutor:
                     changed_files=res.changed_files,
                 )
             if action == "add_page":
-                layout = (
-                    PageLayout(**args.get("layout", {}))
-                    if "layout" in args
-                    else None
-                )
-                res = await engine.add_page(
-                    conn, str(args.get("page_name", "")), layout
-                )
-                return StepOutcome(
-                    success=res.success, changed_files=res.changed_files
-                )
+                layout = PageLayout(**args.get("layout", {})) if "layout" in args else None
+                res = await engine.add_page(conn, str(args.get("page_name", "")), layout)
+                return StepOutcome(success=res.success, changed_files=res.changed_files)
             if action == "add_visual":
                 spec = VisualSpec(**args.get("spec", args))
-                res = await engine.add_visual(
-                    conn, str(args.get("page", "")), spec
-                )
-                return StepOutcome(
-                    success=res.success, changed_files=res.changed_files
-                )
+                res = await engine.add_visual(conn, str(args.get("page", "")), spec)
+                return StepOutcome(success=res.success, changed_files=res.changed_files)
             if action == "update_visual":
                 res = await engine.update_visual(
                     conn,
@@ -369,9 +345,7 @@ class ReportStepExecutor:
                     str(args.get("visual_id", "")),
                     args.get("changes", {}),
                 )
-                return StepOutcome(
-                    success=res.success, changed_files=res.changed_files
-                )
+                return StepOutcome(success=res.success, changed_files=res.changed_files)
             if action == "validate_pbir":
                 v = await engine.validate_pbir(conn)
                 return StepOutcome(success=v.valid, changed_files=[])
@@ -379,9 +353,7 @@ class ReportStepExecutor:
                 return StepOutcome(success=True, changed_files=[])
             return StepOutcome(success=True, changed_files=[])
         except Exception as exc:
-            return StepOutcome(
-                success=False, error_message=str(exc), changed_files=[]
-            )
+            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
         finally:
             with contextlib.suppress(Exception):
                 await engine.disconnect(conn)

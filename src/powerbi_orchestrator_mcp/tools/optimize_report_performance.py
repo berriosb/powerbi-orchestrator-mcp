@@ -95,9 +95,7 @@ def _estimate_visual_cost(visual: dict[str, Any], cardinality_hint: int | None) 
         cost += _COST_WEIGHTS["custom_visual_unknown"]
     # Conditional formatting: heuristic flag in metadata.
     if visual.get("conditionalFormatting"):
-        cost += _COST_WEIGHTS["conditional_formatting_rule"] * len(
-            visual["conditionalFormatting"]
-        )
+        cost += _COST_WEIGHTS["conditional_formatting_rule"] * len(visual["conditionalFormatting"])
     return cost
 
 
@@ -117,10 +115,7 @@ def _suggest_fix(reasons: list[str]) -> str:
         if "scatter" in r.lower():
             return "use binning or aggregation in the model to reduce points"
         if "custom visual" in r.lower():
-            return (
-                "audit the custom visual; consider native visual or "
-                "pre-aggregate in the model"
-            )
+            return "audit the custom visual; consider native visual or pre-aggregate in the model"
         if "density" in r.lower():
             return "split page into multiple drill-through pages"
     return "review visual; consider simplification or removal"
@@ -133,15 +128,19 @@ def _analyze_page(
     try:
         data = json.loads(page_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return 500, 0, [
-            PerformanceHotspot(
-                page_name=page_path.parent.name,
-                visual_id=None,
-                est_cost="medium",
-                reasons=[f"failed to parse page.json: {exc}"],
-                fix_suggestion="fix JSON syntax; the page failed to parse",
-            )
-        ]
+        return (
+            500,
+            0,
+            [
+                PerformanceHotspot(
+                    page_name=page_path.parent.name,
+                    visual_id=None,
+                    est_cost="medium",
+                    reasons=[f"failed to parse page.json: {exc}"],
+                    fix_suggestion="fix JSON syntax; the page failed to parse",
+                )
+            ],
+        )
 
     width = data.get("width", 1280)
     height = data.get("height", 720)
@@ -162,9 +161,7 @@ def _analyze_page(
             if vtype in _EXPENSIVE_VISUALS:
                 reasons.append(f"{vtype} is an expensive multi-segment visual")
             if vtype == "scatterChart":
-                reasons.append(
-                    "scatter may render thousands of points without binning"
-                )
+                reasons.append("scatter may render thousands of points without binning")
             if vtype not in {e.type_id for e in VISUAL_REGISTRY} and vtype != "unknown":
                 reasons.append(f"custom visual ({vtype}) has unknown render cost")
             if visual.get("conditionalFormatting"):
@@ -190,12 +187,8 @@ def _analyze_page(
                 page_name=page_name,
                 visual_id=None,
                 est_cost=_classify_cost(density_cost),
-                reasons=[
-                    f"high visual density: {len(visuals)} visuals on one page"
-                ],
-                fix_suggestion=_suggest_fix(
-                    ["density exceeds 5 visuals per page"]
-                ),
+                reasons=[f"high visual density: {len(visuals)} visuals on one page"],
+                fix_suggestion=_suggest_fix(["density exceeds 5 visuals per page"]),
             )
         )
 
@@ -296,9 +289,7 @@ def optimize_report_performance(
         all_hotspots.extend(hotspots)
 
     # Score: 100 - weighted hotspot cost, capped at [0, 100].
-    hotspot_cost_sum = sum(
-        {"low": 1, "medium": 3, "high": 7}[h.est_cost] for h in all_hotspots
-    )
+    hotspot_cost_sum = sum({"low": 1, "medium": 3, "high": 7}[h.est_cost] for h in all_hotspots)
     score = max(0.0, 100.0 - hotspot_cost_sum * 1.5)
 
     return OptimizeReportPerformanceResult(

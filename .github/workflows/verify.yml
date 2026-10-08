@@ -53,8 +53,16 @@ jobs:
       - name: Run ruff
         run: ruff check src tests
 
+      - name: Run ruff format check
+        run: ruff format --check src tests
+
       - name: Run mypy
         run: mypy src tests
+
+      - name: Audit dependencies for known CVEs
+        run: |
+          pip install pip-audit
+          pip-audit --strict --skip-editable .
 
   # ---------------------------------------------------------------
   # Job 2: test (full pytest + coverage + fresh-install e2e).

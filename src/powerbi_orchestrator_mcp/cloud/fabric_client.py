@@ -90,8 +90,7 @@ class CircuitBreaker:
                     self._state.half_open_successes = 0
                 else:
                     raise CircuitBreakerOpenError(
-                        f"circuit breaker open "
-                        f"(cooldown {self.cooldown_s}s)"
+                        f"circuit breaker open (cooldown {self.cooldown_s}s)"
                     )
 
     async def record_success(self) -> None:
@@ -202,9 +201,7 @@ class FabricClient:
     ) -> None:
         self._credential = credential
         self._bucket = TokenBucket(rpm=rpm, burst=burst)
-        self._long_running_bucket = TokenBucket(
-            rpm=long_running_rpm, burst=long_running_rpm
-        )
+        self._long_running_bucket = TokenBucket(rpm=long_running_rpm, burst=long_running_rpm)
         self._breaker = CircuitBreaker()
         self._fabric_client = httpx.AsyncClient(
             base_url=fabric_base_url,
@@ -263,9 +260,7 @@ class FabricClient:
         for attempt in range(max_retries + 1):
             acquired = await bucket.acquire()
             if not acquired:
-                raise CircuitBreakerOpenError(
-                    "token bucket timeout (rate limit exceeded)"
-                )
+                raise CircuitBreakerOpenError("token bucket timeout (rate limit exceeded)")
 
             token = await self._credential.get_token()
             try:
@@ -391,9 +386,7 @@ class FabricClient:
         Per spec §2.3. ``item_type`` e.g. ``"PowerBIDataset"``,
         ``"PowerBIReport"``, ``"Lakehouse"``.
         """
-        params: dict[str, Any] | None = (
-            {"type": item_type} if item_type else None
-        )
+        params: dict[str, Any] | None = {"type": item_type} if item_type else None
         resp = await self.get(
             f"/workspaces/{workspace_id}/items",
             params=params,
@@ -401,12 +394,8 @@ class FabricClient:
         )
         return resp.get("value", [])  # type: ignore[no-any-return]
 
-    async def get_item(
-        self, workspace_id: str, item_id: str
-    ) -> dict[str, Any]:
-        return await self.get(
-            f"/workspaces/{workspace_id}/items/{item_id}", service="fabric"
-        )
+    async def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
+        return await self.get(f"/workspaces/{workspace_id}/items/{item_id}", service="fabric")
 
     async def create_item(
         self,
@@ -429,28 +418,18 @@ class FabricClient:
         }
         if definition:
             body["definition"] = definition
-        return await self.post(
-            f"/workspaces/{workspace_id}/items", json=body, service="fabric"
-        )
+        return await self.post(f"/workspaces/{workspace_id}/items", json=body, service="fabric")
 
-    async def delete_item(
-        self, workspace_id: str, item_id: str
-    ) -> None:
+    async def delete_item(self, workspace_id: str, item_id: str) -> None:
         """Delete a Fabric item. Requires WRITE scope + elicitation."""
-        await self.delete(
-            f"/workspaces/{workspace_id}/items/{item_id}", service="fabric"
-        )
+        await self.delete(f"/workspaces/{workspace_id}/items/{item_id}", service="fabric")
 
     async def list_datasets(self, workspace_id: str) -> list[dict[str, Any]]:
-        resp = await self.get(
-            f"/groups/{workspace_id}/datasets", service="pbi"
-        )
+        resp = await self.get(f"/groups/{workspace_id}/datasets", service="pbi")
         return resp.get("value", [])  # type: ignore[no-any-return]
 
     async def get_dataset(self, workspace_id: str, dataset_id: str) -> dict[str, Any]:
-        return await self.get(
-            f"/groups/{workspace_id}/datasets/{dataset_id}", service="pbi"
-        )
+        return await self.get(f"/groups/{workspace_id}/datasets/{dataset_id}", service="pbi")
 
     async def refresh_dataset(
         self,
@@ -472,9 +451,7 @@ class FabricClient:
         if commit_mode:
             body["commitMode"] = commit_mode
         if tables:
-            body["objects"] = [
-                {"table": t, "partition": None} for t in tables
-            ]
+            body["objects"] = [{"table": t, "partition": None} for t in tables]
         return await self.post(
             f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes",
             json=body,
@@ -482,9 +459,7 @@ class FabricClient:
             service="pbi",
         )
 
-    async def cancel_refresh(
-        self, workspace_id: str, dataset_id: str
-    ) -> None:
+    async def cancel_refresh(self, workspace_id: str, dataset_id: str) -> None:
         """Cancel an in-progress dataset refresh (per spec §2.3)."""
         await self.post(
             f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes/cancel",
@@ -535,9 +510,7 @@ class FabricClient:
             service="pbi",
         )
 
-    async def take_over_dataset(
-        self, workspace_id: str, dataset_id: str
-    ) -> dict[str, Any]:
+    async def take_over_dataset(self, workspace_id: str, dataset_id: str) -> dict[str, Any]:
         """Take over ownership of a dataset (per spec §2.3).
 
         Useful when an upstream owner leaves the org or when the
@@ -559,8 +532,7 @@ class FabricClient:
     ) -> dict[str, Any]:
         """Update a dataset data-source (server / gateway mapping)."""
         return await self.patch(
-            f"/groups/{workspace_id}/datasets/{dataset_id}"
-            f"/datasources/{datasource_id}",
+            f"/groups/{workspace_id}/datasets/{dataset_id}/datasources/{datasource_id}",
             json=body,
             service="pbi",
         )

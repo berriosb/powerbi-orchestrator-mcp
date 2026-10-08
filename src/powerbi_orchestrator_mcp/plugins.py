@@ -136,9 +136,7 @@ class PluginRegistry:
 def _load_one(path: Path) -> LoadedPlugin | PluginLoadError:
     """Load a single plugin module from ``path``."""
     try:
-        spec = importlib.util.spec_from_file_location(
-            f"powerbi_plugin_{path.stem}", path
-        )
+        spec = importlib.util.spec_from_file_location(f"powerbi_plugin_{path.stem}", path)
         if spec is None or spec.loader is None:
             return PluginLoadError(
                 name=path.stem,
@@ -158,10 +156,7 @@ def _load_one(path: Path) -> LoadedPlugin | PluginLoadError:
                 return PluginLoadError(
                     name=path.stem,
                     path=path,
-                    error=(
-                        "GATE_PROFILES must contain GateProfile "
-                        "instances"
-                    ),
+                    error=("GATE_PROFILES must contain GateProfile instances"),
                 )
         for rule in bpa_rules:
             for key in ("rule_id", "rule_name", "severity", "fn"):
@@ -175,8 +170,7 @@ def _load_one(path: Path) -> LoadedPlugin | PluginLoadError:
                 return PluginLoadError(
                     name=path.stem,
                     path=path,
-                    error=f"BPA_RULES entry fn for {rule.get('rule_id')!r} "
-                    "is not callable",
+                    error=f"BPA_RULES entry fn for {rule.get('rule_id')!r} is not callable",
                 )
 
         return LoadedPlugin(
@@ -186,9 +180,7 @@ def _load_one(path: Path) -> LoadedPlugin | PluginLoadError:
             bpa_rules=bpa_rules,
         )
     except Exception as exc:  # noqa: BLE001
-        return PluginLoadError(
-            name=path.stem, path=path, error=str(exc)
-        )
+        return PluginLoadError(name=path.stem, path=path, error=str(exc))
 
 
 def load_plugins(plugin_dir: Path | None = None) -> PluginRegistry:

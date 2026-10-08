@@ -61,10 +61,7 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
         )
         """
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_plans_created "
-        "ON plans(created_at)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_plans_created ON plans(created_at)")
     conn.commit()
     return conn
 
@@ -129,9 +126,7 @@ class PlanStore:
                     plan.id,
                     plan.yaml,
                     json.dumps([s.model_dump(mode="json") for s in plan.steps]),
-                    json.dumps(
-                        [s.model_dump(mode="json") for s in plan.rollback_steps]
-                    ),
+                    json.dumps([s.model_dump(mode="json") for s in plan.rollback_steps]),
                     plan.risk_score,
                     plan.estimated_changes.model_dump_json(),
                     plan.id,  # plan_id is a UUID; treat as created_at for ordering
@@ -146,9 +141,7 @@ class PlanStore:
         conn = self._conn()
         try:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM plans WHERE plan_id = ?", (plan_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM plans WHERE plan_id = ?", (plan_id,)).fetchone()
             if row is None:
                 return None
             return _row_to_plan(row)
@@ -158,9 +151,7 @@ class PlanStore:
     def delete(self, plan_id: str) -> bool:
         conn = self._conn()
         try:
-            cursor = conn.execute(
-                "DELETE FROM plans WHERE plan_id = ?", (plan_id,)
-            )
+            cursor = conn.execute("DELETE FROM plans WHERE plan_id = ?", (plan_id,))
             conn.commit()
             return cursor.rowcount > 0
         finally:
@@ -170,9 +161,7 @@ class PlanStore:
         conn = self._conn()
         try:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM plans ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM plans ORDER BY created_at DESC").fetchall()
             return [_row_to_plan(r) for r in rows]
         finally:
             conn.close()

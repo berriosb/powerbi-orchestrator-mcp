@@ -54,9 +54,7 @@ class LabelTarget(BaseModel):
     @classmethod
     def _validate_guid(cls, v: str) -> str:
         if not _GUID_RE.match(v):
-            raise ValueError(
-                f"item_id must be a GUID; got {v!r}"
-            )
+            raise ValueError(f"item_id must be a GUID; got {v!r}")
         return v
 
 
@@ -78,9 +76,7 @@ class SetSensitivityLabels(BaseModel):
     @classmethod
     def _validate_label_id(cls, v: str) -> str:
         if not _GUID_RE.match(v):
-            raise ValueError(
-                f"label_id must be a GUID; got {v!r}"
-            )
+            raise ValueError(f"label_id must be a GUID; got {v!r}")
         return v
 
 
@@ -124,8 +120,7 @@ def _check_admin_scope(scopes: list[str]) -> tuple[bool, str]:
     if "InformationProtectionPolicy.Apply.All" in scopes:
         return True, ""
     return False, (
-        "missing required admin scope; need *.Admin.* or "
-        "InformationProtectionPolicy.Apply.All"
+        "missing required admin scope; need *.Admin.* or InformationProtectionPolicy.Apply.All"
     )
 
 
@@ -176,9 +171,7 @@ def set_sensitivity_labels(
         if isinstance(it, LabelTarget):
             normalised.append(it)
         elif isinstance(it, dict):
-            normalised.append(
-                LabelTarget(item_id=it["item_id"], item_name=it.get("item_name"))
-            )
+            normalised.append(LabelTarget(item_id=it["item_id"], item_name=it.get("item_name")))
         else:
             return SetSensitivityLabelsResult(
                 dry_run=dry_run,
@@ -186,15 +179,11 @@ def set_sensitivity_labels(
             )
 
     # Validate item IDs.
-    bad = [
-        it for it in normalised if not _GUID_RE.match(it.item_id)
-    ]
+    bad = [it for it in normalised if not _GUID_RE.match(it.item_id)]
     if bad:
         return SetSensitivityLabelsResult(
             dry_run=dry_run,
-            warnings=[
-                f"item_id must be a GUID; got {bad[0].item_id!r}"
-            ],
+            warnings=[f"item_id must be a GUID; got {bad[0].item_id!r}"],
         )
 
     # Admin scope gate.
@@ -283,9 +272,7 @@ def set_sensitivity_labels(
     bulk_set_calls = 1
     # Per-item outcome from the response; default: all "applied".
     response_items = result.get("items", []) if isinstance(result, dict) else []
-    response_items_by_id = {
-        str(item.get("item_id")): item for item in response_items
-    }
+    response_items_by_id = {str(item.get("item_id")): item for item in response_items}
 
     for it in deduped:
         resp = response_items_by_id.get(it.item_id, {})

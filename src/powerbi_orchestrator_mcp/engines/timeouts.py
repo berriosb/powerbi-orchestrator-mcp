@@ -67,13 +67,9 @@ def _env_override_for(engine: str) -> int | None:
             try:
                 value = int(raw)
             except ValueError as exc:
-                raise ValueError(
-                    f"env var {env_var} must be integer seconds, got {raw!r}"
-                ) from exc
+                raise ValueError(f"env var {env_var} must be integer seconds, got {raw!r}") from exc
             if value <= 0:
-                raise ValueError(
-                    f"env var {env_var} must be positive, got {value}"
-                )
+                raise ValueError(f"env var {env_var} must be positive, got {value}")
             return value
     return None
 
@@ -112,12 +108,9 @@ def resolve_timeout(
         return env_value if env_value is not None else cfg.default_s
 
     if requested_s < 1:
-        raise InvalidTimeoutError(
-            f"requested timeout {requested_s}s must be >= 1"
-        )
+        raise InvalidTimeoutError(f"requested timeout {requested_s}s must be >= 1")
     if requested_s > cfg.max_s:
         raise InvalidTimeoutError(
-            f"requested timeout {requested_s}s exceeds max {cfg.max_s}s "
-            f"for engine {engine!r}"
+            f"requested timeout {requested_s}s exceeds max {cfg.max_s}s for engine {engine!r}"
         )
     return requested_s

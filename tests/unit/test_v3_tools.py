@@ -164,10 +164,13 @@ tables:
             dry_run=True,
         )
         # Heuristic lint flags / as a hint.
-        assert any(
-            "/" in f.get("expression", "") or "DIVIDE" in f.get("message", "").upper()
-            for f in result.lint_findings
-        ) or len(result.lint_findings) >= 0  # lint is best-effort
+        assert (
+            any(
+                "/" in f.get("expression", "") or "DIVIDE" in f.get("message", "").upper()
+                for f in result.lint_findings
+            )
+            or len(result.lint_findings) >= 0
+        )  # lint is best-effort
 
     def test_spec_json_path(self, tmp_path: Path) -> None:
         result = create_semantic_model_from_schema(
@@ -244,9 +247,7 @@ tables:
 
             ColumnSpec(name="x", type="not_a_real_type")
 
-    def test_spec_with_only_one_table_no_rels(
-        self, tmp_path: Path
-    ) -> None:
+    def test_spec_with_only_one_table_no_rels(self, tmp_path: Path) -> None:
         spec = """\
 name: minimal
 tables:
@@ -274,9 +275,7 @@ tables:
         tmdl_b = render_tmdl(spec_a)
         assert tmdl == tmdl_b
 
-    def test_dry_run_false_without_path_returns_warning(
-        self, tmp_path: Path
-    ) -> None:
+    def test_dry_run_false_without_path_returns_warning(self, tmp_path: Path) -> None:
         result = create_semantic_model_from_schema(
             spec_yaml=YAML_SPEC,
             output_pbip_path="",
@@ -339,9 +338,7 @@ class TestScreenshotPngRendering:
         assert b"IDAT" in data
         assert b"IEND" in data
 
-    def test_png_with_multiple_visuals(
-        self, pbip_v3, tmp_path
-    ):
+    def test_png_with_multiple_visuals(self, pbip_v3, tmp_path):
         _v3_write_page(
             pbip_v3,
             "Overview",
@@ -365,9 +362,7 @@ class TestScreenshotPngRendering:
         width = int.from_bytes(png.read_bytes()[16:20], "big")
         assert width == 1280  # desktop viewport
 
-    def test_png_manifest_records_format(
-        self, pbip_v3, tmp_path
-    ):
+    def test_png_manifest_records_format(self, pbip_v3, tmp_path):
         _v3_write_page(
             pbip_v3,
             "Overview",
@@ -379,14 +374,10 @@ class TestScreenshotPngRendering:
             output_dir=str(out),
             format="png",
         )
-        manifest = json.loads(
-            (out / "Overview.manifest.json").read_text()
-        )
+        manifest = json.loads((out / "Overview.manifest.json").read_text())
         assert manifest["format"] == "png"
 
-    def test_svg_when_format_unsupported(
-        self, pbip_v3, tmp_path
-    ):
+    def test_svg_when_format_unsupported(self, pbip_v3, tmp_path):
         # If format is "pdf" we still fall back to SVG; the PNG path
         # only triggers when format == "png".
         _v3_write_page(

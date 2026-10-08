@@ -133,7 +133,7 @@ def _render_svg(bundle: _PageBundle, viewport: tuple[int, int]) -> str:
         '<rect width="100%" height="100%" fill="white" />',
         f'<text x="10" y="20" font-family="sans-serif" font-size="14" '
         f'fill="#666">{bundle.page_name} — placeholder render '
-        f'({vw}x{vh})</text>',
+        f"({vw}x{vh})</text>",
     ]
     for i, v in enumerate(bundle.visuals):
         x = float(v.get("x", 0))
@@ -165,11 +165,7 @@ def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
     """Build a single PNG chunk with CRC32."""
     body = chunk_type + data
     crc = zlib.crc32(body) & 0xFFFFFFFF
-    return (
-        struct.pack(">I", len(data))
-        + body
-        + struct.pack(">I", crc)
-    )
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", crc)
 
 
 def _render_png(bundle: _PageBundle, viewport: tuple[int, int]) -> bytes:
@@ -186,9 +182,7 @@ def _render_png(bundle: _PageBundle, viewport: tuple[int, int]) -> bytes:
     vw, vh = viewport
 
     # Canvas as raw RGB bytes.
-    canvas: list[tuple[int, int, int]] = [
-        (255, 255, 255) for _ in range(vw * vh)
-    ]
+    canvas: list[tuple[int, int, int]] = [(255, 255, 255) for _ in range(vw * vh)]
 
     def _fill_rect(
         x: int,
@@ -202,9 +196,7 @@ def _render_png(bundle: _PageBundle, viewport: tuple[int, int]) -> bytes:
             for i in range(max(0, x), min(vw, x + w)):
                 canvas[row_start + i] = rgb
 
-    def _draw_rect_border(
-        x: int, y: int, w: int, h: int, rgb: tuple[int, int, int]
-    ) -> None:
+    def _draw_rect_border(x: int, y: int, w: int, h: int, rgb: tuple[int, int, int]) -> None:
         if vh <= 0 or vw <= 0 or w <= 0 or h <= 0:
             return
         # Top + bottom edges.
@@ -357,9 +349,7 @@ def screenshot_report_pages(
             "PDF requested but no Power BI Desktop Bridge detected; "
             "falling back to SVG placeholders."
         )
-    rendering_warnings.append(
-        "wait_ms is not honoured in placeholder mode (no real rendering)"
-    )
+    rendering_warnings.append("wait_ms is not honoured in placeholder mode (no real rendering)")
 
     for bundle in bundles:
         output_format = format if format in {"png", "svg"} else "svg"
@@ -378,9 +368,7 @@ def screenshot_report_pages(
             "height": bundle.height,
             "viewport": {"width": viewport[0], "height": viewport[1]},
             "visuals_count": len(bundle.visuals),
-            "visual_types": [
-                v.get("visual", {}).get("$type", "unknown") for v in bundle.visuals
-            ],
+            "visual_types": [v.get("visual", {}).get("$type", "unknown") for v in bundle.visuals],
             "format": output_format,
             "rendering_mode": "placeholder",
         }
@@ -398,9 +386,7 @@ def screenshot_report_pages(
             )
         )
         if baseline is not None:
-            _compare_to_baseline(
-                bundle, baseline, pixel_threshold_pct, comparison_findings
-            )
+            _compare_to_baseline(bundle, baseline, pixel_threshold_pct, comparison_findings)
         succeeded += 1
 
     return ScreenshotReportPagesResult(

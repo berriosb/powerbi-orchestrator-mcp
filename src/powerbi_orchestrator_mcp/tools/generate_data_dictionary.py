@@ -56,9 +56,7 @@ class _PbipFolderInspector:
                 model = data.get("model", data)
                 for t in model.get("tables", []):
                     tname = t.get("name", "")
-                    self.tables_data.append(
-                        {"name": tname, "description": t.get("description")}
-                    )
+                    self.tables_data.append({"name": tname, "description": t.get("description")})
                     cols = []
                     for c in t.get("columns", []):
                         cols.append(
@@ -131,16 +129,11 @@ def generate_data_dictionary(
                     "pass an ``inspector`` to populate._\n"
                 ),
                 coverage_score=0.0,
-                warnings=[
-                    "no inspector provided — pass modeling_engine "
-                    "from production"
-                ],
+                warnings=["no inspector provided — pass modeling_engine from production"],
             )
 
     tables = inspector.list_tables()
-    columns_by_table = {
-        t["name"]: inspector.list_columns(t["name"]) for t in tables
-    }
+    columns_by_table = {t["name"]: inspector.list_columns(t["name"]) for t in tables}
     measures = inspector.list_measures()
     relationships = inspector.list_relationships()
 
@@ -196,9 +189,7 @@ def generate_data_dictionary(
             else:
                 columns_missing.append(f"{tname}.{col['name']}")
             coverage_total += 1
-            lines.append(
-                f"| `{col['name']}` | {col['data_type']} | {cdesc or '_missing_'} |"
-            )
+            lines.append(f"| `{col['name']}` | {col['data_type']} | {cdesc or '_missing_'} |")
         lines.append("")
 
     # Measures.
@@ -208,10 +199,7 @@ def generate_data_dictionary(
         lines.append("| Measure | Table | Expression |")
         lines.append("|---------|-------|------------|")
         for m in measures:
-            lines.append(
-                f"| `{m['name']}` | {m['table']} | "
-                f"`{_escape_mermaid(m['expression'])}` |"
-            )
+            lines.append(f"| `{m['name']}` | {m['table']} | `{_escape_mermaid(m['expression'])}` |")
         lines.append("")
 
     coverage_score = coverage_with_desc / coverage_total if coverage_total else 0.0

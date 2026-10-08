@@ -143,9 +143,7 @@ class BpaRunner:
             ) from exc
 
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self._timeout_s
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout_s)
         except TimeoutError as exc:
             proc.kill()
             await proc.wait()

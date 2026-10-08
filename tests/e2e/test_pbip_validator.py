@@ -52,6 +52,5 @@ def test_pbip_validator_exit_code_0_passes(
         timeout=60,
     )
     assert result.returncode in (0, 1), (
-        f"pbip-validator exited {result.returncode} unexpectedly: "
-        f"stderr={result.stderr!r}"
+        f"pbip-validator exited {result.returncode} unexpectedly: stderr={result.stderr!r}"
     )

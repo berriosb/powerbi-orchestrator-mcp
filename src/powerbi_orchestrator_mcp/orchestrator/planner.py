@@ -91,8 +91,7 @@ class PlanBuilder:
         """
         if intent not in self.TEMPLATES:
             raise UnknownTemplateError(
-                f"unknown template {intent!r}; "
-                f"supported: {sorted(self.TEMPLATES)}"
+                f"unknown template {intent!r}; supported: {sorted(self.TEMPLATES)}"
             )
         raise PlanValidationError(
             f"template {intent!r} requires structured args; use the "
@@ -292,9 +291,7 @@ class PlanBuilder:
         self._require_nonempty("pbip_path", pbip_path)
         self._require_nonempty("workspace_id", workspace_id)
         if not (0 <= refresh_daily_hour <= 23):
-            raise PlanValidationError(
-                f"refresh_daily_hour must be 0..23, got {refresh_daily_hour}"
-            )
+            raise PlanValidationError(f"refresh_daily_hour must be 0..23, got {refresh_daily_hour}")
 
         plan_id = new_plan_id()
 
@@ -350,9 +347,7 @@ class PlanBuilder:
             id=plan_id,
             target=pbip_path,
             steps=[pre, publish, bind, schedule, refresh],
-            rollback_steps=(
-                [publish.rollback_step] if publish.rollback_step else []
-            ),
+            rollback_steps=([publish.rollback_step] if publish.rollback_step else []),
             risk_score=0.7,
             estimated_changes=EstimatedChanges(
                 files_affected=4,
@@ -434,8 +429,7 @@ class PlanBuilder:
         threshold = opts.max_impact_threshold / 100.0
         if plan.risk_score > threshold:
             raise RiskThresholdExceededError(
-                f"plan {plan.id} risk_score {plan.risk_score:.2f} exceeds "
-                f"threshold {threshold:.2f}"
+                f"plan {plan.id} risk_score {plan.risk_score:.2f} exceeds threshold {threshold:.2f}"
             )
 
     def _serialize(self, plan: Plan) -> str:
@@ -460,9 +454,7 @@ class PlanBuilder:
             allow_unicode=True,
         )
         if rollback_steps:
-            rendered += (
-                "# rollback_steps are encoded in each step.rollback_step above\n"
-            )
+            rendered += "# rollback_steps are encoded in each step.rollback_step above\n"
         return rendered
 
 
@@ -488,7 +480,5 @@ def _now_iso() -> str:
 def write_plan_to_file(plan: Plan, path: Path) -> None:
     """Convenience: write a plan's YAML to disk (used by Git commit workflows)."""
     if not plan.yaml:
-        raise PlanValidationError(
-            f"plan {plan.id} has empty yaml; call PlanBuilder.build* first"
-        )
+        raise PlanValidationError(f"plan {plan.id} has empty yaml; call PlanBuilder.build* first")
     path.write_text(plan.yaml, encoding="utf-8")

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.15.0] — 2026-10-08
+
+### Security
+- **Safe-by-default write tools**: `add_measure_with_validation`, `apply_plan` and `promote_in_pipeline` now default to `dry_run=True`. Executing against real files or real Fabric Deployment Pipeline stages (including prod) requires an explicit `dry_run=False`, so an LLM caller can no longer mutate state by omitting the flag. This is a behavior change: callers that relied on the previous implicit execution must now pass `dry_run=False`.
+
+### Fixed
+- **Silent no-op in `add_measure_with_validation`**: when no `measure_writer` is wired the tool returned `success=True` while writing nothing. Because an MCP client cannot inject a callable, this was reachable in every real MCP call — the tool reported a measure as created when no file was modified. It now returns `success=False` with an explicit "not persisted" message.
+- **`runtime_check` false positive**: reported `ran=True` alongside an "unsupported" error, which reads as "validation ran and failed" to any caller. It now reports `ran=False` plus a `supported=False` marker.
+
+### Changed
+- **`ruff format` enforcement**: the entire tree is now formatted and CI runs `ruff format --check` alongside `ruff check`, closing a gap where 95 of 129 files drifted from the configured style with no CI signal.
+- **Dependency auditing**: `pip-audit` added to the `verify` workflow and to the `dev` extra.
+
+---
+
 ## [1.14.2] — 2026-10-07
 
 ### Fixed

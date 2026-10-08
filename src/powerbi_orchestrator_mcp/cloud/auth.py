@@ -96,9 +96,7 @@ class AuthConfig:
             if not self.client_secret:
                 missing.append("client_secret")
             if missing:
-                raise AuthModeError(
-                    f"service_principal mode requires: {', '.join(missing)}"
-                )
+                raise AuthModeError(f"service_principal mode requires: {', '.join(missing)}")
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +126,7 @@ class FabricCredential:
         of the project.
         """
         if self._config.mode == "interactive":
-            kwargs: dict[str, Any] = {
-                "exclude_interactive_browser_credential": False
-            }
+            kwargs: dict[str, Any] = {"exclude_interactive_browser_credential": False}
             if self._config.tenant_id:
                 kwargs["interactive_browser_tenant_id"] = self._config.tenant_id
             if self._config.client_id:
@@ -165,9 +161,7 @@ class FabricCredential:
         try:
             token = self._credential.get_token(*scopes)
         except ClientAuthenticationError as exc:
-            raise AuthModeError(
-                f"Azure authentication failed: {exc}"
-            ) from exc
+            raise AuthModeError(f"Azure authentication failed: {exc}") from exc
         return token.token  # type: ignore[no-any-return]
 
     async def get_token_for_scope(self, scope_kind: str) -> str:

@@ -184,9 +184,7 @@ class TestExecuteSingleStep:
 
 class TestRaiseIfPartial:
     def test_rolled_back_no_raise(self) -> None:
-        result = RollbackResult(
-            status="rolled_back", rolled_back_steps=["s1"], failed_rollbacks=[]
-        )
+        result = RollbackResult(status="rolled_back", rolled_back_steps=["s1"], failed_rollbacks=[])
         raise_if_partial(result)  # does nothing
 
     def test_partial_raises_with_paths(self) -> None:
@@ -212,9 +210,7 @@ class TestRaiseIfPartial:
         result = RollbackResult(
             status="no_rollback",
             rolled_back_steps=[],
-            failed_rollbacks=[
-                FailedRollback(step_id="s1", error_message="x", paths_affected=[])
-            ],
+            failed_rollbacks=[FailedRollback(step_id="s1", error_message="x", paths_affected=[])],
         )
         with pytest.raises(RollbackError):
             raise_if_partial(result)
@@ -302,9 +298,7 @@ class TestCrossEngineDispatcher:
         s_report_b.rollback_step.engine = "report"
         failed_step.rollback_step.engine = "cloud"
 
-        result = await engine.execute_plan(
-            executed_steps=plan_steps, failed_step=failed_step
-        )
+        result = await engine.execute_plan(executed_steps=plan_steps, failed_step=failed_step)
         # 4 rollbacks: failed-rb (cloud) + s3-rb (report) + s2-rb (report)
         # + s1-rb (modeling).
         assert result.status == "rolled_back"
@@ -330,9 +324,7 @@ class TestCrossEngineDispatcher:
             return _PerEngineExecutor(fail_for={"report"})
 
         engine = RollbackEngine(_dispatcher)
-        result = await engine.execute_plan(
-            executed_steps=[s1, s2], failed_step=failed_step
-        )
+        result = await engine.execute_plan(executed_steps=[s1, s2], failed_step=failed_step)
         assert result.status == "partial"
         # s1 (modeling) rollback succeeded; failed_step (cloud) rollback
         # succeeded; s2 (report) rollback failed.
@@ -353,9 +345,7 @@ class TestCrossEngineDispatcher:
         assert failed_step.rollback_step is not None
         failed_step.rollback_step.engine = "cloud"
 
-        result = await engine.execute_plan(
-            executed_steps=[s1], failed_step=failed_step
-        )
+        result = await engine.execute_plan(executed_steps=[s1], failed_step=failed_step)
         assert result.status == "rolled_back"
         # All rollback calls went through the single executor.
         assert len(executor.calls) == 2

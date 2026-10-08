@@ -141,9 +141,7 @@ def apply_theme_and_accessibility_rules(
             for vc in data.get("visualContainers", []):
                 if not vc.get("altText"):
                     v_type = vc.get("visual", {}).get("$type", "Visual")
-                    first_measure = _first_measure_from_visual(
-                        vc.get("visual", {})
-                    ) or "data"
+                    first_measure = _first_measure_from_visual(vc.get("visual", {})) or "data"
                     vc["altText"] = alt_text_template.format(
                         visual_type=v_type,
                         first_measure=first_measure,
@@ -151,9 +149,7 @@ def apply_theme_and_accessibility_rules(
                     alt_texts_added += 1
                     modified = True
             if modified:
-                page_json.write_text(
-                    json.dumps(data, indent=2), encoding="utf-8"
-                )
+                page_json.write_text(json.dumps(data, indent=2), encoding="utf-8")
                 files_changed.append(str(page_json.relative_to(pbip)))
 
     # 4. Re-audit.

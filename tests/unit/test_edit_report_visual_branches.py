@@ -61,9 +61,7 @@ class TestFailurePaths:
     def test_no_report_dir(self, tmp_path: Path) -> None:
         pbip = tmp_path / "empty.pbip"
         pbip.mkdir()
-        result = edit_report_visual(
-            pbip_path=str(pbip), page_name="X", visual_id="v1"
-        )
+        result = edit_report_visual(pbip_path=str(pbip), page_name="X", visual_id="v1")
         assert result["success"] is False
         assert "no .Report" in result["error_message"]
 
@@ -80,9 +78,7 @@ class TestFailurePaths:
 
     def test_invalid_page_json(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
-        page_json = (
-            pbip / "test.Report" / "pages" / "Overview" / "page.json"
-        )
+        page_json = pbip / "test.Report" / "pages" / "Overview" / "page.json"
         page_json.write_text("{ not json", encoding="utf-8")
         result = edit_report_visual(
             pbip_path=str(pbip),
@@ -133,13 +129,7 @@ class TestChangeBranches:
         assert result["success"] is True
         assert "format" in result["changes_applied"]
         data = json.loads(
-            (
-                    pbip
-                    / "test.Report"
-                    / "pages"
-                    / "Overview"
-                    / "page.json"
-                ).read_text(encoding="utf-8")
+            (pbip / "test.Report" / "pages" / "Overview" / "page.json").read_text(encoding="utf-8")
         )
         assert "objects" in data["visualContainers"][0]["visual"]
 
@@ -154,13 +144,7 @@ class TestChangeBranches:
         assert result["success"] is True
         assert "isHidden" in result["changes_applied"]
         data = json.loads(
-            (
-                pbip
-                / "test.Report"
-                / "pages"
-                / "Overview"
-                / "page.json"
-            ).read_text(encoding="utf-8")
+            (pbip / "test.Report" / "pages" / "Overview" / "page.json").read_text(encoding="utf-8")
         )
         assert data["visualContainers"][0]["isHidden"] is True
 
@@ -174,13 +158,7 @@ class TestChangeBranches:
         )
         assert result["success"] is True
         data = json.loads(
-            (
-                pbip
-                / "test.Report"
-                / "pages"
-                / "Overview"
-                / "page.json"
-            ).read_text(encoding="utf-8")
+            (pbip / "test.Report" / "pages" / "Overview" / "page.json").read_text(encoding="utf-8")
         )
         assert data["visualContainers"][0]["isHidden"] is False
 
@@ -195,17 +173,9 @@ class TestChangeBranches:
         assert result["success"] is True
         assert "type" in result["changes_applied"]
         data = json.loads(
-            (
-                pbip
-                / "test.Report"
-                / "pages"
-                / "Overview"
-                / "page.json"
-            ).read_text(encoding="utf-8")
+            (pbip / "test.Report" / "pages" / "Overview" / "page.json").read_text(encoding="utf-8")
         )
-        assert (
-            data["visualContainers"][0]["visual"]["$type"] == "barChart"
-        )
+        assert data["visualContainers"][0]["visual"]["$type"] == "barChart"
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +190,7 @@ class TestAtomicWriteFailure:
         import os as _os
 
         pbip = _make_pbip(tmp_path)
+
         # Force os.replace to raise.
         def raise_replace(*_a: object, **_kw: object) -> None:
             raise OSError("disk full")

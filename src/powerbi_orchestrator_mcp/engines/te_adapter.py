@@ -155,11 +155,7 @@ def _load_model_from_json_file(file_path: Path) -> dict[str, Any] | None:
     try:
         data = json.loads(file_path.read_text(encoding="utf-8"))
         model_data = data.get("model", data)
-        tables = [
-            str(t.get("name", ""))
-            for t in model_data.get("tables", [])
-            if t.get("name")
-        ]
+        tables = [str(t.get("name", "")) for t in model_data.get("tables", []) if t.get("name")]
         columns: dict[str, list[str]] = {}
         measures: list[dict[str, Any]] = []
         relationships: list[dict[str, Any]] = []
@@ -167,11 +163,7 @@ def _load_model_from_json_file(file_path: Path) -> dict[str, Any] | None:
             tname = str(t.get("name", ""))
             if not tname:
                 continue
-            columns[tname] = [
-                str(c.get("name", ""))
-                for c in t.get("columns", [])
-                if c.get("name")
-            ]
+            columns[tname] = [str(c.get("name", "")) for c in t.get("columns", []) if c.get("name")]
             for m in t.get("measures", []):
                 mname = str(m.get("name", ""))
                 if mname:
@@ -241,9 +233,7 @@ class InMemoryModelingAdapter:
         return True
 
     async def health_check(self) -> EngineStatus:
-        return EngineStatus(
-            name=self._name, available=True, version=self._version
-        )
+        return EngineStatus(name=self._name, available=True, version=self._version)
 
     async def connect(self, target: Target) -> ConnectionHandle:
         return ConnectionHandle(
@@ -296,10 +286,7 @@ class InMemoryModelingAdapter:
         table: str,
     ) -> list[Column]:
         model = self._ensure_model_loaded(conn.target_ref)
-        return [
-            Column(name=c)
-            for c in model.get("columns", {}).get(table, [])
-        ]
+        return [Column(name=c) for c in model.get("columns", {}).get(table, [])]
 
     async def list_relationships(
         self,
@@ -375,7 +362,9 @@ class InMemoryModelingAdapter:
                                 expr = str(m.get("expression", ""))
                                 if expr:
                                     updated_expr = expr.replace(f"{old_t_name}[", f"{new_name}[")
-                                    updated_expr = updated_expr.replace(f"'{old_t_name}'[", f"'{new_name}'[")
+                                    updated_expr = updated_expr.replace(
+                                        f"'{old_t_name}'[", f"'{new_name}'["
+                                    )
                                     if updated_expr != expr:
                                         m["expression"] = updated_expr
                     else:
@@ -423,8 +412,7 @@ class InMemoryModelingAdapter:
                                 ) and str(r.get("fromColumn", "")).lower() == column.lower():
                                     r["fromColumn"] = new_name
                                 if (
-                                    not table
-                                    or str(r.get("toTable", "")).lower() == table.lower()
+                                    not table or str(r.get("toTable", "")).lower() == table.lower()
                                 ) and str(r.get("toColumn", "")).lower() == column.lower():
                                     r["toColumn"] = new_name
 
@@ -443,9 +431,10 @@ class InMemoryModelingAdapter:
             elif tf.suffix == ".tmdl":
                 try:
                     text = tf.read_text(encoding="utf-8")
-                    is_tbl = (
-                        (not table and tf.stem.lower() == column.lower())
-                        or (table and tf.stem.lower() == table.lower() and (not column or column.lower() == table.lower()))
+                    is_tbl = (not table and tf.stem.lower() == column.lower()) or (
+                        table
+                        and tf.stem.lower() == table.lower()
+                        and (not column or column.lower() == table.lower())
                     )
                     if is_tbl and new_name:
                         old_t_name = tf.stem
@@ -498,9 +487,7 @@ class InMemoryModelingAdapter:
         self, conn: ConnectionHandle, table: str, measure: Measure
     ) -> OperationResult:
         model = self._models.setdefault(conn.target_ref, {"measures": []})
-        model.setdefault("measures", []).append(
-            {"name": measure.name, "table": table}
-        )
+        model.setdefault("measures", []).append({"name": measure.name, "table": table})
         target_files = _find_dataset_model_files(conn.target_ref)
         if not target_files:
             if Path(conn.target_ref).exists():
@@ -508,9 +495,7 @@ class InMemoryModelingAdapter:
                     success=False,
                     error_message=f"no dataset model files found for target {conn.target_ref}",
                 )
-            return OperationResult(
-                success=True, changed_files=[f"{table}.{measure.name}"]
-            )
+            return OperationResult(success=True, changed_files=[f"{table}.{measure.name}"])
 
         changed_files: list[str] = []
         for tf in target_files:
@@ -546,9 +531,7 @@ class InMemoryModelingAdapter:
                     )
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
-            elif tf.suffix == ".tmdl" and (
-                not table or tf.stem.lower() == table.lower()
-            ):
+            elif tf.suffix == ".tmdl" and (not table or tf.stem.lower() == table.lower()):
                 try:
                     text = tf.read_text(encoding="utf-8")
                     block = f"\n\n\tmeasure '{measure.name}' = {measure.expression}\n"
@@ -757,7 +740,12 @@ class InMemoryModelingAdapter:
             for line in tmdl_body.splitlines()
             if line.startswith("table ") and len(line.split(" ", 1)) == 2
         ]
-        self._models[pbip_path] = {"tables": tables, "columns": {}, "relationships": [], "measures": []}
+        self._models[pbip_path] = {
+            "tables": tables,
+            "columns": {},
+            "relationships": [],
+            "measures": [],
+        }
         tmdl_path = Path(pbip_path) / f"{model_name}.Dataset" / "definition.tmdl"
         return ApplyModelSpecResult(
             success=True,
@@ -781,9 +769,7 @@ class InMemoryModelingAdapter:
             cg_name = f"TimeIntelligence_{sp.skeleton.replace(' ', '_')}"
             groups.append(cg_name)
             for item in sp.items:
-                remappings[f"{sp.skeleton} {item['name']}"] = (
-                    f"[{cg_name}].[{item['name']}]"
-                )
+                remappings[f"{sp.skeleton} {item['name']}"] = f"[{cg_name}].[{item['name']}]"
         return RefactorCalcGroupsResult(
             success=True,
             groups_created=groups,
@@ -832,9 +818,7 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
         mode: str = "skeleton",
     ) -> None:
         if mode not in self._VALID_MODES:
-            raise ValueError(
-                f"invalid mode {mode!r}; expected one of {self._VALID_MODES}"
-            )
+            raise ValueError(f"invalid mode {mode!r}; expected one of {self._VALID_MODES}")
         self._script_path = script_path
         self._mode = mode
         super().__init__(
@@ -885,9 +869,7 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
         if self._mode == "skeleton":
             return ApplyModelSpecResult(
                 success=True,
-                changed_files=[
-                    f"{pbip_path}/{model_name}.Dataset/definition.tmdl"
-                ],
+                changed_files=[f"{pbip_path}/{model_name}.Dataset/definition.tmdl"],
                 tmdl_body=tmdl_body,
             )
         # mode == 'subprocess'
@@ -924,19 +906,14 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
         if self._mode == "skeleton":
             return RefactorCalcGroupsResult(
                 success=True,
-                groups_created=[
-                    f"TimeIntelligence_{cg.skeleton.replace(' ', '_')}"
-                    for cg in spec
-                ],
+                groups_created=[f"TimeIntelligence_{cg.skeleton.replace(' ', '_')}" for cg in spec],
             )
         # mode == 'subprocess'
         if not os.path.exists(self._binary):
             return RefactorCalcGroupsResult(
                 success=False,
                 groups_created=[],
-                error_message=self._binary_missing_message(
-                    "refactor_to_calculation_groups"
-                ),
+                error_message=self._binary_missing_message("refactor_to_calculation_groups"),
             )
         response = await self._rpc(
             "refactor_to_calc_groups",

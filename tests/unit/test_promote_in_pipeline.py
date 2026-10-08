@@ -19,9 +19,7 @@ class _FabricClientStub:
         self._fail = fail
         self.calls: list[dict[str, Any]] = []
 
-    def list_pipeline_items(
-        self, pipeline_id: str, source_stage: str
-    ) -> list[str]:
+    def list_pipeline_items(self, pipeline_id: str, source_stage: str) -> list[str]:
         return list(self._items)
 
     def deploy_pipeline_item(
@@ -44,6 +42,17 @@ class _FabricClientStub:
 
 
 class TestPromoteInPipeline:
+    def test_defaults_to_dry_run(self) -> None:
+        """Safety default: promotion must not execute without opt-in.
+
+        A pipeline promotion moves live artifacts between stages (incl.
+        prod), so dry_run must default to True.
+        """
+        client = _FabricClientStub(items=["item1"])
+        r = promote_in_pipeline("pipe", fabric_client=client)
+        assert r.dry_run is True
+        assert client.calls == [], "no promotion may happen under the default"
+
     def test_invalid_stage_returns_warning(self) -> None:
         r = promote_in_pipeline("p", source_stage="QA", target_stage="test")
         assert any("invalid stages" in w for w in r.warnings)
@@ -111,9 +120,7 @@ class TestPromoteInPipeline:
         r = promote_in_pipeline(
             "p",
             quality_gates=gates,
-            pre_deploy_findings=[
-                {"severity": "error", "message": "critical"}
-            ],
+            pre_deploy_findings=[{"severity": "error", "message": "critical"}],
             dry_run=True,
         )
         assert r.failed_gate is not None
@@ -218,9 +225,7 @@ class TestPromoteInPipeline:
     def test_custom_gate_pass(self) -> None:
         custom = [("custom_smoke", lambda: True)]
         r = promote_in_pipeline("p", custom_gates=custom, dry_run=True)
-        assert any(
-            ge.type == "custom:custom_smoke" for ge in r.gates_executed
-        )
+        assert any(ge.type == "custom:custom_smoke" for ge in r.gates_executed)
 
     def test_custom_gate_fail_blocks(self) -> None:
         custom = [("custom_smoke", lambda: False)]
@@ -229,9 +234,7 @@ class TestPromoteInPipeline:
         assert r.failed_gate.type == "custom:custom_smoke"
 
     def test_non_blocking_gate_does_not_halt(self) -> None:
-        gates = [
-            QualityGate(type="pre_deploy_check", profile="relaxed", blocking=False)
-        ]
+        gates = [QualityGate(type="pre_deploy_check", profile="relaxed", blocking=False)]
         r = promote_in_pipeline(
             "p",
             quality_gates=gates,
@@ -247,9 +250,7 @@ class TestPromoteInPipeline:
         def logger(**kwargs: Any) -> None:
             events.append(kwargs)
 
-        promote_in_pipeline(
-            "p", audit_logger=logger, items=["x"], dry_run=True
-        )
+        promote_in_pipeline("p", audit_logger=logger, items=["x"], dry_run=True)
         assert any(e.get("action") == "promoted" for e in events)
 
     def test_audit_logger_invoked_on_failure(self) -> None:

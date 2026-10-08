@@ -27,9 +27,7 @@ from powerbi_orchestrator_mcp.orchestrator.audit import (
 
 
 @pytest.fixture()
-def isolated_audit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[Path, Path]:
+def isolated_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     """Redirect AUDIT_DIR and AUDIT_DB to a temp directory.
 
     Returns (audit_dir, audit_db_path) for convenience.
@@ -82,24 +80,18 @@ class TestHmacHelpers:
 
 
 class TestHmacKey:
-    def test_env_var_takes_precedence(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_var_takes_precedence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PBI_ORCHESTRATOR_AUDIT_SECRET", "my-env-secret")
         key = _get_hmac_key()
         assert key == b"my-env-secret"
 
-    def test_legacy_env_var_fallback(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_legacy_env_var_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("PBI_ORCHESTRATOR_AUDIT_SECRET", raising=False)
         monkeypatch.setenv("PBI_ORCHestrATOR_AUDIT_SECRET", "legacy-secret")
         key = _get_hmac_key()
         assert key == b"legacy-secret"
 
-    def test_generates_and_persists_key(
-        self, isolated_audit: tuple[Path, Path]
-    ) -> None:
+    def test_generates_and_persists_key(self, isolated_audit: tuple[Path, Path]) -> None:
         audit_dir, _ = isolated_audit
         key1 = _get_hmac_key()
         key_path = audit_dir / ".audit_key"
@@ -195,9 +187,7 @@ class TestInsert:
         ]
         assert ids == [1, 2, 3, 4, 5]
 
-    def test_reuses_existing_db_file(
-        self, isolated_audit: tuple[Path, Path]
-    ) -> None:
+    def test_reuses_existing_db_file(self, isolated_audit: tuple[Path, Path]) -> None:
         _, db_path = isolated_audit
         log1 = AuditLog(db_path=db_path)
         log1.insert(tool_name="t1", tool_args={}, result_status="success")
@@ -246,9 +236,7 @@ class TestVerify:
 
 class TestTamperDetection:
     def test_detects_modified_tool_args(self, log: AuditLog) -> None:
-        log.insert(
-            tool_name="t", tool_args={"x": 1}, result_status="success"
-        )
+        log.insert(tool_name="t", tool_args={"x": 1}, result_status="success")
         # Manually change the payload to simulate tampering.
         conn = sqlite3.connect(str(log._db_path))
         try:
@@ -334,14 +322,14 @@ class TestModuleLevel:
         assert isinstance(AUDIT_DB, Path)
         assert AUDIT_DB.parent == AUDIT_DIR
 
-    def test_ensure_audit_dir_creates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_ensure_audit_dir_creates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr(audit_mod, "AUDIT_DIR", tmp_path / "new")
         audit_mod._ensure_audit_dir()
         assert (tmp_path / "new").exists()
 
-    def test_module_get_conn_creates_db(
-        self, isolated_audit: tuple[Path, Path]
-    ) -> None:
+    def test_module_get_conn_creates_db(self, isolated_audit: tuple[Path, Path]) -> None:
         """The module-level _get_conn is an internal helper; it should
         create the schema if missing."""
         _, db_path = isolated_audit
@@ -368,9 +356,7 @@ class TestVerifyCli:
         assert "valid" in captured.out
         assert "1 entries" in captured.out
 
-    def test_cli_broken_exits_1(
-        self, log: AuditLog, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_cli_broken_exits_1(self, log: AuditLog, capsys: pytest.CaptureFixture[str]) -> None:
         log.insert(tool_name="t", tool_args={}, result_status="success")
         conn = sqlite3.connect(str(log._db_path))
         try:

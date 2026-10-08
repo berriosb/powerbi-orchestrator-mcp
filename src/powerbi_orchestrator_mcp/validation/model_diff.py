@@ -69,8 +69,12 @@ class ModelDiffer:
         "column": {"name", "data_type"},  # rename or type change = breaking
         "measure": {"name", "expression"},  # rename or expression = breaking
         "relationship": {
-            "from_table", "from_column", "to_table", "to_column",
-            "cardinality", "cross_filter",
+            "from_table",
+            "from_column",
+            "to_table",
+            "to_column",
+            "cardinality",
+            "cross_filter",
         },
     }
 
@@ -86,9 +90,7 @@ class ModelDiffer:
         diffs.extend(self._diff_measures(before, after))
         diffs.extend(self._diff_relationships(before, after))
         breaking = sum(1 for d in diffs if d.severity == DiffSeverity.BREAKING)
-        non_breaking = sum(
-            1 for d in diffs if d.severity == DiffSeverity.NON_BREAKING
-        )
+        non_breaking = sum(1 for d in diffs if d.severity == DiffSeverity.NON_BREAKING)
         added = sum(1 for d in diffs if d.severity == DiffSeverity.ADDED)
         removed = sum(1 for d in diffs if d.severity == DiffSeverity.REMOVED)
         return ModelDiffResult(
@@ -146,10 +148,7 @@ class ModelDiffer:
                     ObjectDiff(
                         object_type=key.rstrip("s"),
                         object_name=name,
-                        severity=(
-                            DiffSeverity.BREAKING if breaking
-                            else DiffSeverity.NON_BREAKING
-                        ),
+                        severity=(DiffSeverity.BREAKING if breaking else DiffSeverity.NON_BREAKING),
                         details="; ".join(f"{k}: {b_v!r} → {a_v!r}" for k, b_v, a_v, _ in changes),
                         before=b[name],
                         after=a[name],
@@ -157,9 +156,7 @@ class ModelDiffer:
                 )
         return diffs
 
-    def _diff_measures(
-        self, before: dict[str, Any], after: dict[str, Any]
-    ) -> list[ObjectDiff]:
+    def _diff_measures(self, before: dict[str, Any], after: dict[str, Any]) -> list[ObjectDiff]:
         return self._diff_lists(before, after, "measures")
 
     def _diff_relationships(
@@ -190,22 +187,15 @@ class ModelDiffer:
                 )
             )
         for k in a.keys() & b.keys():
-            changes = _diff_dicts(
-                b[k], a[k], self.BREAKING_PROPS["relationship"]
-            )
+            changes = _diff_dicts(b[k], a[k], self.BREAKING_PROPS["relationship"])
             if changes:
                 breaking = any(c[3] for c in changes)
                 diffs.append(
                     ObjectDiff(
                         object_type="relationship",
                         object_name=" → ".join(k),
-                        severity=(
-                            DiffSeverity.BREAKING if breaking
-                            else DiffSeverity.NON_BREAKING
-                        ),
-                        details="; ".join(
-                            f"{kk}: {bv!r} → {av!r}" for kk, bv, av, _ in changes
-                        ),
+                        severity=(DiffSeverity.BREAKING if breaking else DiffSeverity.NON_BREAKING),
+                        details="; ".join(f"{kk}: {bv!r} → {av!r}" for kk, bv, av, _ in changes),
                         before=b[k],
                         after=a[k],
                     )

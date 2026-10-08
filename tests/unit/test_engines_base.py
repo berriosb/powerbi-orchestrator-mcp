@@ -162,9 +162,7 @@ class TestStart:
         assert e.started is True
 
     async def test_start_propagates_engine_error(self) -> None:
-        not_found = EngineNotFoundError(
-            "missing", engine="fake", code="x", remediation_hint="y"
-        )
+        not_found = EngineNotFoundError("missing", engine="fake", code="x", remediation_hint="y")
         e = _FakeSubprocessEngine(start_raises=not_found)
         with pytest.raises(EngineNotFoundError):
             await e._start()
@@ -219,9 +217,7 @@ class TestStop:
 
 class TestMapSubprocessError:
     def test_passes_through_engine_error(self) -> None:
-        original = EngineCrashedError(
-            "x", engine="fake", code="x", remediation_hint="r"
-        )
+        original = EngineCrashedError("x", engine="fake", code="x", remediation_hint="r")
         wrapped = map_subprocess_error("fake", original, "op")
         assert wrapped is original
 
@@ -290,9 +286,7 @@ class TestOutputParseError:
 
 class TestMcpHandshake:
     async def test_perform_mcp_handshake_sends_initialize_and_notification(self) -> None:
-        engine = _FakeSubprocessEngine(
-            responses={"initialize": {"protocolVersion": "2024-11-05"}}
-        )
+        engine = _FakeSubprocessEngine(responses={"initialize": {"protocolVersion": "2024-11-05"}})
         await engine._perform_mcp_handshake()
         assert len(engine._calls) == 1
         assert engine._calls[0][0] == "initialize"
@@ -317,4 +311,3 @@ class TestMcpHandshake:
             args=(),
         )
         assert engine.is_available() is False
-

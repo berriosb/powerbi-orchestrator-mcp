@@ -77,9 +77,7 @@ class WcagAuditor:
                         severity="error",
                         object_path=str(pbip_root),
                         message="PBIP has no .Report directory",
-                        remediation_hint=(
-                            "Open the PBIP in Power BI Desktop to create the report"
-                        ),
+                        remediation_hint=("Open the PBIP in Power BI Desktop to create the report"),
                     )
                 ],
                 pages_audited=0,
@@ -125,9 +123,7 @@ class WcagAuditor:
         candidates = sorted(pbip_root.glob("*.Report"))
         return candidates[0] if candidates else None
 
-    def _audit_visual(
-        self, container: dict[str, Any], page_name: str
-    ) -> list[WcagFinding]:
+    def _audit_visual(self, container: dict[str, Any], page_name: str) -> list[WcagFinding]:
         findings: list[WcagFinding] = []
         vid = container.get("id", "<no-id>")
         path = f"pages/{page_name}/visualContainers/{vid}"
@@ -165,12 +161,8 @@ class WcagAuditor:
                     rule_id="WCAG_1_1_1_PLACEHOLDER_ALT",
                     severity="warning",
                     object_path=path,
-                    message=(
-                        f"alt text {alt_text!r} looks like a placeholder"
-                    ),
-                    remediation_hint=(
-                        "Replace placeholder with descriptive alt text"
-                    ),
+                    message=(f"alt text {alt_text!r} looks like a placeholder"),
+                    remediation_hint=("Replace placeholder with descriptive alt text"),
                 )
             )
 

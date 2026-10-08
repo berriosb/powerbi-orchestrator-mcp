@@ -87,26 +87,16 @@ def json_blob(label: str) -> str:
 
 
 class TestCommitWorkspaceToGit:
-    def test_missing_git_repo_returns_warning(
-        self, tmp_path: Path
-    ) -> None:
-        r = commit_workspace_to_git(
-            workspace_id="ws-1", output_repo_path=str(tmp_path / "nope")
-        )
+    def test_missing_git_repo_returns_warning(self, tmp_path: Path) -> None:
+        r = commit_workspace_to_git(workspace_id="ws-1", output_repo_path=str(tmp_path / "nope"))
         assert any("not a git repo" in w for w in r.warnings)
 
-    def test_no_fabric_client_emits_warning(
-        self, empty_git_repo: Path
-    ) -> None:
-        r = commit_workspace_to_git(
-            workspace_id="ws", output_repo_path=str(empty_git_repo)
-        )
+    def test_no_fabric_client_emits_warning(self, empty_git_repo: Path) -> None:
+        r = commit_workspace_to_git(workspace_id="ws", output_repo_path=str(empty_git_repo))
         assert any("fabric_client" in w for w in r.warnings)
         assert r.items_committed == []
 
-    def test_dry_run_no_commits_no_files(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_dry_run_no_commits_no_files(self, empty_git_repo: Path) -> None:
         client = _FabricClientStub()
         r = commit_workspace_to_git(
             workspace_id="ws",
@@ -121,9 +111,7 @@ class TestCommitWorkspaceToGit:
         for path in empty_git_repo.glob("Dataset/*.pbip"):
             pytest.fail(f"dry_run should not write {path}")
 
-    def test_real_commit_creates_files_and_sha(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_real_commit_creates_files_and_sha(self, empty_git_repo: Path) -> None:
         client = _FabricClientStub()
         r = commit_workspace_to_git(
             workspace_id="ws",
@@ -137,9 +125,7 @@ class TestCommitWorkspaceToGit:
         for entry in r.items_committed:
             assert (empty_git_repo / entry.path).exists()
 
-    def test_exclude_items_skipped(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_exclude_items_skipped(self, empty_git_repo: Path) -> None:
         client = _FabricClientStub()
         r = commit_workspace_to_git(
             workspace_id="ws",
@@ -150,9 +136,7 @@ class TestCommitWorkspaceToGit:
         )
         assert {it.item_id for it in r.items_committed} == {"rpt-1"}
 
-    def test_local_changes_abort(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_local_changes_abort(self, empty_git_repo: Path) -> None:
         # Pre-touch a target path with uncommitted content.
         target = empty_git_repo / "Dataset" / "SalesModel.pbip"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -174,9 +158,9 @@ class TestCommitWorkspaceToGit:
         )
         assert r.conflicts_detected
         assert r.commit_sha is None
-        assert all(
-            "local changes" in w or "abort" in w for w in r.warnings
-        ) or any("local changes" in w for w in r.warnings)
+        assert all("local changes" in w or "abort" in w for w in r.warnings) or any(
+            "local changes" in w for w in r.warnings
+        )
 
     def test_large_file_warning(self, empty_git_repo: Path) -> None:
         big_blob = "x" * 200
@@ -199,9 +183,7 @@ class TestCommitWorkspaceToGit:
         assert r.large_file_warnings
         assert any("BigData" in w for w in r.large_file_warnings)
 
-    def test_existing_branch_checkout_failure(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_existing_branch_checkout_failure(self, empty_git_repo: Path) -> None:
         r = commit_workspace_to_git(
             workspace_id="ws",
             output_repo_path=str(empty_git_repo),
@@ -209,9 +191,7 @@ class TestCommitWorkspaceToGit:
         )
         assert any("checkout" in w for w in r.warnings)
 
-    def test_fabric_client_calls_with_workspace_id(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_fabric_client_calls_with_workspace_id(self, empty_git_repo: Path) -> None:
         client = _FabricClientStub()
         commit_workspace_to_git(
             workspace_id="ws-xyz",
@@ -221,9 +201,7 @@ class TestCommitWorkspaceToGit:
         )
         assert client.calls == ["ws-xyz"]
 
-    def test_commit_message_override(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_commit_message_override(self, empty_git_repo: Path) -> None:
         client = _FabricClientStub()
         commit_workspace_to_git(
             workspace_id="ws",
@@ -241,9 +219,7 @@ class TestCommitWorkspaceToGit:
         )
         assert "manual message" in log.stdout
 
-    def test_nothing_new_no_commit(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_nothing_new_no_commit(self, empty_git_repo: Path) -> None:
         # Second invocation against a repo where the previous commit
         # already wrote these files → git will say nothing to commit.
         client = _FabricClientStub()
@@ -324,20 +300,12 @@ def _populate_repo_with_pbips(repo: Path, items: dict[str, str]) -> None:
 
 
 class TestSyncGitToWorkspace:
-    def test_missing_repo_returns_warning(
-        self, tmp_path: Path
-    ) -> None:
-        r = sync_git_to_workspace(
-            repo_path=str(tmp_path / "nope"), workspace_id="ws"
-        )
+    def test_missing_repo_returns_warning(self, tmp_path: Path) -> None:
+        r = sync_git_to_workspace(repo_path=str(tmp_path / "nope"), workspace_id="ws")
         assert any("not a git repo" in w for w in r.warnings)
 
-    def test_no_pbip_files_returns_warning(
-        self, empty_git_repo: Path
-    ) -> None:
-        r = sync_git_to_workspace(
-            repo_path=str(empty_git_repo), workspace_id="ws"
-        )
+    def test_no_pbip_files_returns_warning(self, empty_git_repo: Path) -> None:
+        r = sync_git_to_workspace(repo_path=str(empty_git_repo), workspace_id="ws")
         assert any("no *.pbip" in w for w in r.warnings)
 
     def test_invalid_conflict_resolution_rejected(self) -> None:
@@ -350,9 +318,7 @@ class TestSyncGitToWorkspace:
                 }
             )
 
-    def test_dry_run_no_pbips_deployed(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_dry_run_no_pbips_deployed(self, empty_git_repo: Path) -> None:
         _populate_repo_with_pbips(
             empty_git_repo,
             {
@@ -370,9 +336,7 @@ class TestSyncGitToWorkspace:
         assert len(r.items_deployed) == 2
         assert all(it.reason == "dry_run" for it in r.items_deployed)
 
-    def test_real_deploy_calls_apply_pbip(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_real_deploy_calls_apply_pbip(self, empty_git_repo: Path) -> None:
         _populate_repo_with_pbips(
             empty_git_repo,
             {"Dataset/SalesModel.pbip": "{}", "Report/Exec.pbip": "{}"},
@@ -390,12 +354,8 @@ class TestSyncGitToWorkspace:
             "Exec",
         }
 
-    def test_manual_conflict_skips(
-        self, empty_git_repo: Path
-    ) -> None:
-        _populate_repo_with_pbips(
-            empty_git_repo, {"Dataset/SalesModel.pbip": "LOCAL"}
-        )
+    def test_manual_conflict_skips(self, empty_git_repo: Path) -> None:
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/SalesModel.pbip": "LOCAL"})
         # Workspace says the same item has different content.
         client = _FabricListStub(
             items=[
@@ -418,12 +378,8 @@ class TestSyncGitToWorkspace:
         # No apply_pbip was called.
         assert client.applied == []
 
-    def test_prefer_workspace_skips(
-        self, empty_git_repo: Path
-    ) -> None:
-        _populate_repo_with_pbips(
-            empty_git_repo, {"Dataset/SalesModel.pbip": "LOCAL"}
-        )
+    def test_prefer_workspace_skips(self, empty_git_repo: Path) -> None:
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/SalesModel.pbip": "LOCAL"})
         client = _FabricListStub(
             items=[
                 {
@@ -444,12 +400,8 @@ class TestSyncGitToWorkspace:
         assert any(it.status == "skipped" for it in r.items_skipped)
         assert client.applied == []
 
-    def test_pre_deploy_check_blocks(
-        self, empty_git_repo: Path
-    ) -> None:
-        _populate_repo_with_pbips(
-            empty_git_repo, {"Dataset/SalesModel.pbip": "{}"}
-        )
+    def test_pre_deploy_check_blocks(self, empty_git_repo: Path) -> None:
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/SalesModel.pbip": "{}"})
         r = sync_git_to_workspace(
             repo_path=str(empty_git_repo),
             workspace_id="ws",
@@ -462,9 +414,7 @@ class TestSyncGitToWorkspace:
         assert r.items_deployed == []
         assert r.items_skipped == []
 
-    def test_malformed_path_skipped(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_malformed_path_skipped(self, empty_git_repo: Path) -> None:
         # Single-segment path: parser interprets parent as item type.
         # We accept this ("no crash") but verify the parse happens.
         _populate_repo_with_pbips(empty_git_repo, {"Dataset/X.pbip": "{}"})
@@ -476,20 +426,13 @@ class TestSyncGitToWorkspace:
         )
         # The PBIP file with proper <type>/<name>.pbip structure
         # produces one deploy entry.
-        assert any(
-            it.item_name == "X" and it.item_type == "Dataset"
-            for it in r.items_deployed
-        )
+        assert any(it.item_name == "X" and it.item_type == "Dataset" for it in r.items_deployed)
 
-    def test_ref_only_path_warns(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_ref_only_path_warns(self, empty_git_repo: Path) -> None:
         # We deliberately cannot fabricate a "ref-only" path without a
         # remote, so this test exercises the workspace probe returning
         # None blob → no conflict, deploy still proceeds.
-        _populate_repo_with_pbips(
-            empty_git_repo, {"Dataset/X.pbip": "{}"}
-        )
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/X.pbip": "{}"})
         client = _FabricListStub(
             items=[{"type": "Dataset", "name": "X"}]  # no blob key
         )
@@ -511,17 +454,11 @@ class _MergeWorker:
     """Records blobs passed to apply_pbip during merge."""
 
     def __init__(self, existing: list[dict[str, Any]] | None = None) -> None:
-        self._items = {
-            (it.get("type"), it.get("name")): it
-            for it in (existing or [])
-        }
+        self._items = {(it.get("type"), it.get("name")): it for it in (existing or [])}
         self.applied: list[dict[str, Any]] = []
 
     def list_workspace_items(self, workspace_id: str) -> list[dict[str, Any]]:
-        return [
-            {"id": k[0], **v}
-            for (k, v) in self._items.items()
-        ]
+        return [{"id": k[0], **v} for (k, v) in self._items.items()]
 
     def apply_pbip(
         self,
@@ -541,13 +478,9 @@ class _MergeWorker:
 
 
 class TestSyncGitAutoMerge:
-    def test_clean_merge_only_local_changed(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_clean_merge_only_local_changed(self, empty_git_repo: Path) -> None:
         # Workspace stale (old), local is new; base matches workspace.
-        _populate_repo_with_pbips(
-            empty_git_repo, {"Dataset/SalesModel.pbip": "LOCAL\n"}
-        )
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/SalesModel.pbip": "LOCAL\n"})
         client = _MergeWorker(
             existing=[
                 {
@@ -572,9 +505,7 @@ class TestSyncGitAutoMerge:
 
     def test_conflict_hunks(self, empty_git_repo: Path) -> None:
         # Both sides edit line 2 → must conflict.
-        _populate_repo_with_pbips(
-            empty_git_repo, {"Dataset/X.pbip": "a\nTHEIRS\nc\n"}
-        )
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/X.pbip": "a\nTHEIRS\nc\n"})
         client = _MergeWorker(
             existing=[
                 {
@@ -593,16 +524,10 @@ class TestSyncGitAutoMerge:
             dry_run=False,
             fabric_client=client,
         )
-        assert any(
-            it.status == "conflict" for it in r.items_skipped
-        )
+        assert any(it.status == "conflict" for it in r.items_skipped)
 
-    def test_auto_merge_succeeds_non_overlapping(
-        self, empty_git_repo: Path
-    ) -> None:
-        _populate_repo_with_pbips(
-            empty_git_repo, {"Dataset/X.pbip": "a\nLOCAL_APPEND\n"}
-        )
+    def test_auto_merge_succeeds_non_overlapping(self, empty_git_repo: Path) -> None:
+        _populate_repo_with_pbips(empty_git_repo, {"Dataset/X.pbip": "a\nLOCAL_APPEND\n"})
         # Base = a\n; ours adds LOCAL_APPEND, theirs adds WS_APPEND.
         client = _MergeWorker(
             existing=[
@@ -677,9 +602,7 @@ class TestSyncGitAutoMerge:
 
 
 class TestCommitWorkspaceGen2Support:
-    def test_dataflow_gen2_writes_to_dataflowgen2_dir(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_dataflow_gen2_writes_to_dataflowgen2_dir(self, empty_git_repo: Path) -> None:
         client = _FabricClientStub(
             items={
                 "df-gen2-1": {
@@ -699,13 +622,9 @@ class TestCommitWorkspaceGen2Support:
         path_parts = Path(r.items_committed[0].path).parts
         assert path_parts[0] == "DataflowGen2"
         assert path_parts[1] == "BronzeLayer.pbip"
-        assert (
-            empty_git_repo / "DataflowGen2" / "BronzeLayer.pbip"
-        ).exists()
+        assert (empty_git_repo / "DataflowGen2" / "BronzeLayer.pbip").exists()
 
-    def test_dataflow_gen2_alias_recognised(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_dataflow_gen2_alias_recognised(self, empty_git_repo: Path) -> None:
         # Some Fabric APIs report the type as "DataflowGen2Item".
         client = _FabricClientStub(
             items={
@@ -726,9 +645,7 @@ class TestCommitWorkspaceGen2Support:
         path_parts = Path(r.items_committed[0].path).parts
         assert path_parts == ("DataflowGen2", "SilverLayer.pbip")
 
-    def test_classic_dataflow_uses_dataflow_dir(
-        self, empty_git_repo: Path
-    ) -> None:
+    def test_classic_dataflow_uses_dataflow_dir(self, empty_git_repo: Path) -> None:
         client = _FabricClientStub(
             items={
                 "df-gen1": {

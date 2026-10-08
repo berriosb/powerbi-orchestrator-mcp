@@ -44,9 +44,7 @@ def _visual(vid: str, vtype: str, **kw: object) -> dict:
 
 
 class TestStoryVarianceIdentical:
-    def test_identical_dirs_return_zero_variance(
-        self, pbip_v3, tmp_path: Path
-    ) -> None:
+    def test_identical_dirs_return_zero_variance(self, pbip_v3, tmp_path: Path) -> None:
         _write_page(pbip_v3, "Overview", [_visual("v1", "card")])
         out = tmp_path / "same"
         screenshot_report_pages(
@@ -106,9 +104,7 @@ class TestStoryVarianceAddedRemoved:
 
 
 class TestStoryVarianceContentDiff:
-    def test_changed_page_detected(
-        self, tmp_path: Path
-    ) -> None:
+    def test_changed_page_detected(self, tmp_path: Path) -> None:
         # Build two PBIPs with different content, render each.
         baseline_pbip = tmp_path / "b.pbip"
         current_pbip = tmp_path / "c.pbip"
@@ -137,9 +133,7 @@ class TestStoryVarianceContentDiff:
         assert len(changed) == 1
         assert changed[0].pixel_diff_pct > 0.0
 
-    def test_no_diff_unchanged(
-        self, pbip_v3, tmp_path: Path
-    ) -> None:
+    def test_no_diff_unchanged(self, pbip_v3, tmp_path: Path) -> None:
         _write_page(pbip_v3, "Overview", [_visual("v1", "card")])
         baseline_dir = tmp_path / "b"
         current_dir = tmp_path / "c"
@@ -157,9 +151,7 @@ class TestStoryVarianceContentDiff:
         unchanged = [f for f in result.findings if f.status == "unchanged"]
         assert len(unchanged) == 1
 
-    def test_low_diff_below_threshold_unchanged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_low_diff_below_threshold_unchanged(self, tmp_path: Path) -> None:
         # Directly write two PNGs that differ only in 1 pixel.
         from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
             _PageBundle,
@@ -240,15 +232,11 @@ class TestStoryVarianceHelpers:
 
 
 class TestPNGChunkParser:
-    def test_handles_our_deterministic_renders(
-        self, pbip_v3, tmp_path: Path
-    ) -> None:
+    def test_handles_our_deterministic_renders(self, pbip_v3, tmp_path: Path) -> None:
         # Round-trip: render a page, parse the PNG, ensure IHDR/IDAT/IEND.
         _write_page(pbip_v3, "Overview", [_visual("v1", "card")])
         out = tmp_path / "out"
-        screenshot_report_pages(
-            pbip_path=str(pbip_v3), output_dir=str(out), format="png"
-        )
+        screenshot_report_pages(pbip_path=str(pbip_v3), output_dir=str(out), format="png")
         from powerbi_orchestrator_mcp.validation.story_variance import (
             _read_png_chunks,
         )

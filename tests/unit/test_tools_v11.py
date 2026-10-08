@@ -41,16 +41,18 @@ def _failing_writer(**kwargs: Any) -> dict[str, Any]:
 
 class TestAddMeasureWithValidation:
     def test_clean_expression_passes_lint(self) -> None:
+        # Default is dry_run=True → lint-only validation, no persistence.
         result = add_measure_with_validation(
             target="model.bim",
             measure_name="Total Sales",
             table="FactSales",
             expression="SUM(FactSales[Amount])",
         )
+        assert result["dry_run"] is True
         assert result["success"] is True
         assert result["lint_findings"] == []
-        assert result["changed_files"] == []  # no writer → not persisted
-        assert "not persisted" in (result["error_message"] or "").lower()
+        assert result["changed_files"] == []  # dry-run → nothing written
+        assert result["error_message"] is None
 
     def test_divide_triggers_lint(self) -> None:
         # fail_on_severity="info" treats even warnings as blocking → returns
@@ -63,9 +65,7 @@ class TestAddMeasureWithValidation:
             fail_on_severity="info",
         )
         # The divide pattern triggers a warning-level finding.
-        assert any(
-            f["rule_id"] == "BP_DIVIDE_VS_SLASH" for f in result["lint_findings"]
-        )
+        assert any(f["rule_id"] == "BP_DIVIDE_VS_SLASH" for f in result["lint_findings"])
 
     def test_lint_blocks_at_error_severity_threshold(self) -> None:
         # Use fail_on_severity="error" with an expression that triggers
@@ -130,6 +130,7 @@ class TestAddMeasureWithValidation:
             table="FactSales",
             expression="SUM(FactSales[Amount])",
             measure_writer=_ok_writer,
+            dry_run=False,
         )
         assert result["success"] is True
         assert result["changed_files"] == ["FactSales.tmdl"]
@@ -141,9 +142,59 @@ class TestAddMeasureWithValidation:
             table="FactSales",
             expression="SUM(FactSales[Amount])",
             measure_writer=_failing_writer,
+            dry_run=False,
         )
         assert result["success"] is False
         assert "already exists" in result["error_message"]
+
+    def test_missing_writer_reports_failure_not_silent_success(self) -> None:
+        """No writer wired → must NOT claim success.
+
+        Guards the silent-no-op bug: the MCP path can never inject a
+        callable, so an unguarded success=True here would tell the LLM a
+        measure was created when nothing was written.
+        """
+        result = add_measure_with_validation(
+            target="model.bim",
+            measure_name="Total Sales",
+            table="FactSales",
+            expression="SUM(FactSales[Amount])",
+            dry_run=False,
+        )
+        assert result["success"] is False
+        assert result["changed_files"] == []
+        assert "not persisted" in (result["error_message"] or "").lower()
+
+    def test_runtime_check_does_not_claim_it_ran(self) -> None:
+        """runtime_check must report ran=False when nothing executed."""
+        result = add_measure_with_validation(
+            target="model.bim",
+            measure_name="Total Sales",
+            table="FactSales",
+            expression="SUM(FactSales[Amount])",
+            measure_writer=_ok_writer,
+            dry_run=False,
+            runtime_check=True,
+        )
+        assert result["runtime_check"]["ran"] is False
+
+    def test_defaults_to_dry_run(self) -> None:
+        """Safety default: no explicit dry_run → nothing is written."""
+        calls: list[str] = []
+
+        def _tracking_writer(**kwargs: object) -> dict[str, object]:
+            calls.append("written")
+            return {"changed_files": ["FactSales.tmdl"], "error_message": None}
+
+        result = add_measure_with_validation(
+            target="model.bim",
+            measure_name="Total Sales",
+            table="FactSales",
+            expression="SUM(FactSales[Amount])",
+            measure_writer=_tracking_writer,
+        )
+        assert result["dry_run"] is True
+        assert calls == [], "writer must not be called under the default dry_run"
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +246,7 @@ class TestCreateReportFromDataset:
         assert result["success"] is False
         assert any(".Dataset" in w for w in result["warnings"])
 
-    def test_creates_theme_report_page_files(
-        self, pbip_with_dataset: Path
-    ) -> None:
+    def test_creates_theme_report_page_files(self, pbip_with_dataset: Path) -> None:
         result = create_report_from_dataset(
             pbip_path=str(pbip_with_dataset),
             visual_count=2,
@@ -212,30 +261,20 @@ class TestCreateReportFromDataset:
         # 2 visuals (alternating card + barChart).
         assert len(result["visual_ids"]) == 2
 
-    def test_creates_correct_visual_types(
-        self, pbip_with_dataset: Path
-    ) -> None:
+    def test_creates_correct_visual_types(self, pbip_with_dataset: Path) -> None:
         create_report_from_dataset(
             pbip_path=str(pbip_with_dataset),
             visual_count=3,
             include_card=True,
             inspector=_simple_inspector(),
         )
-        page_json = (
-            pbip_with_dataset
-            / "test.Report"
-            / "pages"
-            / "Overview"
-            / "page.json"
-        )
+        page_json = pbip_with_dataset / "test.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text(encoding="utf-8"))
         types = [vc["visual"]["$type"] for vc in data["visualContainers"]]
         # 3 visuals with include_card=True → cycle: card, barChart, card.
         assert types == ["card", "barChart", "card"]
 
-    def test_existing_report_json_not_overwritten(
-        self, pbip_with_dataset: Path
-    ) -> None:
+    def test_existing_report_json_not_overwritten(self, pbip_with_dataset: Path) -> None:
         report_dir = pbip_with_dataset / "test.Report"
         report_dir.mkdir()
         existing = report_dir / "report.json"
@@ -247,9 +286,7 @@ class TestCreateReportFromDataset:
         assert existing.read_text() == '{"existing": true}'
         assert any("not overwriting" in w for w in result["warnings"])
 
-    def test_alternative_theme_falls_back_to_okabe_ito(
-        self, pbip_with_dataset: Path
-    ) -> None:
+    def test_alternative_theme_falls_back_to_okabe_ito(self, pbip_with_dataset: Path) -> None:
         # Unknown palette names fall back to Okabe-Ito (safe default).
         create_report_from_dataset(
             pbip_path=str(pbip_with_dataset),
@@ -330,9 +367,7 @@ class TestEditReportVisual:
         assert result["success"] is False
         assert "no changes" in result["error_message"]
 
-    def test_alt_text_only_change(
-        self, pbip_with_visual: Path
-    ) -> None:
+    def test_alt_text_only_change(self, pbip_with_visual: Path) -> None:
         result = edit_report_visual(
             pbip_path=str(pbip_with_visual),
             page_name="Overview",
@@ -341,24 +376,14 @@ class TestEditReportVisual:
         )
         assert result["success"] is True
         assert result["changes_applied"] == ["altText"]
-        page_json = (
-            pbip_with_visual
-            / "test.Report"
-            / "pages"
-            / "Overview"
-            / "page.json"
-        )
+        page_json = pbip_with_visual / "test.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text(encoding="utf-8"))
-        assert data["visualContainers"][0]["altText"] == (
-            "New alt text for visual v1"
-        )
+        assert data["visualContainers"][0]["altText"] == ("New alt text for visual v1")
         # Other fields preserved.
         assert data["visualContainers"][0]["x"] == 0
         assert data["visualContainers"][0]["width"] == 300
 
-    def test_position_change_applies(
-        self, pbip_with_visual: Path
-    ) -> None:
+    def test_position_change_applies(self, pbip_with_visual: Path) -> None:
         result = edit_report_visual(
             pbip_path=str(pbip_with_visual),
             page_name="Overview",
@@ -367,13 +392,7 @@ class TestEditReportVisual:
         )
         assert result["success"] is True
         assert "position" in result["changes_applied"]
-        page_json = (
-            pbip_with_visual
-            / "test.Report"
-            / "pages"
-            / "Overview"
-            / "page.json"
-        )
+        page_json = pbip_with_visual / "test.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text(encoding="utf-8"))
         vc = data["visualContainers"][0]
         assert vc["x"] == 100
@@ -381,9 +400,7 @@ class TestEditReportVisual:
         assert vc["width"] == 500
         assert vc["height"] == 400
 
-    def test_type_change_updates_visual_type(
-        self, pbip_with_visual: Path
-    ) -> None:
+    def test_type_change_updates_visual_type(self, pbip_with_visual: Path) -> None:
         result = edit_report_visual(
             pbip_path=str(pbip_with_visual),
             page_name="Overview",
@@ -391,19 +408,11 @@ class TestEditReportVisual:
             type="lineChart",
         )
         assert result["success"] is True
-        page_json = (
-            pbip_with_visual
-            / "test.Report"
-            / "pages"
-            / "Overview"
-            / "page.json"
-        )
+        page_json = pbip_with_visual / "test.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text(encoding="utf-8"))
         assert data["visualContainers"][0]["visual"]["$type"] == "lineChart"
 
-    def test_fields_merge_into_projections(
-        self, pbip_with_visual: Path
-    ) -> None:
+    def test_fields_merge_into_projections(self, pbip_with_visual: Path) -> None:
         result = edit_report_visual(
             pbip_path=str(pbip_with_visual),
             page_name="Overview",
@@ -411,13 +420,7 @@ class TestEditReportVisual:
             fields_json='{"Y": [{"queryRef": "[Sales]"}]}',
         )
         assert result["success"] is True
-        page_json = (
-            pbip_with_visual
-            / "test.Report"
-            / "pages"
-            / "Overview"
-            / "page.json"
-        )
+        page_json = pbip_with_visual / "test.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text(encoding="utf-8"))
         proj = data["visualContainers"][0]["visual"]["projections"]
         # Original Values preserved.
@@ -435,9 +438,7 @@ class TestEditReportVisual:
         assert result["success"] is False
         assert "fields_json" in result["error_message"]
 
-    def test_multiple_changes_applied(
-        self, pbip_with_visual: Path
-    ) -> None:
+    def test_multiple_changes_applied(self, pbip_with_visual: Path) -> None:
         result = edit_report_visual(
             pbip_path=str(pbip_with_visual),
             page_name="Overview",

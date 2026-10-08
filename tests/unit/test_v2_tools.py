@@ -155,10 +155,14 @@ class TestVisualSuggesterSingle:
         assert len(sugs) >= 1
 
     def test_suggest_many(self) -> None:
-        results = suggest_many([
-            SuggesterInput(name="KPI 1", semantic_type="single_value", fields=["[A]"]),
-            SuggesterInput(name="KPI 2", semantic_type="trend", fields=["[Date]"], has_time=True),
-        ])
+        results = suggest_many(
+            [
+                SuggesterInput(name="KPI 1", semantic_type="single_value", fields=["[A]"]),
+                SuggesterInput(
+                    name="KPI 2", semantic_type="trend", fields=["[Date]"], has_time=True
+                ),
+            ]
+        )
         assert "KPI 1" in results
         assert "KPI 2" in results
 
@@ -263,10 +267,12 @@ class TestRefactorCalcGroups:
 
 class TestSelectVisualsForKpis:
     def test_suggests_for_each_kpi(self) -> None:
-        kpis_json = json.dumps([
-            {"name": "Total Sales", "semantic_type": "single_value", "fields": ["[Sales]"]},
-            {"name": "Trend", "semantic_type": "trend", "fields": ["[Date]"], "has_time": True},
-        ])
+        kpis_json = json.dumps(
+            [
+                {"name": "Total Sales", "semantic_type": "single_value", "fields": ["[Sales]"]},
+                {"name": "Trend", "semantic_type": "trend", "fields": ["[Date]"], "has_time": True},
+            ]
+        )
         result = select_visuals_for_kpis(kpis_json=kpis_json)
         assert len(result.recommendations) == 2
         assert result.coverage_pct == 100.0
@@ -283,9 +289,11 @@ class TestSelectVisualsForKpis:
 
     def test_no_suggestion_for_unknown_semantic_type(self) -> None:
         # An exotic semantic_type still returns *some* fallback.
-        kpis_json = json.dumps([
-            {"name": "X", "semantic_type": "unknown_type", "fields": ["[A]"]},
-        ])
+        kpis_json = json.dumps(
+            [
+                {"name": "X", "semantic_type": "unknown_type", "fields": ["[A]"]},
+            ]
+        )
         result = select_visuals_for_kpis(kpis_json=kpis_json)
         assert len(result.recommendations) >= 1
 
@@ -322,19 +330,11 @@ class TestDesignReportPage:
         )
         assert result.visual_count >= 2
         # Page file written.
-        page_path = (
-            pbip_with_dataset_dir
-            / "demo.Report"
-            / "pages"
-            / "Overview"
-            / "page.json"
-        )
+        page_path = pbip_with_dataset_dir / "demo.Report" / "pages" / "Overview" / "page.json"
         assert page_path.exists()
         assert "page.json" in result.files_changed[0]
 
-    def test_brief_without_kpis_returns_warning(
-        self, pbip_with_dataset_dir: Path
-    ) -> None:
+    def test_brief_without_kpis_returns_warning(self, pbip_with_dataset_dir: Path) -> None:
         result = design_report_page_from_requirements(
             pbip_path=str(pbip_with_dataset_dir),
             brief="Some text without KPIs",
@@ -342,9 +342,7 @@ class TestDesignReportPage:
         assert result.visual_count == 0
         assert any("no kpis" in w.lower() for w in result.warnings)
 
-    def test_existing_page_is_overwritten_atomically(
-        self, pbip_with_dataset_dir: Path
-    ) -> None:
+    def test_existing_page_is_overwritten_atomically(self, pbip_with_dataset_dir: Path) -> None:
         # Pre-create a page file.
         report_dir = pbip_with_dataset_dir / "demo.Report"
         page_dir = report_dir / "pages" / "Overview"
@@ -362,27 +360,17 @@ class TestDesignReportPage:
         temps = list(page_dir.glob(".page.*.tmp"))
         assert temps == []
 
-    def test_executive_audience_enables_mobile_layout(
-        self, pbip_with_dataset_dir: Path
-    ) -> None:
+    def test_executive_audience_enables_mobile_layout(self, pbip_with_dataset_dir: Path) -> None:
         design_report_page_from_requirements(
             pbip_path=str(pbip_with_dataset_dir),
             brief="KPI Total Sales",
             audience="executive",
         )
-        page_path = (
-            pbip_with_dataset_dir
-            / "demo.Report"
-            / "pages"
-            / "Overview"
-            / "page.json"
-        )
+        page_path = pbip_with_dataset_dir / "demo.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_path.read_text(encoding="utf-8"))
         assert data.get("mobileLayout") is not None
 
-    def test_rationale_lists_detected_kpis(
-        self, pbip_with_dataset_dir: Path
-    ) -> None:
+    def test_rationale_lists_detected_kpis(self, pbip_with_dataset_dir: Path) -> None:
         result = design_report_page_from_requirements(
             pbip_path=str(pbip_with_dataset_dir),
             brief="Top 10 products by Region, Revenue trend over time",

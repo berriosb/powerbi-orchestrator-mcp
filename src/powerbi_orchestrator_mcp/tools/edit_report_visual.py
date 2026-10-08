@@ -116,9 +116,7 @@ def edit_report_visual(
             "changes_applied": [],
             "page_path": str(page_json),
             "rollback_handle": None,
-            "error_message": (
-                f"visual {visual_id!r} not found on page {page_name!r}"
-            ),
+            "error_message": (f"visual {visual_id!r} not found on page {page_name!r}"),
         }
 
     try:
@@ -209,9 +207,7 @@ def edit_report_visual(
         }
 
     # Atomic write: serialize to temp file in same dir, rename.
-    fd, tmp_path_str = tempfile.mkstemp(
-        dir=str(page_json.parent), prefix=".page.", suffix=".tmp"
-    )
+    fd, tmp_path_str = tempfile.mkstemp(dir=str(page_json.parent), prefix=".page.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)

@@ -301,21 +301,14 @@ def _validate_target_ref(target_type: str, target_ref: str) -> str | None:
         resolved = Path(target_ref).resolve()
         resolved_str = str(resolved)
         for forbidden in FORBIDDEN_SYSTEM_PATHS:
-            if resolved_str == forbidden or resolved_str.startswith(
-                forbidden + "/"
-            ):
-                return (
-                    f"{target_type} refers to forbidden system path: {target_ref}"
-                )
+            if resolved_str == forbidden or resolved_str.startswith(forbidden + "/"):
+                return f"{target_type} refers to forbidden system path: {target_ref}"
         if not resolved.exists():
             return f"{target_type} path does not exist: {target_ref}"
         return None
     if target_type == "fabric_workspace":
         if not _FABRIC_ID_PATTERN.match(target_ref):
-            return (
-                f"fabric_workspace ref should be a workspace ID, got "
-                f"{target_ref!r}"
-            )
+            return f"fabric_workspace ref should be a workspace ID, got {target_ref!r}"
         return None
     if target_type == "pbi_desktop":
         # We can't probe Desktop from the server loopback here — defer
@@ -330,8 +323,7 @@ def _detect_engine_warnings(engines: dict[str, EngineStatus]) -> list[str]:
     if not missing:
         return []
     return [
-        f"engine {name!r} unavailable: "
-        f"{engines[name].reason_unavailable or 'unknown reason'}"
+        f"engine {name!r} unavailable: {engines[name].reason_unavailable or 'unknown reason'}"
         for name in missing
     ]
 
@@ -359,14 +351,9 @@ async def connect_target(
         ConnectResult with session_id, engines_available status, and any diagnostic warnings.
     """
     if target_type not in _TARGET_TYPES:
-        raise ValueError(
-            f"target_type must be one of {sorted(_TARGET_TYPES)}, "
-            f"got {target_type!r}"
-        )
+        raise ValueError(f"target_type must be one of {sorted(_TARGET_TYPES)}, got {target_type!r}")
     if auth_mode not in _AUTH_MODES:
-        raise ValueError(
-            f"auth_mode must be one of {sorted(_AUTH_MODES)}, got {auth_mode!r}"
-        )
+        raise ValueError(f"auth_mode must be one of {sorted(_AUTH_MODES)}, got {auth_mode!r}")
     if auth_mode == "service_principal" and not tenant_id:
         raise ValueError("tenant_id is required for service_principal auth_mode")
 
@@ -492,9 +479,7 @@ async def plan_change(
     try:
         opts = PlanOptions(**plan_option_kwargs)
     except Exception as exc:
-        raise PlanValidationError(
-            f"invalid PlanOptions in options: {exc}"
-        ) from exc
+        raise PlanValidationError(f"invalid PlanOptions in options: {exc}") from exc
 
     plan = _build_plan_from_intent(intent, template_args, opts)
     _plans[plan.id] = plan
@@ -566,8 +551,7 @@ async def _run_plan_steps(
                 "id": step.id,
                 "engine": step.engine,
                 "action": step.action,
-                "error_message": outcome.error_message
-                or "step failed without error message",
+                "error_message": outcome.error_message or "step failed without error message",
             }
 
     return executed, None
@@ -617,7 +601,7 @@ async def _rollback_plan(
 @mcp.tool()
 async def apply_plan(
     plan_id: str,
-    dry_run: bool = False,
+    dry_run: bool = True,
     confirm_each_step: bool = False,  # noqa: ARG001 — elicitation hook for v2
 ) -> ApplyResult:
     """Execute an approved plan with automatic rollback on step failure.
@@ -628,7 +612,8 @@ async def apply_plan(
 
     Args:
         plan_id: ID of the plan previously created by plan_change.
-        dry_run: If True, simulate execution without modifying files or cloud resources.
+        dry_run: If True (DEFAULT), simulate execution without modifying files
+            or cloud resources. Pass dry_run=False explicitly to apply for real.
         confirm_each_step: Reserved hook for interactive step confirmations.
 
     Returns:
@@ -671,9 +656,7 @@ async def apply_plan(
                 result="rolled_back",
                 executed_steps=executed,
                 failed_step=failed_step,
-                rollback_steps_executed=[
-                    {"id": r, "status": "ok"} for r in rollback_log
-                ],
+                rollback_steps_executed=[{"id": r, "status": "ok"} for r in rollback_log],
                 artifacts_changed=[],
                 rollback_handle=rollback_handle,
             )
@@ -1103,7 +1086,7 @@ async def add_measure_with_validation(
     description: str | None = None,
     is_hidden: bool = False,
     fail_on_severity: str = "warning",
-    dry_run: bool = False,
+    dry_run: bool = True,
     runtime_check: bool = False,
     measure_writer: Any = None,
 ) -> dict[str, Any]:
@@ -1123,9 +1106,11 @@ async def add_measure_with_validation(
         description: Measure documentation or business description.
         is_hidden: Whether the measure should be hidden in report view.
         fail_on_severity: Minimum lint severity that blocks creation ("error", "warning", "info").
-        dry_run: If True, validate lint rules without writing to disk.
+        dry_run: If True (DEFAULT), validate lint rules without writing to disk.
+            Pass dry_run=False explicitly to persist the measure.
         runtime_check: Whether to execute the measure against an active engine if connected.
-        measure_writer: Optional custom measure writer callable.
+        measure_writer: Optional custom measure writer callable. Not reachable
+            from an MCP client — the server wires the modeling engine instead.
 
     Returns:
         Dict with success status, lint findings, and modified file paths.
@@ -1217,7 +1202,9 @@ async def edit_report_visual(
     """
     fields_str = json.dumps(fields_json) if isinstance(fields_json, (dict, list)) else fields_json
     format_str = json.dumps(format_json) if isinstance(format_json, (dict, list)) else format_json
-    position_str = json.dumps(position_json) if isinstance(position_json, (dict, list)) else position_json
+    position_str = (
+        json.dumps(position_json) if isinstance(position_json, (dict, list)) else position_json
+    )
     result = _edit_visual(
         pbip_path=pbip_path,
         page_name=page_name,
@@ -1473,7 +1460,11 @@ async def create_semantic_model_from_schema(
     Returns:
         Dict with tables created, relationships created, hierarchies created, and validation status.
     """
-    spec_json_payload = json.dumps(spec_json) if spec_json is not None and isinstance(spec_json, (dict, list)) else spec_json
+    spec_json_payload = (
+        json.dumps(spec_json)
+        if spec_json is not None and isinstance(spec_json, (dict, list))
+        else spec_json
+    )
     result = _create_model(
         spec_yaml=spec_yaml,
         spec_json=spec_json_payload,
@@ -1507,7 +1498,11 @@ async def setup_rls_and_roles(
     Returns:
         Dict with roles created, test query outcomes, and rollback status if applicable.
     """
-    spec_json_payload = json.dumps(spec_json) if spec_json is not None and isinstance(spec_json, (dict, list)) else spec_json
+    spec_json_payload = (
+        json.dumps(spec_json)
+        if spec_json is not None and isinstance(spec_json, (dict, list))
+        else spec_json
+    )
     result = _setup_rls(
         target=target,
         spec_yaml=spec_yaml,
@@ -1524,7 +1519,7 @@ async def promote_in_pipeline(
     source_stage: str = "dev",
     target_stage: str = "test",
     items: list[str] | None = None,
-    dry_run: bool = False,
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Promote artifacts across Microsoft Fabric Deployment Pipeline stages.
 
@@ -1537,7 +1532,9 @@ async def promote_in_pipeline(
         source_stage: Source stage ("dev", "test", "prod").
         target_stage: Target stage ("test", "prod").
         items: Optional list of specific item IDs to promote. Promotes all if omitted.
-        dry_run: If True, validate stages and gate checks without triggering actual promotion.
+        dry_run: If True (DEFAULT), validate stages and gate checks without
+            triggering actual promotion. Pass dry_run=False explicitly to
+            promote for real — this moves live artifacts between stages.
 
     Returns:
         Dict with promotion status, gate outcomes, and affected items.
@@ -1714,9 +1711,7 @@ def main() -> None:
 
     # Peek at argv; if --transport is absent, fast-path to stdio
     # without argparse overhead (preserves fast startup for stdio).
-    if "--transport" not in sys.argv and not any(
-        a.startswith("--transport=") for a in sys.argv
-    ):
+    if "--transport" not in sys.argv and not any(a.startswith("--transport=") for a in sys.argv):
         reconcile_orphan_executions_on_boot()
         mcp.run(transport="stdio")
         return

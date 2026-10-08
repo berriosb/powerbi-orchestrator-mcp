@@ -89,13 +89,10 @@ def _decode_png(data: bytes) -> tuple[int, int, bytes]:
     ihdr = next((c for c in chunks if c.type == "IHDR"), None)
     if ihdr is None:
         raise ValueError("missing IHDR")
-    width, height, depth, color_type = struct.unpack(
-        ">IIBB", ihdr.data[:10]
-    )
+    width, height, depth, color_type = struct.unpack(">IIBB", ihdr.data[:10])
     if depth != 8 or color_type != 2:
         raise ValueError(
-            f"unsupported PNG (depth={depth}, color_type={color_type}); "
-            "only 8-bit RGB is supported"
+            f"unsupported PNG (depth={depth}, color_type={color_type}); only 8-bit RGB is supported"
         )
     idat = next((c for c in chunks if c.type == "IDAT"), None)
     if idat is None:
@@ -197,12 +194,8 @@ def compute_story_variance(
     baseline_root = Path(baseline_dir)
     current_root = Path(current_dir)
 
-    baseline_files = sorted(
-        p for p in baseline_root.glob(f"*{file_suffix}") if p.is_file()
-    )
-    current_files = sorted(
-        p for p in current_root.glob(f"*{file_suffix}") if p.is_file()
-    )
+    baseline_files = sorted(p for p in baseline_root.glob(f"*{file_suffix}") if p.is_file())
+    current_files = sorted(p for p in current_root.glob(f"*{file_suffix}") if p.is_file())
 
     findings: list[StoryVarianceFinding] = []
 
@@ -284,9 +277,7 @@ def compute_story_variance(
                 total_lines = differing_lines
             else:
                 width, height, _ = decoded_base
-                differing, total = _per_pixel_diff(
-                    width, height, decoded_base[2], decoded_cur[2]
-                )
+                differing, total = _per_pixel_diff(width, height, decoded_base[2], decoded_cur[2])
                 pixel_diff_pct = round((differing / total) * 100.0, 3)
                 # Per-row diff approximation: each differing pixel
                 # belongs to one row.
@@ -305,9 +296,7 @@ def compute_story_variance(
                 differing_lines = len(rows_with_diff)
                 total_lines = height
 
-        status = (
-            "changed" if pixel_diff_pct > change_threshold_pct else "unchanged"
-        )
+        status = "changed" if pixel_diff_pct > change_threshold_pct else "unchanged"
         findings.append(
             StoryVarianceFinding(
                 page_name=name,
@@ -325,11 +314,7 @@ def compute_story_variance(
     pages_changed = sum(1 for f in findings if f.status == "changed")
     pages_added = sum(1 for f in findings if f.status == "added")
     pages_removed = sum(1 for f in findings if f.status == "removed")
-    overall = (
-        sum(f.pixel_diff_pct for f in findings) / pages_compared
-        if pages_compared
-        else 0.0
-    )
+    overall = sum(f.pixel_diff_pct for f in findings) / pages_compared if pages_compared else 0.0
 
     return StoryVarianceResult(
         findings=findings,

@@ -317,8 +317,10 @@ class TestParseTransportArgs:
         with pytest.raises(SystemExit):
             parse_transport_args(
                 [
-                    "--transport", "http",
-                    "--http-entra-audience", "api://test",
+                    "--transport",
+                    "http",
+                    "--http-entra-audience",
+                    "api://test",
                 ]
             )
 
@@ -326,8 +328,10 @@ class TestParseTransportArgs:
         with pytest.raises(SystemExit):
             parse_transport_args(
                 [
-                    "--transport", "http",
-                    "--http-entra-tenant-id", "abc-123",
+                    "--transport",
+                    "http",
+                    "--http-entra-tenant-id",
+                    "abc-123",
                 ]
             )
 
@@ -337,12 +341,18 @@ class TestParseTransportArgs:
 
         transport, cfg = parse_transport_args(
             [
-                "--transport", "http",
-                "--http-host", "0.0.0.0",
-                "--http-port", "9001",
-                "--http-entra-tenant-id", "abc-123",
-                "--http-entra-audience", "api://test",
-                "--http-entra-required-scope", "Tools.Write",
+                "--transport",
+                "http",
+                "--http-host",
+                "0.0.0.0",
+                "--http-port",
+                "9001",
+                "--http-entra-tenant-id",
+                "abc-123",
+                "--http-entra-audience",
+                "api://test",
+                "--http-entra-required-scope",
+                "Tools.Write",
             ]
         )
         assert transport == "http"

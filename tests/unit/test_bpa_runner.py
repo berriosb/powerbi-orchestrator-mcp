@@ -113,9 +113,7 @@ class TestParseOutput:
 
 
 class TestRunSubprocess:
-    async def test_missing_binary_raises_engine_not_found(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_missing_binary_raises_engine_not_found(self, tmp_path: Path) -> None:
         # A binary path that cannot exist on PATH.
         runner = BpaRunner(binary="/nonexistent/te-binary")
         target = tmp_path / "model.bim"
@@ -145,9 +143,7 @@ class TestRunSubprocess:
         async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
             return FakeProc()
 
-        monkeypatch.setattr(
-            "asyncio.create_subprocess_exec", fake_exec
-        )
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
         runner = BpaRunner(binary="te2")
         target = tmp_path / "model.bim"
         target.write_text("")
@@ -172,9 +168,7 @@ class TestRunSubprocess:
         async def fake_exec(*_a: object, **_kw: object) -> FakeProc:
             return FakeProc()
 
-        monkeypatch.setattr(
-            "asyncio.create_subprocess_exec", fake_exec
-        )
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
         runner = BpaRunner(binary="te2", timeout_s=1)
         target = tmp_path / "model.bim"
         target.write_text("")
@@ -189,9 +183,7 @@ class TestRunSubprocess:
             returncode = 0
 
             async def communicate(self) -> tuple[bytes, bytes]:
-                payload = json.dumps(
-                    {"score": 88.0, "findings": []}
-                )
+                payload = json.dumps({"score": 88.0, "findings": []})
                 return (payload.encode("utf-8"), b"")
 
             async def wait(self) -> None:
@@ -203,9 +195,7 @@ class TestRunSubprocess:
         async def fake_exec(*_a: object, **_kw: object) -> FakeProc:
             return FakeProc()
 
-        monkeypatch.setattr(
-            "asyncio.create_subprocess_exec", fake_exec
-        )
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
         runner = BpaRunner(binary="te2")
         target = tmp_path / "model.bim"
         target.write_text("")
@@ -216,9 +206,7 @@ class TestRunSubprocess:
 
 class TestPublicApi:
     def test_supported_rulesets_frozen(self) -> None:
-        assert frozenset(
-            {"default", "performance", "governance"}
-        ) == SUPPORTED_RULESETS
+        assert frozenset({"default", "performance", "governance"}) == SUPPORTED_RULESETS
 
     def test_default_timeout_constant(self) -> None:
         from powerbi_orchestrator_mcp.validation.bpa_runner import (
@@ -227,9 +215,7 @@ class TestPublicApi:
 
         assert DEFAULT_TIMEOUT_S == 60
 
-    def test_unknown_ruleset_without_custom_raises(
-        self, tmp_path: Path
-    ) -> None:
+    def test_unknown_ruleset_without_custom_raises(self, tmp_path: Path) -> None:
         import asyncio
 
         async def _go() -> None:
@@ -237,8 +223,6 @@ class TestPublicApi:
             target = tmp_path / "model.bim"
             target.write_text("")
             with pytest.raises(EngineError):
-                await runner.run(
-                    target, ruleset_name="not-a-real-ruleset"
-                )
+                await runner.run(target, ruleset_name="not-a-real-ruleset")
 
         asyncio.run(_go())

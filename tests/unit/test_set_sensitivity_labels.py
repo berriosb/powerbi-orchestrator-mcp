@@ -40,11 +40,7 @@ class _AdminClientStub:
         )
         if self._raise_error is not None:
             raise self._raise_error
-        return {
-            "items": [
-                {"item_id": i, "status": "applied"} for i in item_ids
-            ]
-        }
+        return {"items": [{"item_id": i, "status": "applied"} for i in item_ids]}
 
 
 class TestSpec:
@@ -315,9 +311,7 @@ class TestRedactionAndAudit:
             fabric_admin_client=_AdminClientStub(),
             audit_logger=logger,
         )
-        assert any(
-            e.get("action") == "sensitivity_labels_blocked" for e in events
-        )
+        assert any(e.get("action") == "sensitivity_labels_blocked" for e in events)
 
     def test_audit_logger_failure_doesnt_crash(self) -> None:
         def logger(**kwargs: Any) -> None:

@@ -88,9 +88,7 @@ class TestThemeApplyOnRealFixture:
         # At least one file changed (theme.json + alt text).
         assert len(result.files_changed) >= 1
 
-    def test_alt_text_backfilled_for_missing(
-        self, pbip: Path
-    ) -> None:
+    def test_alt_text_backfilled_for_missing(self, pbip: Path) -> None:
         from powerbi_orchestrator_mcp.tools.apply_theme_and_accessibility_rules import (
             apply_theme_and_accessibility_rules,
         )
@@ -117,9 +115,7 @@ class TestPerformanceOnRealFixture:
 
 
 class TestDataDictionaryOnRealFixture:
-    def test_dictionary_generates_markdown_with_inspector(
-        self, pbip: Path
-    ) -> None:
+    def test_dictionary_generates_markdown_with_inspector(self, pbip: Path) -> None:
         # The inspector must expose list_tables(), list_columns(),
         # list_measures(), list_relationships(). We build a small
         # adapter over our fixture's definition.pbism.
@@ -139,13 +135,8 @@ class TestDataDictionaryOnRealFixture:
                 return [{"name": t["name"]} for t in tables_raw]
 
             def list_columns(self, table_name: str) -> list:
-                cols = next(
-                    t["columns"] for t in tables_raw if t["name"] == table_name
-                )
-                return [
-                    {"name": c["name"], "data_type": c["dataType"]}
-                    for c in cols
-                ]
+                cols = next(t["columns"] for t in tables_raw if t["name"] == table_name)
+                return [{"name": c["name"], "data_type": c["dataType"]} for c in cols]
 
             def list_measures(self) -> list:
                 return []
@@ -213,22 +204,16 @@ class TestPropagateRenameOnRealFixture:
         assert result.success is True
         # The page.json should now reference [YTD Revenue].
         page_data = json.loads(
-            (
-                pbip
-                / "sample.Report"
-                / "pages"
-                / "Overview"
-                / "page.json"
-            ).read_text(encoding="utf-8")
+            (pbip / "sample.Report" / "pages" / "Overview" / "page.json").read_text(
+                encoding="utf-8"
+            )
         )
         assert "[YTD Revenue]" in json.dumps(page_data)
         assert "[YTD Sales]" not in json.dumps(page_data)
 
 
 class TestSafeRenameEndToEndOnRealFixture:
-    async def test_safe_rename_modifies_both_model_and_report_on_disk(
-        self, pbip: Path
-    ) -> None:
+    async def test_safe_rename_modifies_both_model_and_report_on_disk(self, pbip: Path) -> None:
         from powerbi_orchestrator_mcp.orchestrator.server import (
             apply_plan,
             connect_target,
@@ -267,9 +252,7 @@ class TestSafeRenameEndToEndOnRealFixture:
         assert "DimDate[Month_Name]" in page_text
         assert "DimDate[MonthName]" not in page_text
 
-    async def test_safe_rename_column_updates_measure_expression_on_disk(
-        self, pbip: Path
-    ) -> None:
+    async def test_safe_rename_column_updates_measure_expression_on_disk(self, pbip: Path) -> None:
         from powerbi_orchestrator_mcp.orchestrator.server import (
             apply_plan,
             connect_target,
@@ -302,9 +285,7 @@ class TestSafeRenameEndToEndOnRealFixture:
         assert '"TotalAmount"' not in model_text
         assert "FactSales[Revenue]" in model_text
 
-    async def test_dry_run_does_not_modify_disk(
-        self, pbip: Path
-    ) -> None:
+    async def test_dry_run_does_not_modify_disk(self, pbip: Path) -> None:
         from powerbi_orchestrator_mcp.orchestrator.server import (
             apply_plan,
             connect_target,
@@ -511,6 +492,4 @@ class TestHealthOnRealFixture:
         assert result["server_version"] != ""
         assert len(result["checks"]) >= 5
         # At least one of the engine checks is included.
-        assert any(
-            c["name"].startswith("engine.") for c in result["checks"]
-        )
+        assert any(c["name"].startswith("engine.") for c in result["checks"])

@@ -59,9 +59,7 @@ class ColumnSpec(BaseModel):
     @classmethod
     def _check_type(cls, v: str) -> str:
         if v not in _VALID_DATA_TYPES:
-            raise ValueError(
-                f"invalid type {v!r}; expected one of {sorted(_VALID_DATA_TYPES)}"
-            )
+            raise ValueError(f"invalid type {v!r}; expected one of {sorted(_VALID_DATA_TYPES)}")
         return v
 
 
@@ -212,12 +210,8 @@ def _render_table(table: TableSpec) -> str:
             parts.append(f"        formatString: {json.dumps(col.format_string)}")
         elif col.format_string == "":
             pass
-        elif (
-            not col.format_string and col.type in {"int64", "decimal", "double"}
-        ):
-            parts.append(
-                f"        formatString: {json.dumps(_format_string_for_type(col.type))}"
-            )
+        elif not col.format_string and col.type in {"int64", "decimal", "double"}:
+            parts.append(f"        formatString: {json.dumps(_format_string_for_type(col.type))}")
         if col.is_key:
             parts.append("        isKey: true")
         if col.description:
@@ -253,10 +247,7 @@ def _render_relationship(rel: RelationshipSpec) -> str:
 def _render_hierarchy(h: HierarchySpec) -> str:
     """Render a hierarchy block (added at the end of its table)."""
     levels = "\n".join(f"        level {lvl}" for lvl in h.levels)
-    return (
-        f"    hierarchy {h.name}\n"
-        f"{levels}\n"
-    )
+    return f"    hierarchy {h.name}\n{levels}\n"
 
 
 def render_tmdl(spec: ModelSpec) -> str:
@@ -316,9 +307,7 @@ def _parse_spec(spec_yaml: str | None, spec_json: Any) -> ModelSpec:
     return ModelSpec.model_validate(raw)
 
 
-def _validate_dangling_refs(
-    spec: ModelSpec, warnings: list[str]
-) -> bool:
+def _validate_dangling_refs(spec: ModelSpec, warnings: list[str]) -> bool:
     """Check that every relationship references real columns; bump warning."""
     tables = {t.name: {c.name for c in t.columns} for t in spec.tables}
     dangling: list[str] = []
@@ -331,17 +320,13 @@ def _validate_dangling_refs(
             continue
         if rel.from_column not in tables[rel.from_table]:
             dangling.append(
-                f"relationship references missing column {rel.from_table}!"
-                f"{rel.from_column}"
+                f"relationship references missing column {rel.from_table}!{rel.from_column}"
             )
         if rel.to_table not in tables:
-            dangling.append(
-                f"{rel.from_table} -> {rel.to_table}: table {rel.to_table!r} not found"
-            )
+            dangling.append(f"{rel.from_table} -> {rel.to_table}: table {rel.to_table!r} not found")
         elif rel.to_column not in tables[rel.to_table]:
             dangling.append(
-                f"relationship references missing column {rel.to_table}!"
-                f"{rel.to_column}"
+                f"relationship references missing column {rel.to_table}!{rel.to_column}"
             )
 
     for hl in spec.hierarchies:
@@ -514,9 +499,7 @@ def create_semantic_model_from_schema(
     # Optional seam: if a TE/TOM-compatible modeling_engine is
     # injected, delegate the actual write to it. Otherwise fall back
     # to the deterministic string-template renderer.
-    if modeling_engine is not None and hasattr(
-        modeling_engine, "apply_model_spec"
-    ):
+    if modeling_engine is not None and hasattr(modeling_engine, "apply_model_spec"):
         import asyncio
 
         try:
@@ -537,10 +520,7 @@ def create_semantic_model_from_schema(
             return CreateSemanticModelResult(
                 validation_passed=False,
                 dry_run=dry_run,
-                warnings=[
-                    apply_result.error_message
-                    or "modeling_engine reported failure"
-                ],
+                warnings=[apply_result.error_message or "modeling_engine reported failure"],
             )
     else:
         _write_pbip(pbip, spec.name, tmdl)
