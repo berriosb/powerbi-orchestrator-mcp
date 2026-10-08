@@ -37,16 +37,12 @@ from datetime import UTC, datetime
 
 SESSION_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 PLAN_ID_PATTERN = re.compile(r"^plan_\d{4}-\d{2}-\d{2}_[A-Za-z0-9_-]{6,12}$")
-STEP_ID_PATTERN = re.compile(
-    r"^plan_\d{4}-\d{2}-\d{2}_[A-Za-z0-9_-]{6,12}:s\d+$"
-)
+STEP_ID_PATTERN = re.compile(r"^plan_\d{4}-\d{2}-\d{2}_[A-Za-z0-9_-]{6,12}:s\d+$")
 EXECUTION_ID_PATTERN = re.compile(r"^exec_[a-f0-9]{16}$")
 TARGET_ID_PATTERN = re.compile(
     r"^(pbip_folder|pbix_file|fabric_workspace|pbi_desktop|xmla_endpoint):.+"
 )
-ROLLBACK_HANDLE_PATTERN = re.compile(
-    r"^snap_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_[a-z0-9]{8}$"
-)
+ROLLBACK_HANDLE_PATTERN = re.compile(r"^snap_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_[a-z0-9]{8}$")
 
 # Snapshot labels: kebab-case, 1-64 chars (per spec §2.7 table).
 SNAPSHOT_LABEL_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+){0,31}$")
@@ -130,9 +126,7 @@ def make_target_id(target_type: str, target_ref: str) -> str:
     if not target_ref:
         raise ValueError("target_ref must be non-empty")
 
-    ref_repr = (
-        _hash_target_ref(target_ref) if _should_hash_target_ref(target_ref) else target_ref
-    )
+    ref_repr = _hash_target_ref(target_ref) if _should_hash_target_ref(target_ref) else target_ref
 
     candidate = f"{target_type}:{ref_repr}"
     if not TARGET_ID_PATTERN.match(candidate):
@@ -163,9 +157,7 @@ def make_snapshot_label(label: str) -> str:
     the filesystem or git tag.
     """
     if not label or len(label) > 64 or not SNAPSHOT_LABEL_PATTERN.match(label):
-        raise ValueError(
-            f"snapshot_label must be kebab-case 1-64 chars, got {label!r}"
-        )
+        raise ValueError(f"snapshot_label must be kebab-case 1-64 chars, got {label!r}")
     return label
 
 

@@ -57,16 +57,12 @@ DaxLinter_PATTERNS: tuple[DaxPattern, ...] = (
     DaxPattern(
         rule_id="BP_FILTER_ISFILTERED",
         severity="warning",
-        regex=re.compile(
-            r"\bCALCULATE\s*\([^,]*,\s*FILTER\s*\(", re.IGNORECASE
-        ),
+        regex=re.compile(r"\bCALCULATE\s*\([^,]*,\s*FILTER\s*\(", re.IGNORECASE),
         message=(
             "FILTER on whole table inside CALCULATE may iterate all rows; "
             "use KEEPFILTERS or direct predicates"
         ),
-        rewrite_suggestion=(
-            "CALCULATE([Measure], KEEPFILTERS(Table[Column] = value))"
-        ),
+        rewrite_suggestion=("CALCULATE([Measure], KEEPFILTERS(Table[Column] = value))"),
     ),
     DaxPattern(
         rule_id="BP_CALCULATE_NESTED",
@@ -78,9 +74,7 @@ DaxLinter_PATTERNS: tuple[DaxPattern, ...] = (
     DaxPattern(
         rule_id="BP_DIVIDE_VS_SLASH",
         severity="warning",
-        regex=re.compile(
-            r"\[?\w+\]?\s*/\s*\[?\w+\]?(?:\s*\))?\s*$", re.MULTILINE
-        ),
+        regex=re.compile(r"\[?\w+\]?\s*/\s*\[?\w+\]?(?:\s*\))?\s*$", re.MULTILINE),
         message="Use DIVIDE(numerator, denominator, alternate) instead of /",
         rewrite_suggestion="DIVIDE([Numerator], [Denominator], 0)",
     ),
@@ -91,9 +85,7 @@ DaxLinter_PATTERNS: tuple[DaxPattern, ...] = (
             r"\bIFERROR\s*\(\s*[A-Za-z_][\w]*\s*\(\s*[^,()]+\s*\)",
             re.IGNORECASE,
         ),
-        message=(
-            "IFERROR wrapping a function that doesn't raise is a code smell"
-        ),
+        message=("IFERROR wrapping a function that doesn't raise is a code smell"),
         rewrite_suggestion="Drop IFERROR; let errors surface during dev",
     ),
     DaxPattern(
@@ -101,9 +93,7 @@ DaxLinter_PATTERNS: tuple[DaxPattern, ...] = (
         severity="info",
         regex=re.compile(r"\bEARLIER\s*\(", re.IGNORECASE),
         message="EARLIER is slow; prefer VAR-based row context",
-        rewrite_suggestion=(
-            "VAR _row = FILTER(...)  RETURN SUMX(_row, ...)"
-        ),
+        rewrite_suggestion=("VAR _row = FILTER(...)  RETURN SUMX(_row, ...)"),
     ),
     DaxPattern(
         rule_id="BP_SUMMARIZE_FOR_AGG",
@@ -113,9 +103,7 @@ DaxLinter_PATTERNS: tuple[DaxPattern, ...] = (
             re.IGNORECASE,
         ),
         message="SUMMARIZE for aggregation is slow; prefer SUMMARIZECOLUMNS",
-        rewrite_suggestion=(
-            "SUMMARIZECOLUMNS(Table[Dim], FILTER(Table, ...), \"Sum\", SUM(...))"
-        ),
+        rewrite_suggestion=('SUMMARIZECOLUMNS(Table[Dim], FILTER(Table, ...), "Sum", SUM(...))'),
     ),
     DaxPattern(
         rule_id="BP_BLANK_SUPPRESS_PLUS_ZERO",
@@ -152,9 +140,7 @@ class DaxLinter:
 
     DEFAULT_PATTERNS: ClassVar[tuple[DaxPattern, ...]] = DaxLinter_PATTERNS
 
-    def __init__(
-        self, *, extra_patterns: tuple[DaxPattern, ...] | None = None
-    ) -> None:
+    def __init__(self, *, extra_patterns: tuple[DaxPattern, ...] | None = None) -> None:
         self._patterns: tuple[DaxPattern, ...] = (
             extra_patterns if extra_patterns is not None else self.DEFAULT_PATTERNS
         )
@@ -178,13 +164,9 @@ class DaxLinter:
                 )
         return findings
 
-    def lint_batch(
-        self, measures: dict[str, str]
-    ) -> dict[str, list[DaxLintFinding]]:
+    def lint_batch(self, measures: dict[str, str]) -> dict[str, list[DaxLintFinding]]:
         """Run linter on each measure; return {measure_name: findings}."""
-        return {
-            name: self.lint(expression) for name, expression in measures.items()
-        }
+        return {name: self.lint(expression) for name, expression in measures.items()}
 
 
 __all__ = [

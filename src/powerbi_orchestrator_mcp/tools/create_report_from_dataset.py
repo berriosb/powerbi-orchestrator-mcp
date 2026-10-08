@@ -49,7 +49,12 @@ def create_report_from_dataset(
     include_card) and bar charts. Each visual references the first
     measure or table returned by the inspector (mock or modeling engine).
     """
-    if Path(page_name).name != page_name or "/" in page_name or "\\" in page_name or not page_name.strip():
+    if (
+        Path(page_name).name != page_name
+        or "/" in page_name
+        or "\\" in page_name
+        or not page_name.strip()
+    ):
         return {
             "success": False,
             "page_name": page_name,
@@ -78,9 +83,7 @@ def create_report_from_dataset(
             "page_name": page_name,
             "files_created": [],
             "visual_ids": [],
-            "warnings": [
-                f"PBIP has no .Dataset directory under {pbip_root}"
-            ],
+            "warnings": [f"PBIP has no .Dataset directory under {pbip_root}"],
             "rollback_handle": None,
         }
     dataset_dir = dataset_dirs[0]
@@ -152,9 +155,7 @@ def create_report_from_dataset(
             except Exception:  # noqa: BLE001
                 first_table = ""
 
-        first_measure = (
-            f"[{measures[0]['name']}]" if measures else f"[{first_table}]"
-        )
+        first_measure = f"[{measures[0]['name']}]" if measures else f"[{first_table}]"
 
         # Build visuals.
         visual_ids: list[str] = []
@@ -195,9 +196,7 @@ def create_report_from_dataset(
             "height": 720,
             "visualContainers": containers,
         }
-        (page_dir / "page.json").write_text(
-            json.dumps(page_data, indent=2), encoding="utf-8"
-        )
+        (page_dir / "page.json").write_text(json.dumps(page_data, indent=2), encoding="utf-8")
         files_created.append(str((page_dir / "page.json").relative_to(pbip_root)))
 
     return {

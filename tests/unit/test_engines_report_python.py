@@ -122,9 +122,7 @@ class TestConnect:
         with pytest.raises(EngineValidationError, match="no .pbip metadata"):
             await engine.connect(tmp_path)
 
-    async def test_disconnect_is_noop(
-        self, engine: PythonReportEngine, pbip: Path
-    ) -> None:
+    async def test_disconnect_is_noop(self, engine: PythonReportEngine, pbip: Path) -> None:
         conn = await engine.connect(pbip)
         await engine.disconnect(conn)  # does nothing
 
@@ -135,9 +133,7 @@ class TestConnect:
 
 
 class TestAddPage:
-    async def test_add_page_creates_files(
-        self, engine: PythonReportEngine, pbip: Path
-    ) -> None:
+    async def test_add_page_creates_files(self, engine: PythonReportEngine, pbip: Path) -> None:
         conn = await engine.connect(pbip)
         result = await engine.add_page(conn, "Detail")
         assert result.success is True
@@ -147,17 +143,13 @@ class TestAddPage:
         data = json.loads(page_json.read_text())
         assert data["name"] == "Detail"
 
-    async def test_add_page_duplicate_raises(
-        self, engine: PythonReportEngine, pbip: Path
-    ) -> None:
+    async def test_add_page_duplicate_raises(self, engine: PythonReportEngine, pbip: Path) -> None:
         conn = await engine.connect(pbip)
         # "Overview" already exists in the fixture.
         with pytest.raises(EngineValidationError, match="already exists"):
             await engine.add_page(conn, "Overview")
 
-    async def test_add_page_with_layout(
-        self, engine: PythonReportEngine, pbip: Path
-    ) -> None:
+    async def test_add_page_with_layout(self, engine: PythonReportEngine, pbip: Path) -> None:
         conn = await engine.connect(pbip)
         layout = PageLayout(width=1920, height=1080, mobile_first=False)
         await engine.add_page(conn, "Wide", layout=layout)
@@ -168,9 +160,7 @@ class TestAddPage:
 
 
 class TestAddVisual:
-    async def test_add_visual_appends_to_page(
-        self, engine: PythonReportEngine, pbip: Path
-    ) -> None:
+    async def test_add_visual_appends_to_page(self, engine: PythonReportEngine, pbip: Path) -> None:
         conn = await engine.connect(pbip)
         spec = VisualSpec(
             type="barChart",
@@ -191,9 +181,7 @@ class TestUpdateVisual:
         self, engine: PythonReportEngine, pbip: Path
     ) -> None:
         conn = await engine.connect(pbip)
-        result = await engine.update_visual(
-            conn, "Overview", "v1", {"x": 100, "y": 200}
-        )
+        result = await engine.update_visual(conn, "Overview", "v1", {"x": 100, "y": 200})
         assert result.success is True
         page_json = pbip / "sample.Report" / "pages" / "Overview" / "page.json"
         data = json.loads(page_json.read_text())
@@ -206,9 +194,7 @@ class TestUpdateVisual:
     ) -> None:
         conn = await engine.connect(pbip)
         with pytest.raises(EngineValidationError, match="not found"):
-            await engine.update_visual(
-                conn, "Overview", "v999", {"x": 0}
-            )
+            await engine.update_visual(conn, "Overview", "v999", {"x": 0})
 
 
 # ---------------------------------------------------------------------------
@@ -251,9 +237,7 @@ class TestPropagateRename:
     ) -> None:
         conn = await engine.connect(pbip)
         with pytest.raises(EngineValidationError, match="unknown scope"):
-            await engine.propagate_rename(
-                conn, "a", "b", scope="nonsense"
-            )
+            await engine.propagate_rename(conn, "a", "b", scope="nonsense")
 
 
 # ---------------------------------------------------------------------------
@@ -280,18 +264,14 @@ class TestValidate:
         assert result.valid is False
         assert any(f["rule_id"] == "report_json_missing" for f in result.findings)
 
-    async def test_validate_invalid_json(
-        self, engine: PythonReportEngine, pbip: Path
-    ) -> None:
+    async def test_validate_invalid_json(self, engine: PythonReportEngine, pbip: Path) -> None:
         (pbip / "sample.Report" / "report.json").write_text("not valid json")
         conn = await engine.connect(pbip)
         result = await engine.validate_pbir(conn)
         assert result.valid is False
         assert any(f["rule_id"] == "report_json_invalid" for f in result.findings)
 
-    async def test_validate_no_pages_warns(
-        self, engine: PythonReportEngine, pbip: Path
-    ) -> None:
+    async def test_validate_no_pages_warns(self, engine: PythonReportEngine, pbip: Path) -> None:
         # Delete the Overview page.
         import shutil
 
@@ -321,9 +301,7 @@ class TestReplaceInObj:
         assert result == ["X", "X", "new"]
 
     def test_replace_in_nested(self) -> None:
-        result = _replace_in_obj(
-            {"a": [{"b": "old"}]}, "old", "new"
-        )
+        result = _replace_in_obj({"a": [{"b": "old"}]}, "old", "new")
         assert result == {"a": [{"b": "new"}]}
 
     def test_no_match_returns_equivalent(self) -> None:

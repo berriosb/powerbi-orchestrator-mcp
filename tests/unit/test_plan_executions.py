@@ -92,17 +92,13 @@ class TestStateMachine:
 
 
 class TestCrashRecovery:
-    def test_find_orphans_no_results_when_fresh(
-        self, store: PlanExecutionStore
-    ) -> None:
+    def test_find_orphans_no_results_when_fresh(self, store: PlanExecutionStore) -> None:
         ex = _make_execution()  # heartbeat = now
         store.create(ex)
         orphans = store.find_orphans()
         assert orphans == []
 
-    def test_find_orphans_detects_old_in_progress(
-        self, store: PlanExecutionStore
-    ) -> None:
+    def test_find_orphans_detects_old_in_progress(self, store: PlanExecutionStore) -> None:
         old_heartbeat = (
             datetime.now(UTC) - timedelta(seconds=ORPHAN_HEARTBEAT_CUTOFF_S * 2)
         ).isoformat()
@@ -115,29 +111,21 @@ class TestCrashRecovery:
         assert orphans[0].age_seconds > ORPHAN_HEARTBEAT_CUTOFF_S
 
     def test_find_orphans_ignores_completed(self, store: PlanExecutionStore) -> None:
-        old = (
-            datetime.now(UTC) - timedelta(hours=1)
-        ).isoformat()
-        ex = _make_execution(
-            state=PlanExecutionState.COMPLETED, last_heartbeat_at=old
-        )
+        old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        ex = _make_execution(state=PlanExecutionState.COMPLETED, last_heartbeat_at=old)
         store.create(ex)
         orphans = store.find_orphans()
         assert orphans == []
 
     def test_find_orphans_detects_partial(self, store: PlanExecutionStore) -> None:
-        old = (
-            datetime.now(UTC) - timedelta(hours=1)
-        ).isoformat()
+        old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         ex = _make_execution(state=PlanExecutionState.PARTIAL, last_heartbeat_at=old)
         store.create(ex)
         orphans = store.find_orphans()
         assert len(orphans) == 1
 
     def test_mark_orphaned_transitions_state(self, store: PlanExecutionStore) -> None:
-        old = (
-            datetime.now(UTC) - timedelta(hours=1)
-        ).isoformat()
+        old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         ex = _make_execution(last_heartbeat_at=old)
         store.create(ex)
         result = store.mark_orphaned(ex.execution_id)
@@ -157,12 +145,8 @@ class TestCrashRecovery:
 
 
 class TestReconcileOnBoot:
-    def test_reconcile_marks_old_in_progress_as_orphaned(
-        self, store: PlanExecutionStore
-    ) -> None:
-        old = (
-            datetime.now(UTC) - timedelta(hours=1)
-        ).isoformat()
+    def test_reconcile_marks_old_in_progress_as_orphaned(self, store: PlanExecutionStore) -> None:
+        old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         ex = _make_execution(last_heartbeat_at=old)
         store.create(ex)
 
@@ -184,9 +168,7 @@ class TestReconcileOnBoot:
         assert fetched.state == PlanExecutionState.IN_PROGRESS
 
     def test_reconcile_returns_orphan_metadata(self, store: PlanExecutionStore) -> None:
-        old = (
-            datetime.now(UTC) - timedelta(hours=2)
-        ).isoformat()
+        old = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
         ex = _make_execution(
             state=PlanExecutionState.IN_PROGRESS,
             last_heartbeat_at=old,

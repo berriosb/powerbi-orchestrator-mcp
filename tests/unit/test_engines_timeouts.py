@@ -43,21 +43,15 @@ class TestResolveTimeout:
         with pytest.raises(InvalidTimeoutError):
             resolve_timeout("te", requested_s=-1, use_env_override=False)
 
-    def test_env_override_applies_when_enabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_override_applies_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PBI_ENGINE_TIMEOUT_TE_S", "120")
         assert resolve_timeout("te", use_env_override=True) == 120
 
-    def test_env_override_ignored_when_disabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_override_ignored_when_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PBI_ENGINE_TIMEOUT_TE_S", "120")
         assert resolve_timeout("te", use_env_override=False) == 60
 
-    def test_env_override_explicit_request_wins(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_override_explicit_request_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Per spec §3: caller-specified timeout beats env var default."""
         monkeypatch.setenv("PBI_ENGINE_TIMEOUT_TE_S", "120")
         # Explicit requested_s=90 should be returned, not the env default.
@@ -82,8 +76,7 @@ class TestDefaults:
     def test_max_exceeds_default(self) -> None:
         for engine, cfg in DEFAULT_TIMEOUTS.items():
             assert cfg.max_s > cfg.default_s, (
-                f"{engine}: max_s ({cfg.max_s}) must exceed "
-                f"default_s ({cfg.default_s})"
+                f"{engine}: max_s ({cfg.max_s}) must exceed default_s ({cfg.default_s})"
             )
 
     def test_long_running_flag_consistent(self) -> None:

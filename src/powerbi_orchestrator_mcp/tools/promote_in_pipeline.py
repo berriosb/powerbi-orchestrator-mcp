@@ -48,9 +48,7 @@ class QualityGate(BaseModel):
     def _check_type(cls, v: str) -> str:
         allowed = {"pre_deploy_check", "audit_model_and_report", "run_dax_regression", "custom"}
         if v not in allowed:
-            raise ValueError(
-                f"invalid gate type {v!r}; expected one of {sorted(allowed)}"
-            )
+            raise ValueError(f"invalid gate type {v!r}; expected one of {sorted(allowed)}")
         return v
 
 
@@ -63,7 +61,9 @@ class PromoteInPipeline(BaseModel):
     items: list[str] | None = None  # default: all items in source stage
     quality_gates: list[QualityGate] = Field(default_factory=list)
     notify_on_failure: bool = True
-    dry_run: bool = False
+    # Safety default: a pipeline promotion moves real artifacts between
+    # stages (including prod). Require explicit dry_run=False to execute.
+    dry_run: bool = True
     fabric_client: Any = None  # injected for real deployments
     custom_gates: list[Any] | None = None  # list of (name, callable)
     audit_logger: Any = None  # invoked with promotion events
@@ -109,9 +109,7 @@ def _next_promotion_id() -> str:
     return f"prom_{uuid.uuid4().hex[:12]}"
 
 
-def _enumerate_items(
-    pipeline_id: str, source_stage: str, fabric_client: Any
-) -> list[str]:
+def _enumerate_items(pipeline_id: str, source_stage: str, fabric_client: Any) -> list[str]:
     """Resolve items to promote; the fabric_client may return None (legacy pipeline)."""
     if fabric_client is None:
         # Without a real client, assume an empty pipeline.
@@ -144,9 +142,7 @@ def _run_pre_deploy_check(
     )
 
 
-def _run_audit_score(
-    gate: QualityGate, *, pbip_path: str | None
-) -> GateExecuted:
+def _run_audit_score(gate: QualityGate, *, pbip_path: str | None) -> GateExecuted:
     import asyncio
 
     if not pbip_path:
@@ -242,7 +238,7 @@ def promote_in_pipeline(
     items: list[str] | None = None,
     quality_gates: list[QualityGate] | None = None,
     notify_on_failure: bool = True,  # noqa: ARG001
-    dry_run: bool = False,
+    dry_run: bool = True,
     fabric_client: Any = None,
     custom_gates: list[tuple[str, Callable[[], bool]]] | None = None,
     audit_logger: Any = None,
@@ -270,9 +266,7 @@ def promote_in_pipeline(
     # Resolve candidate items.
     candidate_items = items or _enumerate_items(pipeline_id, source_stage, fabric_client)
     if not candidate_items and not dry_run:
-        warnings.append(
-            "no items to promote (pipeline may be empty or fabric_client absent)"
-        )
+        warnings.append("no items to promote (pipeline may be empty or fabric_client absent)")
 
     # Quality-gate execution.
     gate_results: list[GateExecuted] = []

@@ -95,9 +95,7 @@ class EngineSelector:
         elif hasattr(engine, "add_page") and hasattr(engine, "add_visual"):
             self._report[name] = engine
         else:
-            raise TypeError(
-                f"engine {name!r} doesn't match ModelingEngine or ReportEngine"
-            )
+            raise TypeError(f"engine {name!r} doesn't match ModelingEngine or ReportEngine")
 
     def unregister(self, name: str) -> None:
         self._modeling.pop(name, None)
@@ -166,7 +164,11 @@ class EngineSelector:
 
     def _check_engine_available(self, name: str, engine: Any) -> None:
         if hasattr(engine, "is_available"):
-            avail = engine.is_available() if callable(engine.is_available) else bool(engine.is_available)
+            avail = (
+                engine.is_available()
+                if callable(engine.is_available)
+                else bool(engine.is_available)
+            )
             if not avail:
                 hint = getattr(
                     engine,

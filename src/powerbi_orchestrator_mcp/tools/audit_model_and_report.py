@@ -102,9 +102,7 @@ async def audit_model_and_report(
             bpa_result = await runner.run(target_p, ruleset_name=bpa_ruleset)
             bpa_score = max(0.0, min(100.0, float(bpa_result.score)))
             bpa_findings_count = len(bpa_result.findings)
-            auto_fixable_count = sum(
-                1 for f in bpa_result.findings if f.auto_fixable
-            )
+            auto_fixable_count = sum(1 for f in bpa_result.findings if f.auto_fixable)
             for bf in bpa_result.findings:
                 findings.append(
                     {

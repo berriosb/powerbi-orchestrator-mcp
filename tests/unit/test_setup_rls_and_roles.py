@@ -77,9 +77,7 @@ class TestRoleSpecPydantic:
         assert r.test_queries == []
 
     def test_test_query_with_expected_map(self) -> None:
-        q = RlsTestQuery(
-            name="q", dax="1+1", expected={"Region-West": 100, "Region-East": 0}
-        )
+        q = RlsTestQuery(name="q", dax="1+1", expected={"Region-West": 100, "Region-East": 0})
         assert q.expected["Region-West"] == 100
 
 
@@ -101,16 +99,14 @@ class TestTmdlRendering:
         assert "description" in block
 
     def test_render_role_without_members(self) -> None:
-        block = render_tmdl_role(
-            RoleSpec(role_name="R", filter_expression="[X]=1", table="T")
-        )
+        block = render_tmdl_role(RoleSpec(role_name="R", filter_expression="[X]=1", table="T"))
         assert "role R" in block
         assert "member:" not in block
 
     def test_merge_appends_role_section(self) -> None:
         existing = "table Foo\n    column A\n    dataType: int64\n"
         blocks = [
-            "role Bar\n    tablePermission T\n        filterExpression: \"[X]=1\"\n",
+            'role Bar\n    tablePermission T\n        filterExpression: "[X]=1"\n',
         ]
         merged = merge_roles_into_tmdl(existing, blocks)
         assert "table Foo" in merged
@@ -132,9 +128,7 @@ class TestAtomicWriteAndExecution:
 
     def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
         pbip = self._make_pbip(tmp_path)
-        res = setup_rls_and_roles(
-            target=str(pbip), spec_yaml=VALID_YAML, dry_run=True
-        )
+        res = setup_rls_and_roles(target=str(pbip), spec_yaml=VALID_YAML, dry_run=True)
         assert res.dry_run is True
         assert not any(
             "Roles (RLS)" in line
@@ -143,9 +137,7 @@ class TestAtomicWriteAndExecution:
 
     def test_apply_writes_roles_to_tmdl(self, tmp_path: Path) -> None:
         pbip = self._make_pbip(tmp_path)
-        res = setup_rls_and_roles(
-            target=str(pbip), spec_yaml=VALID_YAML, dry_run=False
-        )
+        res = setup_rls_and_roles(target=str(pbip), spec_yaml=VALID_YAML, dry_run=False)
         assert res.dry_run is False
         text = (pbip / "demo.Dataset" / "definition.tmdl").read_text()
         assert "role Region-West" in text
@@ -205,9 +197,7 @@ class TestAtomicWriteAndExecution:
         text = (pbip / "demo.Dataset" / "definition.tmdl").read_text()
         assert text == original
 
-    def test_test_engine_failure_no_rollback_when_disabled(
-        self, tmp_path: Path
-    ) -> None:
+    def test_test_engine_failure_no_rollback_when_disabled(self, tmp_path: Path) -> None:
         pbip = self._make_pbip(tmp_path)
 
         def fake_engine(role_name: str, dax: str) -> object:
@@ -235,9 +225,7 @@ class TestAtomicWriteAndExecution:
     def test_direct_tmdl_file_path(self, tmp_path: Path) -> None:
         tmdl = tmp_path / "model.tmdl"
         tmdl.write_text("table Foo\n")
-        res = setup_rls_and_roles(
-            target=str(tmdl), spec_yaml=VALID_YAML, dry_run=False
-        )
+        res = setup_rls_and_roles(target=str(tmdl), spec_yaml=VALID_YAML, dry_run=False)
         text = tmdl.read_text()
         assert "role Region-West" in text
         assert res.dry_run is False

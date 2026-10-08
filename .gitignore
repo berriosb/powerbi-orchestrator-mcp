@@ -55,3 +55,7 @@ audit.sqlite
 regression.sqlite
 # Local Pi runtime state
 .atl/
+
+# Local audit reports
+AUDIT.md
+AUDIT-*.md

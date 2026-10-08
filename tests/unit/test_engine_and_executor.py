@@ -31,9 +31,7 @@ from powerbi_orchestrator_mcp.orchestrator.step_executor import (
 
 class TestDetectAll:
     @pytest.mark.asyncio
-    async def test_returns_all_known_engines(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_returns_all_known_engines(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Force all binaries to be missing.
         monkeypatch.setattr(shutil, "which", lambda _name: None)
 
@@ -44,9 +42,7 @@ class TestDetectAll:
             assert isinstance(result[probe.engine], EngineStatus)
 
     @pytest.mark.asyncio
-    async def test_unavailable_when_binary_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_unavailable_when_binary_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(shutil, "which", lambda _name: None)
         result = await detect_all_engines()
         for status in result.values():
@@ -54,9 +50,7 @@ class TestDetectAll:
             assert status.reason_unavailable is not None
 
     @pytest.mark.asyncio
-    async def test_available_when_binary_found(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_available_when_binary_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Pretend "te" is the only thing in PATH.
         monkeypatch.setattr(
             shutil, "which", lambda name: f"/usr/bin/{name}" if name == "te" else None
@@ -69,9 +63,7 @@ class TestDetectAll:
 
 class TestDetectSingle:
     @pytest.mark.asyncio
-    async def test_unavailable_has_helpful_reason(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_unavailable_has_helpful_reason(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(shutil, "which", lambda _name: None)
         probe = _ENGINE_PROBES[0]  # powerbi-modeling-mcp
         status = await detect_engine(probe)
@@ -79,9 +71,7 @@ class TestDetectSingle:
         assert "not found" in (status.reason_unavailable or "")
 
     @pytest.mark.asyncio
-    async def test_npm_engine_mentions_npx(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_npm_engine_mentions_npx(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(shutil, "which", lambda _name: None)
         # powerbi-modeling-mcp is an npx package per its probe.
         probe = next(p for p in _ENGINE_PROBES if p.npx_package is not None)
@@ -221,9 +211,7 @@ class TestStepExecutorRegistry:
     async def test_missing_executor_always_fails(self) -> None:
         reg = StepExecutorRegistry()
         executor = reg.get("modeling")  # not registered
-        result = await executor.execute_step(
-            PlanStep(id="s1", engine="modeling", action="x")
-        )
+        result = await executor.execute_step(PlanStep(id="s1", engine="modeling", action="x"))
         assert result.success is False
         assert "modeling" in (result.error_message or "")
 

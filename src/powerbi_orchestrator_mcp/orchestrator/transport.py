@@ -35,8 +35,8 @@ import jwt
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
 
-_current_user_var: contextvars.ContextVar[dict[str, object] | None] = (
-    contextvars.ContextVar("current_user", default=None)
+_current_user_var: contextvars.ContextVar[dict[str, object] | None] = contextvars.ContextVar(
+    "current_user", default=None
 )
 
 
@@ -46,6 +46,7 @@ def get_current_user() -> dict[str, object] | None:
 
 def set_current_user(claims: dict[str, object] | None) -> None:
     _current_user_var.set(claims)
+
 
 Transport = Literal["stdio", "http"]
 
@@ -138,9 +139,7 @@ def validate_entra_token(
         )
 
     if jwks_client is None:
-        jwks_uri = (
-            f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
-        )
+        jwks_uri = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
         jwks_client = PyJWKClient(jwks_uri, cache_keys=True, lifespan=3600)
 
     try:
@@ -229,8 +228,7 @@ def parse_transport_args(
     parser.add_argument(
         "--http-entra-audience",
         default=None,
-        help="Expected `aud` claim, e.g. api://powerbi-orchestrator-mcp "
-        "(required for HTTP).",
+        help="Expected `aud` claim, e.g. api://powerbi-orchestrator-mcp (required for HTTP).",
     )
     parser.add_argument(
         "--http-entra-required-scope",
@@ -247,12 +245,8 @@ def parse_transport_args(
     if args.transport == "stdio":
         return "stdio", None
 
-    tenant_id = args.http_entra_tenant_id or os.environ.get(
-        "PBI_ENTRA_TENANT_ID", ""
-    )
-    audience = args.http_entra_audience or os.environ.get(
-        "PBI_ENTRA_AUDIENCE", ""
-    )
+    tenant_id = args.http_entra_tenant_id or os.environ.get("PBI_ENTRA_TENANT_ID", "")
+    audience = args.http_entra_audience or os.environ.get("PBI_ENTRA_AUDIENCE", "")
 
     if not tenant_id:
         sys.stderr.write(
@@ -262,8 +256,7 @@ def parse_transport_args(
         raise SystemExit(2)
     if not audience:
         sys.stderr.write(
-            "error: --transport http requires --http-entra-audience or "
-            "PBI_ENTRA_AUDIENCE env var\n"
+            "error: --transport http requires --http-entra-audience or PBI_ENTRA_AUDIENCE env var\n"
         )
         raise SystemExit(2)
 
@@ -274,8 +267,7 @@ def parse_transport_args(
         entra_audience=audience,
         entra_required_scope=args.http_entra_required_scope
         or os.environ.get("PBI_ENTRA_REQUIRED_SCOPE", "Tools.Read"),
-        mount_path=args.http_mount_path
-        or os.environ.get("PBI_HTTP_MOUNT_PATH", "/mcp"),
+        mount_path=args.http_mount_path or os.environ.get("PBI_HTTP_MOUNT_PATH", "/mcp"),
     )
 
     return "http", cfg

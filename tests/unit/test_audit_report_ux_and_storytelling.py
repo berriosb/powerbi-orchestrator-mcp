@@ -34,9 +34,7 @@ from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
 def _write_page(report_dir: Path, page_name: str, page_data: dict) -> None:
     page_dir = report_dir / "pages" / page_name
     page_dir.mkdir(parents=True, exist_ok=True)
-    (page_dir / "page.json").write_text(
-        json.dumps(page_data), encoding="utf-8"
-    )
+    (page_dir / "page.json").write_text(json.dumps(page_data), encoding="utf-8")
 
 
 def _make_pbip(tmp_path: Path) -> Path:
@@ -111,7 +109,10 @@ class TestHierarchy:
     def test_non_executive_returns_90_with_no_finding(self) -> None:
         findings: list[UxFinding] = []
         # analyst: hierarchy matters less; no finding
-        assert _check_hierarchy(_ctx([{"visual": {"$type": "card"}}], audience="analyst"), findings) == 90.0
+        assert (
+            _check_hierarchy(_ctx([{"visual": {"$type": "card"}}], audience="analyst"), findings)
+            == 90.0
+        )
         assert findings == []
 
     def test_kpi_top_left_scores_100(self) -> None:
@@ -143,10 +144,7 @@ class TestDensity:
     def test_over_limit_emits_info(self) -> None:
         findings: list[UxFinding] = []
         # executive max = 8; 10 visuals → over by 2 → info
-        visuals = [
-            {"visual": {"$type": "card"}, "x": i * 100, "y": 0}
-            for i in range(10)
-        ]
+        visuals = [{"visual": {"$type": "card"}, "x": i * 100, "y": 0} for i in range(10)]
         score = _check_density(_ctx(visuals), findings)
         assert score < 100.0
         assert len(findings) == 1
@@ -155,19 +153,14 @@ class TestDensity:
 
     def test_over_by_more_than_3_emits_warning(self) -> None:
         findings: list[UxFinding] = []
-        visuals = [
-            {"visual": {"$type": "card"}, "x": i * 100, "y": 0}
-            for i in range(13)
-        ]
+        visuals = [{"visual": {"$type": "card"}, "x": i * 100, "y": 0} for i in range(13)]
         _check_density(_ctx(visuals), findings)
         assert findings[0].severity == "warning"
 
     def test_clustered_over_threshold_emits_error(self) -> None:
         findings: list[UxFinding] = []
         # 12 visuals all at x=0 → spread=0 → error severity
-        visuals = [
-            {"visual": {"$type": "card"}, "x": 0, "y": 0} for _ in range(12)
-        ]
+        visuals = [{"visual": {"$type": "card"}, "x": 0, "y": 0} for _ in range(12)]
         _check_density(_ctx(visuals), findings)
         assert findings[0].severity == "error"
 
@@ -365,9 +358,7 @@ class TestLoadPages:
             encoding="utf-8",
         )
         (report_dir / "pages" / "Bad").mkdir(parents=True)
-        (report_dir / "pages" / "Bad" / "page.json").write_text(
-            "{not json", encoding="utf-8"
-        )
+        (report_dir / "pages" / "Bad" / "page.json").write_text("{not json", encoding="utf-8")
         pages = _load_pages(pbip, None)
         assert len(pages) == 1
         assert pages[0].page_name == "Good"
@@ -387,9 +378,7 @@ class TestLoadPages:
 
 class TestAuditReportUxAndStorytelling:
     def test_missing_pbip_warns(self, tmp_path: Path) -> None:
-        result = audit_report_ux_and_storytelling(
-            pbip_path=str(tmp_path / "missing")
-        )
+        result = audit_report_ux_and_storytelling(pbip_path=str(tmp_path / "missing"))
         assert result.overall_score == 0.0
         assert any("does not exist" in w for w in result.warnings)
         assert result.pages_analyzed == 0
@@ -434,9 +423,7 @@ class TestAuditReportUxAndStorytelling:
                 ],
             },
         )
-        result = audit_report_ux_and_storytelling(
-            pbip_path=str(pbip), audience_assumed="analyst"
-        )
+        result = audit_report_ux_and_storytelling(pbip_path=str(pbip), audience_assumed="analyst")
         assert result.audience_inferred == "analyst"
 
     def test_strictness_accepted(self, tmp_path: Path) -> None:
@@ -451,12 +438,8 @@ class TestAuditReportUxAndStorytelling:
             },
         )
         for strictness in ("lenient", "standard", "strict"):
-            result = audit_report_ux_and_storytelling(
-                pbip_path=str(pbip), strictness=strictness
-            )
-            assert isinstance(
-                result, AuditReportUxAndStorytellingResult
-            )
+            result = audit_report_ux_and_storytelling(pbip_path=str(pbip), strictness=strictness)
+            assert isinstance(result, AuditReportUxAndStorytellingResult)
 
     def test_filter_to_single_page(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
@@ -466,9 +449,7 @@ class TestAuditReportUxAndStorytelling:
             {
                 "width": 1280,
                 "height": 720,
-                "visualContainers": [
-                    {"id": "v1", "visual": {"$type": "card"}, "x": 100, "y": 80}
-                ],
+                "visualContainers": [{"id": "v1", "visual": {"$type": "card"}, "x": 100, "y": 80}],
             },
         )
         _write_page(
@@ -480,9 +461,7 @@ class TestAuditReportUxAndStorytelling:
                 "visualContainers": [],
             },
         )
-        result = audit_report_ux_and_storytelling(
-            pbip_path=str(pbip), page_name="Page2"
-        )
+        result = audit_report_ux_and_storytelling(pbip_path=str(pbip), page_name="Page2")
         assert result.pages_analyzed == 1
 
     def test_narrative_score_separate_from_overall(self, tmp_path: Path) -> None:
@@ -519,9 +498,7 @@ class TestAuditReportUxAndStorytelling:
                     "y": i * 10,
                 }
             )
-        visuals.append(
-            {"id": "kpi", "visual": {"$type": "card"}, "y": 1000}
-        )
+        visuals.append({"id": "kpi", "visual": {"$type": "card"}, "y": 1000})
         _write_page(
             pbip / "report.Report",
             "ExecutiveSummary",

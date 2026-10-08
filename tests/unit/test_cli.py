@@ -107,14 +107,10 @@ class TestCliValidate:
         assert body["findings_count"] >= 0
 
     def test_exits_2_on_missing_pbip(self) -> None:
-        rc, _, _ = _run_cli(
-            "validate", "/tmp/does-not-exist-xyz", "--min-score", "0"
-        )
+        rc, _, _ = _run_cli("validate", "/tmp/does-not-exist-xyz", "--min-score", "0")
         assert rc == 2
 
-    def test_exits_1_when_score_below_threshold(
-        self, tmp_path: Path
-    ) -> None:
+    def test_exits_1_when_score_below_threshold(self, tmp_path: Path) -> None:
         target = tmp_path / "lowscore.new"
         _run_cli("init", str(target))
         rc, _, _ = _run_cli("validate", str(target), "--min-score", "9999")

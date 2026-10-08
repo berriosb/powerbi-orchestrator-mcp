@@ -78,12 +78,8 @@ async def _cmd_validate(args: argparse.Namespace) -> int:
         scores["wcag"] = result.wcag_score
     # DAX lint: not scored; just presence of findings.
     if checks.dax_lint:
-        scores["dax_lint"] = max(
-            0.0, 100.0 - result.dax_lint_findings_count * 5
-        )
-    composite = (
-        sum(scores.values()) / len(scores) if scores else result.overall_score
-    )
+        scores["dax_lint"] = max(0.0, 100.0 - result.dax_lint_findings_count * 5)
+    composite = sum(scores.values()) / len(scores) if scores else result.overall_score
 
     summary = {
         "pbip_path": str(pbip_path),
@@ -129,9 +125,7 @@ async def _cmd_inspect(args: argparse.Namespace) -> int:
         "pbip_path": str(pbip_path),
         "metadata_files": [str(p.relative_to(pbip_path)) for p in metadata_files],
         "report_dirs": [str(p.relative_to(pbip_path)) for p in report_dir_candidates],
-        "dataset_dirs": [
-            str(p.relative_to(pbip_path)) for p in dataset_dir_candidates
-        ],
+        "dataset_dirs": [str(p.relative_to(pbip_path)) for p in dataset_dir_candidates],
     }
 
     if report_dir_candidates:
@@ -149,9 +143,7 @@ async def _cmd_inspect(args: argparse.Namespace) -> int:
                             summary["pages"].append(
                                 {
                                     "name": page_dir.name,
-                                    "path": str(
-                                        page_json.relative_to(pbip_path)
-                                    ),
+                                    "path": str(page_json.relative_to(pbip_path)),
                                     "visual_count": n_visuals,
                                     "width": data.get("width", 1280),
                                     "height": data.get("height", 720),
@@ -305,9 +297,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # validate
-    p_validate = sub.add_parser(
-        "validate", help="Run a composite audit on a PBIP folder."
-    )
+    p_validate = sub.add_parser("validate", help="Run a composite audit on a PBIP folder.")
     p_validate.add_argument("path", help="Path to the PBIP folder.")
     p_validate.add_argument(
         "--min-score",
@@ -339,16 +329,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_validate.set_defaults(func=_cmd_validate)
 
     # inspect
-    p_inspect = sub.add_parser(
-        "inspect", help="Print a JSON summary of a PBIP folder."
-    )
+    p_inspect = sub.add_parser("inspect", help="Print a JSON summary of a PBIP folder.")
     p_inspect.add_argument("path", help="Path to the PBIP folder.")
     p_inspect.set_defaults(func=_cmd_inspect)
 
     # init
-    p_init = sub.add_parser(
-        "init", help="Create a minimal valid PBIP skeleton."
-    )
+    p_init = sub.add_parser("init", help="Create a minimal valid PBIP skeleton.")
     p_init.add_argument("path", help="Path for the new PBIP folder.")
     p_init.add_argument(
         "--force",

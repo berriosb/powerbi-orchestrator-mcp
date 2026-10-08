@@ -18,9 +18,19 @@ from pydantic import BaseModel, Field
 # Time-variant tokens we recognize as calc-group items.
 # Order matters: more specific first (YOY before YO, MOM before MO).
 TIME_VARIANTS: tuple[str, ...] = (
-    "YOY", "YTD", "QTD", "MTD",
-    "PY", "QOQ", "MOM", "WOW",
-    "Y", "Q", "M", "W", "D",
+    "YOY",
+    "YTD",
+    "QTD",
+    "MTD",
+    "PY",
+    "QOQ",
+    "MOM",
+    "WOW",
+    "Y",
+    "Q",
+    "M",
+    "W",
+    "D",
 )
 
 
@@ -145,39 +155,29 @@ def refactor_to_calculation_groups(
         reconciliation_diffs, dry_run, changed_files, warnings.
     """
     if inspector is None:
-        return RefactorResult(
-            warnings=["no inspector provided \u2014 cannot enumerate measures"]
-        )
+        return RefactorResult(warnings=["no inspector provided \u2014 cannot enumerate measures"])
 
     try:
         measures = inspector.list_measures()
     except Exception as exc:  # noqa: BLE001
-        return RefactorResult(
-            warnings=[f"inspector.list_measures() failed: {exc}"]
-        )
+        return RefactorResult(warnings=[f"inspector.list_measures() failed: {exc}"])
 
     # Group by skeleton.
     grouped = _group_candidates(measures)
     # Apply min_candidates filter.
-    qualifying = {
-        k: v for k, v in grouped.items() if len(v) >= min_candidates
-    }
+    qualifying = {k: v for k, v in grouped.items() if len(v) >= min_candidates}
 
     # Initialize warnings early (used by various return paths below).
     warnings: list[str] = []
 
     plans = [_synthesize_calc_group(k, v) for k, v in qualifying.items()]
     if not plans:
-        warnings.append(
-            f"no group had ≥{min_candidates} members with shared structure"
-        )
+        warnings.append(f"no group had ≥{min_candidates} members with shared structure")
     measures_remapped: dict[str, str] = {}
     for plan in plans:
         for item in plan.items:
             original_name = f"{plan.template_measure} {item['name']}"
-            measures_remapped[original_name] = (
-                f"[{plan.name}].[{item['name']}]"
-            )
+            measures_remapped[original_name] = f"[{plan.name}].[{item['name']}]"
 
     # Reconciliation: MVP — placeholder.
     reconciliation_diffs: list[ReconciliationDiff] = []
@@ -195,9 +195,7 @@ def refactor_to_calculation_groups(
     changed_files: list[str] = []
     if auto_apply:
         if measure_writer is None:
-            warnings.append(
-                "auto_apply=True but no measure_writer; cannot persist"
-            )
+            warnings.append("auto_apply=True but no measure_writer; cannot persist")
         else:
             # Optional seam: if measure_writer is a TE adapter (i.e.
             # implements ``refactor_to_calculation_groups``),
@@ -235,9 +233,7 @@ def refactor_to_calculation_groups(
                         for k, v in te_result.measure_remappings.items():
                             measures_remapped.setdefault(k, v)
                 except Exception as exc:  # noqa: BLE001
-                    warnings.append(
-                        f"TE refactor_to_calculation_groups failed: {exc}"
-                    )
+                    warnings.append(f"TE refactor_to_calculation_groups failed: {exc}")
             else:
                 # Plain callable path (legacy contract).
                 for plan in plans:
@@ -247,13 +243,9 @@ def refactor_to_calculation_groups(
                             plan_name=plan.name,
                             items=list(plan.items),
                         )
-                        changed_files.extend(
-                            write_result.get("changed_files", [])
-                        )
+                        changed_files.extend(write_result.get("changed_files", []))
                     except Exception as exc:  # noqa: BLE001
-                        warnings.append(
-                            f"failed to create calc group {plan.name}: {exc}"
-                        )
+                        warnings.append(f"failed to create calc group {plan.name}: {exc}")
 
     return RefactorResult(
         groups_created=plans,

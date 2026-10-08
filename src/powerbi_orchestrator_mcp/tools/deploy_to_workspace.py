@@ -66,8 +66,7 @@ def _extract_tmdl_definition(pbip_path: str) -> dict[str, Any] | None:
         dataset_dirs = [
             d
             for d in path.iterdir()
-            if d.is_dir()
-            and (d.name.endswith(".Dataset") or d.name.endswith(".SemanticModel"))
+            if d.is_dir() and (d.name.endswith(".Dataset") or d.name.endswith(".SemanticModel"))
         ]
         if not dataset_dirs and (
             path.name.endswith(".Dataset") or path.name.endswith(".SemanticModel")
@@ -123,9 +122,7 @@ async def deploy_to_workspace(
     gate_result = gate.evaluate(findings)
     result.gate_result = gate_result
     if not gate_result.passed:
-        result.errors.extend(
-            [f"gate_blocked: {c}" for c in gate_result.failed_checks]
-        )
+        result.errors.extend([f"gate_blocked: {c}" for c in gate_result.failed_checks])
         return result
 
     if mock:
@@ -161,9 +158,7 @@ async def deploy_to_workspace(
                 **create_kwargs,
             )
             result.publish_ok = True
-            result.item_id = (
-                create_resp.get("id") or create_resp.get("objectId")
-            )
+            result.item_id = create_resp.get("id") or create_resp.get("objectId")
             if not result.item_id:
                 result.errors.append("publish_missing_item_id")
         except Exception as exc:
@@ -189,9 +184,7 @@ async def deploy_to_workspace(
                 target_dataset_id,
                 refresh_type="full",
             )
-            result.refresh_id = (
-                refresh_resp.get("refreshId") or refresh_resp.get("id")
-            )
+            result.refresh_id = refresh_resp.get("refreshId") or refresh_resp.get("id")
         except Exception as exc:
             result.errors.append(f"initial_refresh_failed: {exc}")
 

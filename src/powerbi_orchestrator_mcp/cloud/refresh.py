@@ -59,9 +59,7 @@ class RefreshOrchestrator:
 
     DEFAULT_TIMEOUT_S = 30 * 60  # 30 minutes per spec §3 default
     POLL_INTERVAL_S = 5.0
-    TERMINAL_STATUSES = frozenset(
-        {"Completed", "Failed", "Cancelled", "Disabled"}
-    )
+    TERMINAL_STATUSES = frozenset({"Completed", "Failed", "Cancelled", "Disabled"})
 
     def __init__(
         self,
@@ -102,9 +100,7 @@ class RefreshOrchestrator:
             )
 
         # Poll until terminal.
-        result = await self._poll(
-            workspace_id, dataset_id, refresh_id, timeout
-        )
+        result = await self._poll(workspace_id, dataset_id, refresh_id, timeout)
 
         # The refresh_result.errors may contain a string from serviceExceptionJson;
         # normalize it into a list of dicts for downstream consumption.
@@ -113,23 +109,17 @@ class RefreshOrchestrator:
                 result.errors = [json.loads(result.errors)]
             except json.JSONDecodeError:
                 result.errors = [{"raw": result.errors}]
-        result.duration_ms = int(
-            (datetime.now(UTC) - start).total_seconds() * 1000
-        )
+        result.duration_ms = int((datetime.now(UTC) - start).total_seconds() * 1000)
 
         # Diagnose if failed.
         if result.status == "Failed":
-            history = await self._safe_get_history(
-                workspace_id, dataset_id
-            )
+            history = await self._safe_get_history(workspace_id, dataset_id)
             diagnosis = self._doctor.diagnose(history)
             result.errors = diagnosis
             # Best-effort rollback: cancel if still in progress, otherwise
             # trigger a clearValues refresh (per spec §3 rollback semantics).
             if result.refresh_id:
-                await self._safe_cancel(
-                    workspace_id, dataset_id, result.refresh_id
-                )
+                await self._safe_cancel(workspace_id, dataset_id, result.refresh_id)
                 result.rollback_performed = True
 
         return result
@@ -156,19 +146,13 @@ class RefreshOrchestrator:
                     errors=[
                         {
                             "code": "refresh_timeout",
-                            "message": (
-                                f"refresh did not complete within {timeout_s}s"
-                            ),
+                            "message": (f"refresh did not complete within {timeout_s}s"),
                         }
                     ],
                 )
-            history = await self._safe_get_history(
-                workspace_id, dataset_id
-            )
+            history = await self._safe_get_history(workspace_id, dataset_id)
             for entry in history:
-                if entry.get("id") == refresh_id or entry.get(
-                    "refreshId"
-                ) == refresh_id:
+                if entry.get("id") == refresh_id or entry.get("refreshId") == refresh_id:
                     status = entry.get("status", "Unknown")
                     # Normalize serviceExceptionJson (a JSON string in the
                     # real API) into a list of error dicts.
@@ -176,9 +160,7 @@ class RefreshOrchestrator:
                     if isinstance(raw_errors, str):
                         try:
                             parsed = _json.loads(raw_errors)
-                            raw_errors = (
-                                parsed if isinstance(parsed, list) else [parsed]
-                            )
+                            raw_errors = parsed if isinstance(parsed, list) else [parsed]
                         except _json.JSONDecodeError:
                             raw_errors = [{"raw": raw_errors}]
                     return RefreshResult(
@@ -189,9 +171,7 @@ class RefreshOrchestrator:
                     )
             await asyncio.sleep(self.POLL_INTERVAL_S)
 
-    async def _safe_get_history(
-        self, workspace_id: str, dataset_id: str
-    ) -> list[dict[str, Any]]:
+    async def _safe_get_history(self, workspace_id: str, dataset_id: str) -> list[dict[str, Any]]:
         try:
             resp = await self._client.get(
                 f"/workspaces/{workspace_id}/datasets/{dataset_id}/refreshes"
@@ -200,9 +180,7 @@ class RefreshOrchestrator:
         except FabricAPIError:
             return []
 
-    async def _safe_cancel(
-        self, workspace_id: str, dataset_id: str, refresh_id: str
-    ) -> None:
+    async def _safe_cancel(self, workspace_id: str, dataset_id: str, refresh_id: str) -> None:
         import contextlib
 
         with contextlib.suppress(FabricAPIError):
@@ -287,9 +265,7 @@ class RefreshDoctor:
         blobs_by_refresh: dict[str, str] = {}
         for entry in entries:
             rid = entry.get("refreshId") or entry.get("id") or "<unknown>"
-            blobs_by_refresh[rid] = (
-                blobs_by_refresh.get(rid, "") + " " + self._extract_blob(entry)
-            )
+            blobs_by_refresh[rid] = blobs_by_refresh.get(rid, "") + " " + self._extract_blob(entry)
 
         findings: list[dict[str, Any]] = []
         for rid, blob in blobs_by_refresh.items():

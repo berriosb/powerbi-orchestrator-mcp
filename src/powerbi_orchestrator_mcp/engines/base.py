@@ -179,13 +179,9 @@ class ModelingEngine(Protocol):
 
     async def list_measures(self, conn: ConnectionHandle) -> list[Measure]: ...
 
-    async def list_columns(
-        self, conn: ConnectionHandle, table: str
-    ) -> list[Column]: ...
+    async def list_columns(self, conn: ConnectionHandle, table: str) -> list[Column]: ...
 
-    async def list_relationships(
-        self, conn: ConnectionHandle
-    ) -> list[Relationship]: ...
+    async def list_relationships(self, conn: ConnectionHandle) -> list[Relationship]: ...
 
     async def update_column(
         self,
@@ -218,9 +214,7 @@ class ModelingEngine(Protocol):
         effective_identity: dict[str, Any] | None = None,
     ) -> DaxResult: ...
 
-    async def snapshot(
-        self, conn: ConnectionHandle, label: str
-    ) -> SnapshotHandle: ...
+    async def snapshot(self, conn: ConnectionHandle, label: str) -> SnapshotHandle: ...
 
     async def restore_snapshot(self, handle: SnapshotHandle) -> None: ...
 
@@ -350,18 +344,14 @@ class JsonRpcSubprocessEngine:
                 f"{self._engine_name} binary not found: {self._binary}",
                 engine=self._engine_name,
                 code="engine_not_found",
-                remediation_hint=(
-                    f"Install {self._engine_name} per docs/engines-setup.md"
-                ),
+                remediation_hint=(f"Install {self._engine_name} per docs/engines-setup.md"),
             ) from exc
         except OSError as exc:
             raise EngineCrashedError(
                 f"failed to spawn {self._engine_name}: {exc}",
                 engine=self._engine_name,
                 code="engine_spawn_failed",
-                remediation_hint=(
-                    f"Check binary permissions and PATH for {self._engine_name}"
-                ),
+                remediation_hint=(f"Check binary permissions and PATH for {self._engine_name}"),
             ) from exc
 
         self._stdout_task = asyncio.create_task(self._read_stdout_loop())
@@ -371,10 +361,10 @@ class JsonRpcSubprocessEngine:
         if self._process.returncode is not None:
             buffered_stderr = "\n".join(self._stderr_buffer)
             stderr_bytes = await self._process.stderr.read() if self._process.stderr else b""
-            combined_err = (buffered_stderr + "\n" + stderr_bytes.decode("utf-8", errors="replace")).strip()[:500]
-            err = map_exit_code_to_error(
-                self._engine_name, self._process.returncode, combined_err
-            )
+            combined_err = (
+                buffered_stderr + "\n" + stderr_bytes.decode("utf-8", errors="replace")
+            ).strip()[:500]
+            err = map_exit_code_to_error(self._engine_name, self._process.returncode, combined_err)
             if err is None:
                 err = EngineCrashedError(
                     f"{self._engine_name} exited immediately",
@@ -387,9 +377,7 @@ class JsonRpcSubprocessEngine:
         if self._mcp_handshake:
             effective_start_timeout = 30
             try:
-                effective_start_timeout = resolve_timeout(
-                    self._engine_name, requested_s=timeout_s
-                )
+                effective_start_timeout = resolve_timeout(self._engine_name, requested_s=timeout_s)
             except Exception:
                 effective_start_timeout = timeout_s or 30
             try:
@@ -519,13 +507,11 @@ class JsonRpcSubprocessEngine:
         except TimeoutError as exc:
             self._pending.pop(request_id, None)
             raise EngineTimeoutError(
-                f"{self._engine_name} {method}() timed out after "
-                f"{effective_timeout}s",
+                f"{self._engine_name} {method}() timed out after {effective_timeout}s",
                 engine=self._engine_name,
                 code="engine_timeout",
                 remediation_hint=(
-                    "Increase PBI_ENGINE_TIMEOUT_<ENGINE>_S or reduce the "
-                    "operation size"
+                    "Increase PBI_ENGINE_TIMEOUT_<ENGINE>_S or reduce the operation size"
                 ),
                 timeout_s=effective_timeout,
             ) from exc
@@ -533,13 +519,11 @@ class JsonRpcSubprocessEngine:
         if "error" in response:
             err = response["error"]
             raise EngineCrashedError(
-                f"{self._engine_name} RPC {method} error: "
-                f"{err.get('message', err)}",
+                f"{self._engine_name} RPC {method} error: {err.get('message', err)}",
                 engine=self._engine_name,
                 code=f"rpc_error_{err.get('code', 'unknown')}",
                 remediation_hint=(
-                    f"Inspect {self._engine_name} stderr in audit log; "
-                    f"may be a contract drift"
+                    f"Inspect {self._engine_name} stderr in audit log; may be a contract drift"
                 ),
             )
 
@@ -578,7 +562,6 @@ class JsonRpcSubprocessEngine:
                 remediation_hint="Restart the engine process",
             ) from exc
 
-
     async def _read_stderr_loop(self) -> None:
         proc = self._process
         if proc is None or proc.stderr is None:
@@ -588,9 +571,7 @@ class JsonRpcSubprocessEngine:
                 line = await proc.stderr.readline()
                 if not line:
                     break
-                self._stderr_buffer.append(
-                    line.decode("utf-8", errors="replace").strip()
-                )
+                self._stderr_buffer.append(line.decode("utf-8", errors="replace").strip())
         except (asyncio.CancelledError, GeneratorExit):
             pass
         except Exception:
@@ -655,9 +636,7 @@ class JsonRpcSubprocessEngine:
 # ---------------------------------------------------------------------------
 
 
-def map_subprocess_error(
-    engine: str, exc: Exception, op: str
-) -> EngineError:
+def map_subprocess_error(engine: str, exc: Exception, op: str) -> EngineError:
     """Convert a raw subprocess exception into an EngineError subclass.
 
     Used by adapter methods that call ``_rpc()`` and want a uniform

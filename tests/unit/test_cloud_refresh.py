@@ -18,9 +18,7 @@ class FakeClient:
         self._scripts = scripts
         self.calls: list[tuple[str, dict]] = []
 
-    async def refresh_dataset(
-        self, workspace_id, dataset_id, **kwargs
-    ) -> dict[str, Any]:
+    async def refresh_dataset(self, workspace_id, dataset_id, **kwargs) -> dict[str, Any]:
         self.calls.append(("refresh_dataset", kwargs))
         return self._scripts.get("refresh_dataset", {"refreshId": "abc"})
 
@@ -37,7 +35,7 @@ class TestRefreshDoctor:
     def test_diagnose_auth_token_expired(self) -> None:
         doctor = RefreshDoctor()
         entry = {
-            "serviceExceptionJson": "{\"error\":{\"code\":\"401 Unauthorized\"}}",
+            "serviceExceptionJson": '{"error":{"code":"401 Unauthorized"}}',
         }
         findings = doctor.diagnose(entry)
         assert any(f["code"] == "auth_token_expired" for f in findings)
@@ -91,11 +89,7 @@ class TestRefreshOrchestrator:
         client = FakeClient(
             {
                 "refresh_dataset": {"refreshId": "r1"},
-                "get": {
-                    "value": [
-                        {"id": "r1", "status": "Completed", "serviceExceptionJson": ""}
-                    ]
-                },
+                "get": {"value": [{"id": "r1", "status": "Completed", "serviceExceptionJson": ""}]},
             }
         )
         orch = RefreshOrchestrator(client)  # type: ignore[arg-type]
@@ -112,9 +106,7 @@ class TestRefreshOrchestrator:
                         {
                             "id": "r1",
                             "status": "Failed",
-                            "serviceExceptionJson": (
-                                '{"code":"DM_GatewayOutOfMemory"}'
-                            ),
+                            "serviceExceptionJson": ('{"code":"DM_GatewayOutOfMemory"}'),
                         }
                     ]
                 },
@@ -124,7 +116,5 @@ class TestRefreshOrchestrator:
         orch = RefreshOrchestrator(client)  # type: ignore[arg-type]
         result = await orch.run("ws", "ds", wait=True, timeout_s=5)
         assert result.status == "Failed"
-        assert any(
-            f["code"] == "gateway_out_of_memory" for f in result.errors
-        )
+        assert any(f["code"] == "gateway_out_of_memory" for f in result.errors)
         assert result.rollback_performed is True

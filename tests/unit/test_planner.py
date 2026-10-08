@@ -40,9 +40,7 @@ class TestBuildDispatch:
             PlanTemplate.DAX_REGRESSION,
         ],
     )
-    def test_named_template_without_args_raises(
-        self, builder: PlanBuilder, template: str
-    ) -> None:
+    def test_named_template_without_args_raises(self, builder: PlanBuilder, template: str) -> None:
         """build() with a known template name (but no specialized args) errors out."""
         with pytest.raises(PlanValidationError):
             builder.build(template)
@@ -167,18 +165,12 @@ class TestDeploy:
 
     def test_invalid_hour_rejected(self, builder: PlanBuilder) -> None:
         with pytest.raises(PlanValidationError):
-            builder.build_deploy(
-                pbip_path="x", workspace_id="y", refresh_daily_hour=24
-            )
+            builder.build_deploy(pbip_path="x", workspace_id="y", refresh_daily_hour=24)
         with pytest.raises(PlanValidationError):
-            builder.build_deploy(
-                pbip_path="x", workspace_id="y", refresh_daily_hour=-1
-            )
+            builder.build_deploy(pbip_path="x", workspace_id="y", refresh_daily_hour=-1)
 
     def test_risk_score_high(self, builder: PlanBuilder) -> None:
-        plan = builder.build_deploy(
-            pbip_path="x", workspace_id="y", options=_RELAXED
-        )
+        plan = builder.build_deploy(pbip_path="x", workspace_id="y", options=_RELAXED)
         assert plan.risk_score >= 0.5
 
 

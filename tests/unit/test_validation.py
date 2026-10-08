@@ -90,13 +90,7 @@ class TestDaxLinter:
     def test_nested_calculate(self) -> None:
         linter = DaxLinter()
         # 3 levels of CALCULATE.
-        expr = (
-            "X := CALCULATE("
-            "CALCULATE("
-            "CALCULATE([M], T[C] = 1), "
-            "T[C] = 2), "
-            "T[C] = 3)"
-        )
+        expr = "X := CALCULATE(CALCULATE(CALCULATE([M], T[C] = 1), T[C] = 2), T[C] = 3)"
         findings = linter.lint(expr)
         assert any(f.rule_id == "BP_CALCULATE_NESTED" for f in findings)
 
@@ -118,7 +112,7 @@ class TestDaxLinter:
 
     def test_summarize_for_agg(self) -> None:
         linter = DaxLinter()
-        findings = linter.lint("X := SUMMARIZE(T, T[C], \"Total\", SUM(T[A]))")
+        findings = linter.lint('X := SUMMARIZE(T, T[C], "Total", SUM(T[A]))')
         assert any(f.rule_id == "BP_SUMMARIZE_FOR_AGG" for f in findings)
 
     def test_blank_suppress_plus_zero(self) -> None:
@@ -163,7 +157,7 @@ class TestDaxRegressionRunner:
                     "queries": [
                         {
                             "name": "Q1",
-                            "query": "EVALUATE ROW(\"x\", 100)",
+                            "query": 'EVALUATE ROW("x", 100)',
                             "expected_rows": [{"x": 100}],
                         }
                     ],
@@ -189,7 +183,7 @@ class TestDaxRegressionRunner:
                     "queries": [
                         {
                             "name": "Q1",
-                            "query": "EVALUATE ROW(\"x\", 100)",
+                            "query": 'EVALUATE ROW("x", 100)',
                             "expected_rows": [{"x": 100}],
                         }
                     ],
@@ -265,8 +259,16 @@ class TestModelDiffer:
         # Same id (e.g. "T") but name changed: treated as a non-additive
         # rename by the differ. For MVP we classify all name changes as
         # breaking (per spec §2.4: "rename = breaking").
-        a = {"tables": [{"name": "T_old", "description": "old"}], "measures": [], "relationships": []}
-        b = {"tables": [{"name": "T_new", "description": "new"}], "measures": [], "relationships": []}
+        a = {
+            "tables": [{"name": "T_old", "description": "old"}],
+            "measures": [],
+            "relationships": [],
+        }
+        b = {
+            "tables": [{"name": "T_new", "description": "new"}],
+            "measures": [],
+            "relationships": [],
+        }
         # Note: the current differ treats "T_old" → removed + "T_new" →
         # added, since names are different. Real rename detection (via
         # table GUIDs) is v2. For MVP this is acceptable: user sees
@@ -369,9 +371,7 @@ class TestPreDeployGate:
                 self.severity = sev
 
         findings = (
-            [FakeFinding("error")] * 2
-            + [FakeFinding("warning")] * 5
-            + [FakeFinding("info")] * 10
+            [FakeFinding("error")] * 2 + [FakeFinding("warning")] * 5 + [FakeFinding("info")] * 10
         )
         result = gate.evaluate(findings)
         assert result.error_count == 2

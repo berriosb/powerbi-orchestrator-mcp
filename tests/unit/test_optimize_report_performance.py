@@ -25,9 +25,7 @@ def _write_page(report_dir: Path, page_name: str, page_data: dict) -> None:
     """Write a synthetic ``pages/<page_name>/page.json`` file."""
     page_dir = report_dir / "pages" / page_name
     page_dir.mkdir(parents=True, exist_ok=True)
-    (page_dir / "page.json").write_text(
-        json.dumps(page_data), encoding="utf-8"
-    )
+    (page_dir / "page.json").write_text(json.dumps(page_data), encoding="utf-8")
 
 
 def _make_pbip(tmp_path: Path) -> Path:
@@ -114,16 +112,15 @@ class TestEstimateVisualCost:
                 {"type": "color"},
             ],
         }
-        assert (
-            _estimate_visual_cost(visual_many, None)
-            > _estimate_visual_cost(visual_one, None)
-        )
+        assert _estimate_visual_cost(visual_many, None) > _estimate_visual_cost(visual_one, None)
 
 
 class TestAnalyzePage:
     def test_returns_baseline_on_minimal_page(self, tmp_path: Path) -> None:
         page = tmp_path / "page.json"
-        page.write_text(json.dumps({"width": 1280, "height": 720, "visualContainers": []}), encoding="utf-8")
+        page.write_text(
+            json.dumps({"width": 1280, "height": 720, "visualContainers": []}), encoding="utf-8"
+        )
         ms, visuals, hotspots = _analyze_page(page)
         assert visuals == 0
         assert ms == 500  # baseline
@@ -131,13 +128,9 @@ class TestAnalyzePage:
 
     def test_detects_density_over_5(self, tmp_path: Path) -> None:
         page = tmp_path / "page.json"
-        visuals = [
-            {"id": f"v{i}", "visual": {"$type": "card"}} for i in range(8)
-        ]
+        visuals = [{"id": f"v{i}", "visual": {"$type": "card"}} for i in range(8)]
         page.write_text(
-            json.dumps(
-                {"width": 1280, "height": 720, "visualContainers": visuals}
-            ),
+            json.dumps({"width": 1280, "height": 720, "visualContainers": visuals}),
             encoding="utf-8",
         )
         ms, v_count, hotspots = _analyze_page(page)
@@ -146,13 +139,9 @@ class TestAnalyzePage:
 
     def test_wide_page_with_many_visuals(self, tmp_path: Path) -> None:
         page = tmp_path / "page.json"
-        visuals = [
-            {"id": f"v{i}", "visual": {"$type": "card"}} for i in range(7)
-        ]
+        visuals = [{"id": f"v{i}", "visual": {"$type": "card"}} for i in range(7)]
         page.write_text(
-            json.dumps(
-                {"width": 1920, "height": 1080, "visualContainers": visuals}
-            ),
+            json.dumps({"width": 1920, "height": 1080, "visualContainers": visuals}),
             encoding="utf-8",
         )
         _ms, _v, hotspots = _analyze_page(page)
@@ -169,9 +158,7 @@ class TestAnalyzePage:
                         {
                             "id": "p1",
                             "visual": {"$type": "pieChart"},
-                            "conditionalFormatting": [
-                                {"type": "color"} for _ in range(8)
-                            ],
+                            "conditionalFormatting": [{"type": "color"} for _ in range(8)],
                         }
                     ],
                 }
@@ -185,9 +172,7 @@ class TestAnalyzePage:
         assert pie.est_cost in ("medium", "high")
         assert pie.fix_suggestion  # non-empty
 
-    def test_corrupt_json_emits_warning_hotspot(
-        self, tmp_path: Path
-    ) -> None:
+    def test_corrupt_json_emits_warning_hotspot(self, tmp_path: Path) -> None:
         page = tmp_path / "page.json"
         page.write_text("{ this is not json", encoding="utf-8")
         _ms, v_count, hotspots = _analyze_page(page)
@@ -198,9 +183,7 @@ class TestAnalyzePage:
 
 class TestOptimizeReportPerformance:
     def test_missing_pbip_warns(self, tmp_path: Path) -> None:
-        result = optimize_report_performance(
-            pbip_path=str(tmp_path / "does_not_exist")
-        )
+        result = optimize_report_performance(pbip_path=str(tmp_path / "does_not_exist"))
         assert result.performance_score == 0.0
         assert any("does not exist" in w for w in result.warnings)
         assert result.pages_analyzed == 0
@@ -258,9 +241,7 @@ class TestOptimizeReportPerformance:
             {
                 "id": "custom",
                 "visual": {"$type": "chartJSVisual"},
-                "conditionalFormatting": [
-                    {"type": "color"} for _ in range(5)
-                ],
+                "conditionalFormatting": [{"type": "color"} for _ in range(5)],
             }
         )
         visuals.append(
@@ -274,9 +255,7 @@ class TestOptimizeReportPerformance:
             {
                 "id": "scatter",
                 "visual": {"$type": "scatterChart"},
-                "conditionalFormatting": [
-                    {"type": "color"} for _ in range(3)
-                ],
+                "conditionalFormatting": [{"type": "color"} for _ in range(3)],
             }
         )
         _write_page(
@@ -312,14 +291,10 @@ class TestOptimizeReportPerformance:
             {
                 "width": 1280,
                 "height": 720,
-                "visualContainers": [
-                    {"id": "v1", "visual": {"$type": "card"}}
-                ],
+                "visualContainers": [{"id": "v1", "visual": {"$type": "card"}}],
             },
         )
         # Set a very low target so even a clean page doesn't meet it.
-        result = optimize_report_performance(
-            pbip_path=str(pbip), target_load_ms=100
-        )
+        result = optimize_report_performance(pbip_path=str(pbip), target_load_ms=100)
         assert result.meets_target is False
         assert result.estimated_total_load_ms >= 100

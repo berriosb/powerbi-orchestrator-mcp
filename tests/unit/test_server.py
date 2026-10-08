@@ -49,8 +49,12 @@ def _reset_module_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reset all module-level + filesystem state for each test."""
-    monkeypatch.setattr("powerbi_orchestrator_mcp.orchestrator.context.SESSIONS_DIR", tmp_path / "sessions")
-    monkeypatch.setattr("powerbi_orchestrator_mcp.orchestrator.plan_executions.EXEC_DIR", tmp_path / "executions")
+    monkeypatch.setattr(
+        "powerbi_orchestrator_mcp.orchestrator.context.SESSIONS_DIR", tmp_path / "sessions"
+    )
+    monkeypatch.setattr(
+        "powerbi_orchestrator_mcp.orchestrator.plan_executions.EXEC_DIR", tmp_path / "executions"
+    )
     monkeypatch.setattr("powerbi_orchestrator_mcp.orchestrator.audit.AUDIT_DIR", tmp_path / "audit")
     srv._reset_server_state()
     reset_default_registry()
@@ -89,9 +93,7 @@ class TestModels:
     def test_engine_status_unavailable(self) -> None:
         from powerbi_orchestrator_mcp.orchestrator.context import EngineStatus as CtxEngineStatus
 
-        status = CtxEngineStatus(
-            name="te", available=False, reason_unavailable="not installed"
-        )
+        status = CtxEngineStatus(name="te", available=False, reason_unavailable="not installed")
         assert status.available is False
         assert status.reason_unavailable == "not installed"
 
@@ -186,9 +188,7 @@ class TestConnectTarget:
         # Force all engines to be unavailable by removing their PATH entries.
         monkeypatch.setattr(shutil, "which", lambda _name: None)
 
-        result = await connect_target(
-            target_type="pbip_folder", target_ref=str(pbip_dir)
-        )
+        result = await connect_target(target_type="pbip_folder", target_ref=str(pbip_dir))
         # All 5 engines should be reported as unavailable.
         for engine in ("powerbi-modeling-mcp", "te", "dscmd", "pbip-validator", "superbi-mcp"):
             assert engine in result.engines_available
@@ -196,28 +196,24 @@ class TestConnectTarget:
             assert result.engines_available[engine].reason_unavailable is not None
 
     @pytest.mark.asyncio
-    async def test_warning_when_engines_missing(self, pbip_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_warning_when_engines_missing(
+        self, pbip_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr(shutil, "which", lambda _name: None)
-        result = await connect_target(
-            target_type="pbip_folder", target_ref=str(pbip_dir)
-        )
+        result = await connect_target(target_type="pbip_folder", target_ref=str(pbip_dir))
         assert any("unavailable" in w for w in result.warnings)
 
     @pytest.mark.asyncio
     async def test_warning_for_nonexistent_path(self, tmp_path: Path) -> None:
         missing = tmp_path / "does_not_exist"
-        result = await connect_target(
-            target_type="pbip_folder", target_ref=str(missing)
-        )
+        result = await connect_target(target_type="pbip_folder", target_ref=str(missing))
         assert any("does not exist" in w for w in result.warnings)
 
     @pytest.mark.asyncio
     async def test_persists_session(self, pbip_dir: Path) -> None:
         from powerbi_orchestrator_mcp.orchestrator.context import SessionStore
 
-        result = await connect_target(
-            target_type="pbip_folder", target_ref=str(pbip_dir)
-        )
+        result = await connect_target(target_type="pbip_folder", target_ref=str(pbip_dir))
         store = SessionStore()
         session = store.get(result.session_id)
         assert session is not None
@@ -310,6 +306,25 @@ class TestPlanChange:
 
 
 class TestApplyPlan:
+    @pytest.mark.asyncio
+    async def test_apply_plan_defaults_to_dry_run(self) -> None:
+        """Safety default: apply_plan must not mutate without opt-in.
+
+        An LLM-driven caller that says "apply the plan" without naming a
+        dry-run flag must get simulation, not execution.
+        """
+        import inspect
+
+        assert inspect.signature(apply_plan).parameters["dry_run"].default is True
+
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": "x", "checks": ["a"]},
+        )
+        result = await apply_plan(plan_id=plan_res.plan_id)
+        assert result.result == "success"
+        assert all(not s.get("changed_files") for s in result.executed_steps)
+
     @pytest.mark.asyncio
     async def test_unknown_plan_id_returns_failed(self) -> None:
         result = await apply_plan(plan_id="plan_does_not_exist")
@@ -490,9 +505,7 @@ class TestSessionIsolation:
         assert get_active_session_id() is None
 
     @pytest.mark.asyncio
-    async def test_connect_target_sets_active_session_id(
-        self, pbip_dir: Path
-    ) -> None:
+    async def test_connect_target_sets_active_session_id(self, pbip_dir: Path) -> None:
         from powerbi_orchestrator_mcp.orchestrator.server import (
             _reset_server_state,
             connect_target,
@@ -500,9 +513,7 @@ class TestSessionIsolation:
         )
 
         _reset_server_state()
-        res = await connect_target(
-            target_type="pbip_folder", target_ref=str(pbip_dir)
-        )
+        res = await connect_target(target_type="pbip_folder", target_ref=str(pbip_dir))
         assert get_active_session_id() == res.session_id
 
 
@@ -533,7 +544,7 @@ class TestJsonArgParsing:
         from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
 
         assert _parse_json_arg('{"key": "val"}') == {"key": "val"}
-        assert _parse_json_arg('[1, 2, 3]') == [1, 2, 3]
+        assert _parse_json_arg("[1, 2, 3]") == [1, 2, 3]
 
     def test_invalid_json_string_returns_default(self) -> None:
         from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
@@ -580,7 +591,9 @@ class TestExecuteDaxQuery:
         from powerbi_orchestrator_mcp.orchestrator.server import execute_dax_query
 
         mock_client = MagicMock()
-        mock_client.execute_queries = AsyncMock(return_value={"results": [{"tables": [{"rows": [1]}]}]})
+        mock_client.execute_queries = AsyncMock(
+            return_value={"results": [{"tables": [{"rows": [1]}]}]}
+        )
 
         res = await execute_dax_query(
             workspace_id="ws-123",

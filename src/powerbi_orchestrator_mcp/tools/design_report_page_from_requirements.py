@@ -186,9 +186,7 @@ def design_report_page_from_requirements(
         if sugg is None:
             rationale_parts.append(f"- {kpi['name']}: no visual suggestion")
             continue
-        rationale_parts.append(
-            f"- {kpi['name']}: {sugg.type} ({sugg.justification[:80]})"
-        )
+        rationale_parts.append(f"- {kpi['name']}: {sugg.type} ({sugg.justification[:80]})")
         visual_specs.append(
             DesignedVisual(
                 type=sugg.type,
@@ -222,7 +220,12 @@ def design_report_page_from_requirements(
     else:
         report_dir = report_dir_candidates[0]
 
-    if Path(page_name).name != page_name or "/" in page_name or "\\" in page_name or not page_name.strip():
+    if (
+        Path(page_name).name != page_name
+        or "/" in page_name
+        or "\\" in page_name
+        or not page_name.strip()
+    ):
         return DesignReportPageResult(
             page_name=page_name,
             visual_count=len(visual_specs),
@@ -251,11 +254,7 @@ def design_report_page_from_requirements(
                 "visual": {
                     "$type": spec.type,
                     "id": f"v_{spec.kpi[:8].replace(' ', '_')}",
-                    "projections": {
-                        "Values": [
-                            {"queryRef": f"[{f}]"} for f in spec.fields
-                        ]
-                    }
+                    "projections": {"Values": [{"queryRef": f"[{f}]"} for f in spec.fields]}
                     if spec.fields
                     else {},
                 },
@@ -317,9 +316,7 @@ def design_report_page_from_requirements(
 
     # Estimate WCAG score: all visuals have altText (we set it above).
     # Conservative score (some warnings may apply).
-    has_alt = all(
-        vc.get("altText") for vc in page_data.get("visualContainers", [])
-    )
+    has_alt = all(vc.get("altText") for vc in page_data.get("visualContainers", []))
     wcag_score = 95.0 if has_alt else 80.0
 
     return DesignReportPageResult(

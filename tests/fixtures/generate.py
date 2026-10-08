@@ -37,10 +37,7 @@ def _random_measures(rng: random.Random) -> list[dict[str, str]]:
         {
             "name": "Prior Month Sales",
             "table": "FactSales",
-            "expression": (
-                "CALCULATE([Total Sales], "
-                "DATEADD(DimDate[Date], -1, MONTH))"
-            ),
+            "expression": ("CALCULATE([Total Sales], DATEADD(DimDate[Date], -1, MONTH))"),
         },
         {
             "name": "Order Count",
@@ -50,20 +47,13 @@ def _random_measures(rng: random.Random) -> list[dict[str, str]]:
         {
             "name": "Avg Price",
             "table": "FactSales",
-            "expression": (
-                "DIVIDE("
-                "SUM(FactSales[UnitPrice]), "
-                "SUM(FactSales[Units]))"
-            ),
+            "expression": ("DIVIDE(SUM(FactSales[UnitPrice]), SUM(FactSales[Units]))"),
         },
         # One DAX linter anti-pattern (BP_DIVIDE_VS_SLASH).
         {
             "name": "Avg Price Bad",
             "table": "FactSales",
-            "expression": (
-                "SUM(FactSales[UnitPrice]) / "
-                "SUM(FactSales[Units])"
-            ),
+            "expression": ("SUM(FactSales[UnitPrice]) / SUM(FactSales[Units])"),
         },
     ]
 
@@ -88,9 +78,7 @@ def _make_pages() -> list[dict]:
                     "visual": {
                         "$type": "card",
                         "id": "v1",
-                        "projections": {
-                            "Values": [{"queryRef": "[YTD Sales]"}]
-                        },
+                        "projections": {"Values": [{"queryRef": "[YTD Sales]"}]},
                     },
                     "tabOrder": 0,
                 },
@@ -106,9 +94,7 @@ def _make_pages() -> list[dict]:
                         "$type": "lineChart",
                         "id": "v2",
                         "projections": {
-                            "Category": [
-                            {"queryRef": "DimDate[MonthName]"}
-                            ],
+                            "Category": [{"queryRef": "DimDate[MonthName]"}],
                             "Y": [{"queryRef": "[Total Sales]"}],
                         },
                     },
@@ -170,9 +156,7 @@ def _make_dataset_definition() -> dict:
                         {
                             "name": "ManagerEmail",
                             "dataType": "string",
-                            "description": (
-                                "PII: email del gerente regional"
-                            ),
+                            "description": ("PII: email del gerente regional"),
                         },
                     ],
                 },
@@ -238,23 +222,17 @@ def generate(output_dir: Path, seed: int = SEED) -> None:
     for page in _make_pages():
         page_dir = pages_dir / page["name"]
         page_dir.mkdir(exist_ok=True)
-        (page_dir / "page.json").write_text(
-            json.dumps(page, indent=2), encoding="utf-8"
-        )
+        (page_dir / "page.json").write_text(json.dumps(page, indent=2), encoding="utf-8")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate the sample.pbip test fixture."
-    )
+    parser = argparse.ArgumentParser(description="Generate the sample.pbip test fixture.")
     parser.add_argument(
         "--output",
         default=str(Path(__file__).parent / "sample.pbip"),
         help="Output directory for the generated PBIP.",
     )
-    parser.add_argument(
-        "--seed", type=int, default=SEED, help="Random seed (default: 42)."
-    )
+    parser.add_argument("--seed", type=int, default=SEED, help="Random seed (default: 42).")
     args = parser.parse_args()
     out = Path(args.output)
     generate(out, seed=args.seed)

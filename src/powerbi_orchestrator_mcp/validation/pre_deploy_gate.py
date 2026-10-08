@@ -91,10 +91,7 @@ class PreDeployGate:
         profiles = {**BUILTIN_PROFILES, **(custom_profiles or {})}
         if isinstance(profile, str):
             if profile not in profiles:
-                raise ValueError(
-                    f"unknown profile {profile!r}; "
-                    f"available: {sorted(profiles)}"
-                )
+                raise ValueError(f"unknown profile {profile!r}; available: {sorted(profiles)}")
             self._profile = profiles[profile]
         else:
             self._profile = profile
@@ -136,10 +133,7 @@ class PreDeployGate:
                 else threshold.blocking
             )
             if is_blocking and count > threshold.max_findings:
-                failed.append(
-                    f"{severity_name}: {count} findings "
-                    f"(max {threshold.max_findings})"
-                )
+                failed.append(f"{severity_name}: {count} findings (max {threshold.max_findings})")
 
         return GateResult(
             passed=not failed,

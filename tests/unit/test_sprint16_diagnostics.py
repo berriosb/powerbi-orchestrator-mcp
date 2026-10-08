@@ -130,17 +130,13 @@ class TestPlanStore:
         store.put(_make_plan("p2"))
         assert store.count() == 2
 
-    def test_delete_returns_true_when_present(
-        self, tmp_path: Path
-    ) -> None:
+    def test_delete_returns_true_when_present(self, tmp_path: Path) -> None:
         store = PlanStore(db_path=tmp_path / "plans.db")
         store.put(_make_plan())
         assert store.delete("test-plan-1") is True
         assert store.count() == 0
 
-    def test_delete_returns_false_when_absent(
-        self, tmp_path: Path
-    ) -> None:
+    def test_delete_returns_false_when_absent(self, tmp_path: Path) -> None:
         store = PlanStore(db_path=tmp_path / "plans.db")
         assert store.delete("ghost") is False
 
@@ -154,9 +150,7 @@ class TestPlanStore:
         assert loaded is not None
         assert "updated" in loaded.yaml
 
-    def test_list_all_returns_in_reverse_chrono(
-        self, tmp_path: Path
-    ) -> None:
+    def test_list_all_returns_in_reverse_chrono(self, tmp_path: Path) -> None:
         store = PlanStore(db_path=tmp_path / "plans.db")
         store.put(_make_plan("p1"))
         store.put(_make_plan("p2"))
@@ -164,9 +158,7 @@ class TestPlanStore:
         all_plans = store.list_all()
         assert [p.id for p in all_plans] == ["p3", "p2", "p1"]
 
-    def test_persistence_across_instances(
-        self, tmp_path: Path
-    ) -> None:
+    def test_persistence_across_instances(self, tmp_path: Path) -> None:
         db = tmp_path / "plans.db"
         s1 = PlanStore(db_path=db)
         s1.put(_make_plan())

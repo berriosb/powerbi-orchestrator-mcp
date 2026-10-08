@@ -29,6 +29,7 @@ from powerbi_orchestrator_mcp.orchestrator.context import EngineStatus
 # Engine detection config
 # ---------------------------------------------------------------------------
 
+
 # Windows + Linux + Mac binary names to try, in order.
 # Each entry maps an engine key to its detection strategy.
 #
@@ -137,11 +138,11 @@ async def detect_engine(probe: EngineProbe) -> EngineStatus:
     binary_path = _resolve_binary(probe.binary_names)
 
     if binary_path is None:
-        reason = (
-            f"binary not found in PATH (tried {', '.join(probe.binary_names)})"
-        )
+        reason = f"binary not found in PATH (tried {', '.join(probe.binary_names)})"
         if probe.npx_package is not None:
-            reason += f"; for npm package '{probe.npx_package}', run `npx {probe.npx_package}` to verify"
+            reason += (
+                f"; for npm package '{probe.npx_package}', run `npx {probe.npx_package}` to verify"
+            )
         return EngineStatus(
             name=probe.engine,
             available=False,

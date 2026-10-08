@@ -174,12 +174,8 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             for m in raw_measures
         ]
 
-    async def list_columns(
-        self, conn: ConnectionHandle, table: str
-    ) -> list[Column]:
-        result = await self._dispatch(
-            "column_operations", "list", conn, extra={"table": table}
-        )
+    async def list_columns(self, conn: ConnectionHandle, table: str) -> list[Column]:
+        result = await self._dispatch("column_operations", "list", conn, extra={"table": table})
         raw_columns = result.get("columns") or result.get("data", [])
         return [
             Column(
@@ -193,12 +189,8 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             for c in raw_columns
         ]
 
-    async def list_relationships(
-        self, conn: ConnectionHandle
-    ) -> list[Relationship]:
-        result = await self._dispatch(
-            "database_operations", "list_relationships", conn
-        )
+    async def list_relationships(self, conn: ConnectionHandle) -> list[Relationship]:
+        result = await self._dispatch("database_operations", "list_relationships", conn)
         raw_rels = result.get("relationships") or result.get("data", [])
         return [
             Relationship(
@@ -309,9 +301,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
     # Snapshot / rollback
     # ------------------------------------------------------------------
 
-    async def snapshot(
-        self, conn: ConnectionHandle, label: str
-    ) -> SnapshotHandle:
+    async def snapshot(self, conn: ConnectionHandle, label: str) -> SnapshotHandle:
         """Export the TMDL to a temp dir tagged with ``label``.
 
         Returns a SnapshotHandle pointing to the exported directory.

@@ -49,9 +49,7 @@ StepDispatcher = Callable[[PlanStep], StepExecutor]
 ExecutorOrDispatcher = StepExecutor | StepDispatcher
 
 
-def _resolve_executor(
-    param: ExecutorOrDispatcher, step: PlanStep
-) -> StepExecutor:
+def _resolve_executor(param: ExecutorOrDispatcher, step: PlanStep) -> StepExecutor:
     """Resolve an executor for a single step, handling the union type."""
     if callable(param) and not hasattr(param, "execute_step"):
         # It's a dispatcher callable (no execute_step attribute).
@@ -162,8 +160,7 @@ class RollbackEngine:
 
         if not queue:
             raise NoRollbackAvailableError(
-                f"no rollback steps available for failed step "
-                f"{failed_step.id!r}"
+                f"no rollback steps available for failed step {failed_step.id!r}"
             )
 
         rolled: list[str] = []

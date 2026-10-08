@@ -19,9 +19,7 @@ from powerbi_orchestrator_mcp.orchestrator.context import (
 def tmp_sessions_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect sessions dir to a temp directory."""
     sessions_dir = tmp_path / "sessions"
-    monkeypatch.setattr(
-        "powerbi_orchestrator_mcp.orchestrator.context.SESSIONS_DIR", sessions_dir
-    )
+    monkeypatch.setattr("powerbi_orchestrator_mcp.orchestrator.context.SESSIONS_DIR", sessions_dir)
     return sessions_dir
 
 
@@ -111,9 +109,7 @@ class TestSessionStore:
         sessions = store.list_sessions()
         assert len(sessions) == 2
 
-    def test_persistence_across_instances(
-        self, tmp_sessions_dir: Path
-    ) -> None:
+    def test_persistence_across_instances(self, tmp_sessions_dir: Path) -> None:
         store1 = SessionStore()
         ctx = store1.create()
 

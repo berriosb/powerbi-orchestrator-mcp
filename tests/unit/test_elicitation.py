@@ -62,16 +62,17 @@ class TestRateLimiter:
     """Tests for elicitation rate limiter."""
 
     def test_rate_limit_first_call_ok(self) -> None:
-        with patch(
-            "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0
-        ):
+        with patch("powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0):
             _check_rate_limit()
 
     def test_rate_limit_raises_on_fast_call(self) -> None:
-        with patch(
-            "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time",
-            time.monotonic(),
-        ), pytest.raises(ElicitationRateLimitError):
+        with (
+            patch(
+                "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time",
+                time.monotonic(),
+            ),
+            pytest.raises(ElicitationRateLimitError),
+        ):
             _check_rate_limit()
 
 
@@ -87,9 +88,7 @@ class TestElicit:
         ctx.elicit = AsyncMock(return_value=mock_result)
 
         req = ElicitationRequest(question="Proceed?")
-        with patch(
-            "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0
-        ):
+        with patch("powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0):
             resp = await elicit(ctx, req)
 
         assert resp.accepted is True
@@ -104,9 +103,7 @@ class TestElicit:
         ctx.elicit = AsyncMock(return_value=mock_result)
 
         req = ElicitationRequest(question="Delete?")
-        with patch(
-            "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0
-        ):
+        with patch("powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0):
             resp = await elicit(ctx, req)
 
         assert resp.accepted is False
@@ -126,9 +123,7 @@ class TestElicit:
                 ElicitationChoice(label="Beta"),
             ],
         )
-        with patch(
-            "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0
-        ):
+        with patch("powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time", 0.0):
             resp = await elicit(ctx, req)
 
         call_args = ctx.elicit.call_args
@@ -141,8 +136,11 @@ class TestElicit:
         ctx = MagicMock()
         req = ElicitationRequest(question="Test")
 
-        with patch(
-            "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time",
-            time.monotonic(),
-        ), pytest.raises(ElicitationRateLimitError):
+        with (
+            patch(
+                "powerbi_orchestrator_mcp.orchestrator.elicitation._last_elicit_time",
+                time.monotonic(),
+            ),
+            pytest.raises(ElicitationRateLimitError),
+        ):
             await elicit(ctx, req)

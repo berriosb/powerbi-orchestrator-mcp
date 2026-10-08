@@ -199,9 +199,7 @@ class TestWriteOps:
     async def test_update_column_returns_changed_files(self) -> None:
         engine = _engine(
             responses={
-                "column_operations/update": {
-                    "changed_files": ["model/tables/Customer.tmdl"]
-                }
+                "column_operations/update": {"changed_files": ["model/tables/Customer.tmdl"]}
             }
         )
         conn = ConnectionHandle(
@@ -210,19 +208,13 @@ class TestWriteOps:
             target_ref="./x",
             session_token="x",
         )
-        result = await engine.update_column(
-            conn, "Customer", "ID", {"new_name": "CustomerKey"}
-        )
+        result = await engine.update_column(conn, "Customer", "ID", {"new_name": "CustomerKey"})
         assert isinstance(result, OperationResult)
         assert result.success is True
         assert result.changed_files == ["model/tables/Customer.tmdl"]
 
     async def test_create_measure(self) -> None:
-        engine = _engine(
-            responses={
-                "measure_operations/create": {"changed_files": ["x.tmdl"]}
-            }
-        )
+        engine = _engine(responses={"measure_operations/create": {"changed_files": ["x.tmdl"]}})
         conn = ConnectionHandle(
             engine="powerbi-modeling-mcp",
             target_type="pbip_folder",
@@ -234,11 +226,7 @@ class TestWriteOps:
         assert result.success is True
 
     async def test_update_measure(self) -> None:
-        engine = _engine(
-            responses={
-                "measure_operations/update": {"changed_files": ["x.tmdl"]}
-            }
-        )
+        engine = _engine(responses={"measure_operations/update": {"changed_files": ["x.tmdl"]}})
         conn = ConnectionHandle(
             engine="powerbi-modeling-mcp",
             target_type="pbip_folder",
@@ -251,11 +239,7 @@ class TestWriteOps:
         assert result.success is True
 
     async def test_delete_measure(self) -> None:
-        engine = _engine(
-            responses={
-                "measure_operations/delete": {"changed_files": ["x.tmdl"]}
-            }
-        )
+        engine = _engine(responses={"measure_operations/delete": {"changed_files": ["x.tmdl"]}})
         conn = ConnectionHandle(
             engine="powerbi-modeling-mcp",
             target_type="pbip_folder",
@@ -269,11 +253,7 @@ class TestWriteOps:
 class TestDax:
     async def test_execute_dax_rows(self) -> None:
         engine = _engine(
-            responses={
-                "dax_query_operations/run": {
-                    "rows": [{"Total": 100000}, {"Total": 200000}]
-                }
-            }
+            responses={"dax_query_operations/run": {"rows": [{"Total": 100000}, {"Total": 200000}]}}
         )
         conn = ConnectionHandle(
             engine="powerbi-modeling-mcp",
@@ -287,9 +267,7 @@ class TestDax:
         assert result.rows[0]["Total"] == 100000
 
     async def test_execute_dax_with_effective_identity(self) -> None:
-        engine = _engine(
-            responses={"dax_query_operations/run": {"rows": []}}
-        )
+        engine = _engine(responses={"dax_query_operations/run": {"rows": []}})
         conn = ConnectionHandle(
             engine="powerbi-modeling-mcp",
             target_type="pbip_folder",
@@ -307,11 +285,7 @@ class TestDax:
 
 class TestSnapshot:
     async def test_snapshot_returns_handle(self) -> None:
-        engine = _engine(
-            responses={
-                "database_operations/export_tmdl": {"path": "/tmp/snap.tmdl"}
-            }
-        )
+        engine = _engine(responses={"database_operations/export_tmdl": {"path": "/tmp/snap.tmdl"}})
         conn = ConnectionHandle(
             engine="powerbi-modeling-mcp",
             target_type="pbip_folder",
@@ -332,16 +306,13 @@ class TestSnapshot:
 
 class TestDispatch:
     async def test_dispatch_uses_mock_response(self) -> None:
-        engine = _engine(
-            responses={"foo/bar": {"ok": True}}
-        )
-        result = await engine._dispatch(
-            "foo", "bar", conn=None, extra={"x": 1}
-        )
+        engine = _engine(responses={"foo/bar": {"ok": True}})
+        result = await engine._dispatch("foo", "bar", conn=None, extra={"x": 1})
         assert result == {"ok": True}
 
     async def test_dispatch_wraps_unexpected_exception(self) -> None:
         engine = _engine()
+
         # Inject a mock that raises non-EngineError.
         async def fake_rpc(method: str, params: dict | None = None) -> dict:
             raise RuntimeError("boom")
@@ -375,9 +346,7 @@ class TestDispatch:
         engine = _engine()
         captured: dict[str, Any] = {}
 
-        async def fake_rpc(
-            method: str, params: dict[str, Any] | None = None
-        ) -> dict[str, Any]:
+        async def fake_rpc(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
             captured["method"] = method
             captured["params"] = params
             return {

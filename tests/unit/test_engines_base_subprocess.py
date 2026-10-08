@@ -72,9 +72,7 @@ class _FakeProcess:
     ) -> None:
         self._responses = list(responses or [])
         self._idx = 0
-        self.returncode: int | None = (
-            returncode if exit_immediately else None
-        )
+        self.returncode: int | None = returncode if exit_immediately else None
         self.stdin = _FakeWriter()
         self._stdout = asyncio.StreamReader()
         if exit_immediately:
@@ -133,9 +131,7 @@ def _response(req_id: int, result: Any) -> str:
 
 
 def _error_response(req_id: int, code: int, message: str) -> str:
-    return json.dumps(
-        {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
-    )
+    return json.dumps({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
 
 
 # Engine RPC writes the message to stdin. We watch the writer and inject
@@ -176,9 +172,7 @@ class TestStartSpawn:
             await e._start()
         assert ei.value.code == "engine_spawn_failed"
 
-    async def test_process_exits_immediately_raises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_process_exits_immediately_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # exit 4 → EngineCrashedError (other exit codes map to specific
         # EngineError subclasses: 1 = validation, 3 = timeout, 5 = version
         # mismatch, etc.). We want the generic crash path here.
@@ -218,9 +212,7 @@ class TestRpcSuccess:
         assert payload["params"] == {"x": 1}
         assert payload["id"] == 1
 
-    async def test_rpc_handles_rpc_error_response(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_rpc_handles_rpc_error_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
         proc = _FakeProcess(responses=[_error_response(1, -32600, "boom")])
         _spawn_patched(monkeypatch, proc)
         e = _make_engine()
@@ -231,9 +223,7 @@ class TestRpcSuccess:
         await feeder
         assert "boom" in str(ei.value)
 
-    async def test_rpc_timeout_raises_engine_timeout(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_rpc_timeout_raises_engine_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         proc = _FakeProcess()  # no responses
         _spawn_patched(monkeypatch, proc)
         e = _make_engine()
@@ -281,16 +271,12 @@ class TestReadStdoutLoop:
         assert any("banner log line" in line for line in e._stdout_buffer)
         assert e._process is not None
 
-    async def test_notification_line_ignored(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_notification_line_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         proc = _FakeProcess()
         _spawn_patched(monkeypatch, proc)
         e = _make_engine()
         await e._start()
-        proc._stdout.feed_data(
-            b'{"jsonrpc": "2.0", "method": "notify"}\n'
-        )
+        proc._stdout.feed_data(b'{"jsonrpc": "2.0", "method": "notify"}\n')
         proc._stdout.feed_eof()
         await asyncio.sleep(0.05)
         assert e._pending == {}
@@ -302,9 +288,7 @@ class TestReadStdoutLoop:
 
 
 class TestStopCancelPending:
-    async def test_stop_cancels_pending_futures(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_stop_cancels_pending_futures(self, monkeypatch: pytest.MonkeyPatch) -> None:
         proc = _FakeProcess()  # no responses → RPC will hang
         _spawn_patched(monkeypatch, proc)
         e = _make_engine()

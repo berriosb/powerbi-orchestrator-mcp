@@ -50,9 +50,7 @@ class TestMapExitCode:
         assert "AZURE_CLIENT_ID" in err.remediation_hint
 
     def test_exit_3_is_internal_timeout(self) -> None:
-        err = map_exit_code_to_error(
-            "te", EXIT_INTERNAL_TIMEOUT, "hung on query", timeout_s=60
-        )
+        err = map_exit_code_to_error("te", EXIT_INTERNAL_TIMEOUT, "hung on query", timeout_s=60)
         assert isinstance(err, EngineTimeoutError)
         assert err.code == "engine_timeout"
         assert err.timeout_s == 60
@@ -65,9 +63,7 @@ class TestMapExitCode:
         assert err.retryable is False
 
     def test_exit_5_is_version_mismatch(self) -> None:
-        err = map_exit_code_to_error(
-            "te", EXIT_INCOMPATIBLE_VERSION, "expected 3.0.0, got 2.5.0"
-        )
+        err = map_exit_code_to_error("te", EXIT_INCOMPATIBLE_VERSION, "expected 3.0.0, got 2.5.0")
         assert isinstance(err, EngineVersionMismatchError)
         assert err.code == "engine_version_mismatch"
         assert "src/engines/versions.py" in err.remediation_hint
@@ -201,12 +197,10 @@ class TestOutputParseError:
         (99, EngineContractError),  # any 64+ is contract violation per spec
         (127, EngineNotFoundError),
         (200, EngineContractError),  # per spec §4: 64+ → contract violation
-        (63, EngineCrashedError),   # just below the contract threshold → unknown
+        (63, EngineCrashedError),  # just below the contract threshold → unknown
     ],
 )
-def test_exit_code_mapping_completeness(
-    code: int, expected_class: type[Exception] | None
-) -> None:
+def test_exit_code_mapping_completeness(code: int, expected_class: type[Exception] | None) -> None:
     err = map_exit_code_to_error("te", code)
     if expected_class is None:
         assert err is None

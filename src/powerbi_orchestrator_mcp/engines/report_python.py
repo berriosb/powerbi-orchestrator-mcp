@@ -66,9 +66,7 @@ def _read_json(path: Path) -> dict[str, Any]:
             f"PBIR file is not valid JSON: {path}",
             engine="python_report",
             code="engine_validation_failed",
-            remediation_hint=(
-                f"Fix the JSON syntax in {path} or restore from a backup"
-            ),
+            remediation_hint=(f"Fix the JSON syntax in {path} or restore from a backup"),
         ) from exc
 
 
@@ -96,8 +94,7 @@ def _resolve_report_dir(pbip_root: Path) -> Path:
             engine="python_report",
             code="engine_validation_failed",
             remediation_hint=(
-                f"Ensure {pbip_root} is a valid PBIP folder with a "
-                f".Report/ subfolder"
+                f"Ensure {pbip_root} is a valid PBIP folder with a .Report/ subfolder"
             ),
         )
     if len(candidates) > 1:
@@ -156,9 +153,7 @@ class PythonReportEngine:
                 f"no .pbip metadata file in {pbip_root}",
                 engine=self.name,
                 code="engine_validation_failed",
-                remediation_hint=(
-                    f"Ensure {pbip_root} contains a .pbip metadata file"
-                ),
+                remediation_hint=(f"Ensure {pbip_root} contains a .pbip metadata file"),
             )
         return ConnectionHandle(
             engine=self.name,
@@ -277,9 +272,7 @@ class PythonReportEngine:
                 _write_json(page_json_path, page_data)
                 return OperationResult(
                     success=True,
-                    changed_files=[
-                        str(page_json_path.relative_to(pbip_root))
-                    ],
+                    changed_files=[str(page_json_path.relative_to(pbip_root))],
                 )
 
         raise EngineValidationError(
@@ -315,9 +308,7 @@ class PythonReportEngine:
                 f"unknown scope {scope!r}",
                 engine=self.name,
                 code="engine_validation_failed",
-                remediation_hint=(
-                    "Valid scopes: 'report_bindings', 'model_only', 'full'"
-                ),
+                remediation_hint=("Valid scopes: 'report_bindings', 'model_only', 'full'"),
             )
 
         pbip_root = _resolve_pbip_root(conn)
@@ -425,9 +416,7 @@ class PythonReportEngine:
 # ---------------------------------------------------------------------------
 
 
-def _replace_in_obj(
-    obj: Any, old: str, new: str
-) -> Any:
+def _replace_in_obj(obj: Any, old: str, new: str) -> Any:
     """Recursively replace ``old`` with ``new`` in all string leaves.
 
     Handles the path formats used by Power BI:
@@ -499,11 +488,7 @@ def _register_default() -> None:
                 # in the active session's target_ref. For MVP we read from
                 # args["pbip_path"] (the planner sets it for deploy plans;
                 # for safe_rename we get it from connect_target).
-                pbip_path = Path(
-                    args.get("pbip_path")
-                    or args.get("target_ref")
-                    or "."
-                )
+                pbip_path = Path(args.get("pbip_path") or args.get("target_ref") or ".")
                 conn = await self._engine.connect(pbip_path)
                 try:
                     if action == "add_page":
@@ -511,23 +496,15 @@ def _register_default() -> None:
                             PageLayout,
                         )
 
-                        layout = (
-                            PageLayout(**args.get("layout", {}))
-                            if "layout" in args
-                            else None
-                        )
-                        result = await self._engine.add_page(
-                            conn, args["page_name"], layout
-                        )
+                        layout = PageLayout(**args.get("layout", {})) if "layout" in args else None
+                        result = await self._engine.add_page(conn, args["page_name"], layout)
                     elif action == "add_visual":
                         from powerbi_orchestrator_mcp.engines.base import (
                             VisualSpec,
                         )
 
                         spec = VisualSpec(**args.get("spec", args))
-                        result = await self._engine.add_visual(
-                            conn, args["page"], spec
-                        )
+                        result = await self._engine.add_visual(conn, args["page"], spec)
                     elif action == "update_visual":
                         result = await self._engine.update_visual(
                             conn,
@@ -558,9 +535,7 @@ def _register_default() -> None:
                     await self._engine.disconnect(conn)
                 return StepOutcome(
                     success=result.success,
-                    error_message=None
-                    if result.success
-                    else "report engine returned failure",
+                    error_message=None if result.success else "report engine returned failure",
                     changed_files=result.changed_files,
                 )
             except EngineError as exc:

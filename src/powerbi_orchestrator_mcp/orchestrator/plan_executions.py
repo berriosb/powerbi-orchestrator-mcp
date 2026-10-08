@@ -120,10 +120,7 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
         )
         """
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_plan_executions_state "
-        "ON plan_executions(state)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_plan_executions_state ON plan_executions(state)")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_plan_executions_heartbeat "
         "ON plan_executions(last_heartbeat_at)"
@@ -284,8 +281,7 @@ class PlanExecutionStore:
         try:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM plan_executions WHERE state = ? "
-                "ORDER BY started_at ASC",
+                "SELECT * FROM plan_executions WHERE state = ? ORDER BY started_at ASC",
                 (state.value,),
             ).fetchall()
             return [_row_to_execution(r) for r in rows]

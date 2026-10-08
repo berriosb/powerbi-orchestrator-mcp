@@ -82,10 +82,11 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         self.dispatch_calls: list[tuple[str, dict[str, Any]]] = []
 
     def is_available(self) -> bool:
-        if (
-            os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in ("1", "true", "yes")
-            or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes")
-        ):
+        if os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        ) or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes"):
             return False
         import shutil
 
@@ -104,10 +105,11 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         return self._version
 
     async def health_check(self) -> EngineStatus:
-        if (
-            os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in ("1", "true", "yes")
-            or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes")
-        ):
+        if os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        ) or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes"):
             return EngineStatus(
                 name=self._engine_name,
                 available=False,
@@ -132,10 +134,11 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
 
     async def connect(self, pbip_path: Path) -> ConnectionHandle:
         """Open a logical connection to the PBIP via superbi-mcp."""
-        if (
-            os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in ("1", "true", "yes")
-            or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes")
-        ):
+        if os.environ.get("PBI_DISABLE_FSL_ENGINES", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        ) or os.environ.get("PBI_COMMERCIAL_MODE", "").lower() in ("1", "true", "yes"):
             from powerbi_orchestrator_mcp.engines.errors import (
                 EngineValidationError,
             )
@@ -191,7 +194,9 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
 
         try:
             result = await self._dispatch(
-                "report", "add_page", conn,
+                "report",
+                "add_page",
+                conn,
                 extra={"page_name": page_name, "layout": layout},
             )
             return OperationResult(
@@ -218,7 +223,9 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
 
         try:
             result = await self._dispatch(
-                "report", "add_visual", conn,
+                "report",
+                "add_visual",
+                conn,
                 extra={"page": page, "visual_spec": visual_spec},
             )
             return OperationResult(
@@ -246,7 +253,9 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
 
         try:
             result = await self._dispatch(
-                "report", "update_visual", conn,
+                "report",
+                "update_visual",
+                conn,
                 extra={"page": page, "visual_id": visual_id, "changes": changes},
             )
             return OperationResult(
@@ -254,9 +263,7 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
                 changed_files=result.get("changed_files", []),
             )
         except Exception:
-            return await PythonReportEngine().update_visual(
-                conn, page, visual_id, changes
-            )
+            return await PythonReportEngine().update_visual(conn, page, visual_id, changes)
 
     async def propagate_rename(
         self,
@@ -280,7 +287,9 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
 
         try:
             result = await self._dispatch(
-                "report", "propagate_rename", conn,
+                "report",
+                "propagate_rename",
+                conn,
                 extra={"old_path": old_path, "new_path": new_path, "scope": scope},
             )
             return OperationResult(
@@ -288,9 +297,7 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
                 changed_files=result.get("changed_files", []),
             )
         except Exception:
-            return await PythonReportEngine().propagate_rename(
-                conn, old_path, new_path, scope
-            )
+            return await PythonReportEngine().propagate_rename(conn, old_path, new_path, scope)
 
     async def validate_pbir(self, conn: ConnectionHandle) -> ValidationResult:
         """Validate PBIR via superbi-mcp's ``report.validate`` method.

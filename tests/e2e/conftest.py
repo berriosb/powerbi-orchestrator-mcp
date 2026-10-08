@@ -17,11 +17,7 @@ from pathlib import Path
 
 import pytest
 
-FIXTURE_PBIP_SOURCE = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "sample.pbip"
-)
+FIXTURE_PBIP_SOURCE = Path(__file__).resolve().parents[1] / "fixtures" / "sample.pbip"
 
 
 @pytest.fixture(scope="session")

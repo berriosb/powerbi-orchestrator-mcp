@@ -317,7 +317,9 @@ def main() -> int:
             if tool["name"] not in EXPECTED_TOOLS:
                 continue
             schema = tool.get("inputSchema") or tool.get("input_schema")
-            schema_ok = bool(schema and (schema.get("properties") or schema.get("type") == "object"))
+            schema_ok = bool(
+                schema and (schema.get("properties") or schema.get("type") == "object")
+            )
             all_passed &= _check(
                 f"  {tool['name']}.inputSchema present",
                 schema_ok,
@@ -363,8 +365,7 @@ def main() -> int:
             )
             all_passed &= _check(
                 "structuredContent has engines_available",
-                isinstance(structured, dict)
-                and "engines_available" in structured,
+                isinstance(structured, dict) and "engines_available" in structured,
             )
 
         # ---- 4b. tools/call: powerbi_health (Sprint 16) ----

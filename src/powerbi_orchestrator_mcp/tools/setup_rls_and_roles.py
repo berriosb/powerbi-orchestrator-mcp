@@ -48,8 +48,7 @@ class RoleMember(BaseModel):
     def _check_type(cls, v: str) -> str:
         if v not in _VALID_MEMBER_TYPES:
             raise ValueError(
-                f"invalid member type {v!r}; expected one of "
-                f"{sorted(_VALID_MEMBER_TYPES)}"
+                f"invalid member type {v!r}; expected one of {sorted(_VALID_MEMBER_TYPES)}"
             )
         return v
 
@@ -119,9 +118,7 @@ class SetupRlsAndRolesResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _parse_spec(
-    spec_yaml: str | None, spec_json: Any
-) -> list[RoleSpec]:
+def _parse_spec(spec_yaml: str | None, spec_json: Any) -> list[RoleSpec]:
     """Parse a YAML or JSON spec string into a list of RoleSpec."""
     import yaml as _yaml
 
@@ -162,9 +159,7 @@ def _locate_tmdl(target: str) -> Path:
     if p.is_dir():
         candidates = sorted(p.glob("*.Dataset/definition.tmdl"))
         if not candidates:
-            raise FileNotFoundError(
-                f"no *.Dataset/definition.tmdl under PBIP {p}"
-            )
+            raise FileNotFoundError(f"no *.Dataset/definition.tmdl under PBIP {p}")
         return candidates[0]
     if p.is_file():
         return p
@@ -183,14 +178,8 @@ def _extract_table_ref(filter_expression: str) -> str | None:
 
 def render_tmdl_role(role: RoleSpec) -> str:
     """Render a single role block in TMDL form."""
-    members = "\n".join(
-        f"        member: {json.dumps(m.value)}" for m in role.members
-    )
-    desc = (
-        f"    description: {json.dumps(role.description)}\n"
-        if role.description
-        else ""
-    )
+    members = "\n".join(f"        member: {json.dumps(m.value)}" for m in role.members)
+    desc = f"    description: {json.dumps(role.description)}\n" if role.description else ""
     return (
         f"role {role.role_name}\n"
         f"{desc}"
@@ -200,9 +189,7 @@ def render_tmdl_role(role: RoleSpec) -> str:
     )
 
 
-def merge_roles_into_tmdl(
-    tmdl_text: str, role_blocks: list[str]
-) -> str:
+def merge_roles_into_tmdl(tmdl_text: str, role_blocks: list[str]) -> str:
     """Append role blocks at the end of the TMDL file (idempotent)."""
     body = tmdl_text.rstrip() + "\n\n// ---- Roles (RLS) ----\n"
     for block in role_blocks:
@@ -278,12 +265,8 @@ def _risk_score(specs: list[RoleSpec]) -> float:
     n_members = sum(len(r.members) for r in specs)
     n_queries = sum(len(r.test_queries) for r in specs)
     # Heuristic: more members and more wildcards in filters = more risk.
-    wildcards = sum(
-        1 for r in specs if "*" in r.filter_expression
-    )
-    raw = (n_roles * 0.1) + (n_members * 0.05) + (n_queries * 0.02) + (
-        wildcards * 0.2
-    )
+    wildcards = sum(1 for r in specs if "*" in r.filter_expression)
+    raw = (n_roles * 0.1) + (n_members * 0.05) + (n_queries * 0.02) + (wildcards * 0.2)
     return min(1.0, raw)
 
 

@@ -95,8 +95,7 @@ def _row_to_context(row: sqlite3.Row) -> SessionContext:
         session_id=row["session_id"],
         target=Target.model_validate_json(row["target_json"]) if row["target_json"] else None,
         engines_available={
-            k: EngineStatus.model_validate(v)
-            for k, v in json.loads(row["engines_json"]).items()
+            k: EngineStatus.model_validate(v) for k, v in json.loads(row["engines_json"]).items()
         },
         metadata_cache=json.loads(row["metadata_json"]),
         undo_stack=[UndoEntry.model_validate(e) for e in json.loads(row["undo_json"])],

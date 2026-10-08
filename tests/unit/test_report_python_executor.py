@@ -41,9 +41,7 @@ def _make_pbip(tmp_path: Path) -> Path:
         json.dumps({"name": "Test"}), encoding="utf-8"
     )
     # Metadata file required by PythonReportEngine.connect().
-    (pbip / "report.pbip").write_text(
-        json.dumps({"version": "1.0"}), encoding="utf-8"
-    )
+    (pbip / "report.pbip").write_text(json.dumps({"version": "1.0"}), encoding="utf-8")
     return pbip
 
 
@@ -60,9 +58,7 @@ class TestReplaceInObj:
         assert _replace_in_obj("hello", "x", "y") == "hello"
 
     def test_list_replaces_each_item(self) -> None:
-        out = _replace_in_obj(
-            ["T[A]", "T[B]", "literal"], "T[A]", "T[Z]"
-        )
+        out = _replace_in_obj(["T[A]", "T[B]", "literal"], "T[A]", "T[Z]")
         assert out == ["T[Z]", "T[B]", "literal"]
 
     def test_dict_replaces_each_value(self) -> None:
@@ -90,9 +86,7 @@ class TestReplaceInObj:
 
 
 class TestPropagateRename:
-    async def test_renames_across_page_files(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_renames_across_page_files(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         report_dir = pbip / "report.Report"
         (report_dir / "pages" / "Overview").mkdir(parents=True)
@@ -129,29 +123,21 @@ class TestPropagateRename:
 
         # Verify the rename happened.
         page_data = json.loads(
-            (report_dir / "pages" / "Overview" / "page.json").read_text(
-                encoding="utf-8"
-            )
+            (report_dir / "pages" / "Overview" / "page.json").read_text(encoding="utf-8")
         )
         assert "T[B]" in json.dumps(page_data)
         assert "T[A]" not in json.dumps(page_data)
 
-    async def test_skips_malformed_page_json(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_skips_malformed_page_json(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         report_dir = pbip / "report.Report"
         (report_dir / "pages").mkdir()
         (report_dir / "pages" / "Bad").mkdir(parents=True)
-        (report_dir / "pages" / "Bad" / "page.json").write_text(
-            "{ not json", encoding="utf-8"
-        )
+        (report_dir / "pages" / "Bad" / "page.json").write_text("{ not json", encoding="utf-8")
         # Good page too.
         (report_dir / "pages" / "Good").mkdir(parents=True)
         (report_dir / "pages" / "Good" / "page.json").write_text(
-            json.dumps(
-                {"visualContainers": [{"x": "T[A]"}]}
-            ),
+            json.dumps({"visualContainers": [{"x": "T[A]"}]}),
             encoding="utf-8",
         )
         engine = PythonReportEngine()
@@ -162,9 +148,7 @@ class TestPropagateRename:
         assert any("Good" in f for f in result.changed_files)
         assert not any("Bad" in f for f in result.changed_files)
 
-    async def test_no_match_yields_empty_changed(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_no_match_yields_empty_changed(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         (pbip / "report.Report" / "pages").mkdir(parents=True, exist_ok=True)
         engine = PythonReportEngine()
@@ -188,38 +172,27 @@ class TestValidatePbir:
         engine = PythonReportEngine()
         result = await engine.validate_pbir(_make_conn(pbip))
         assert result.valid is False
-        assert any(
-            f["rule_id"] == "report_json_missing" for f in result.findings
-        )
+        assert any(f["rule_id"] == "report_json_missing" for f in result.findings)
 
     async def test_invalid_report_json(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
-        (pbip / "report.Report" / "report.json").write_text(
-            "{ not json", encoding="utf-8"
-        )
+        (pbip / "report.Report" / "report.json").write_text("{ not json", encoding="utf-8")
         engine = PythonReportEngine()
         result = await engine.validate_pbir(_make_conn(pbip))
         assert result.valid is False
-        assert any(
-            f["rule_id"] == "report_json_invalid" for f in result.findings
-        )
+        assert any(f["rule_id"] == "report_json_invalid" for f in result.findings)
 
-    async def test_no_pages_dir_emits_no_pages_warning(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_no_pages_dir_emits_no_pages_warning(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         # pages/ doesn't exist by default in the helper.
         engine = PythonReportEngine()
         result = await engine.validate_pbir(_make_conn(pbip))
         # "no_pages" is a warning, not an error, so the report is still valid.
         assert any(
-            f["rule_id"] == "no_pages" and f["severity"] == "warning"
-            for f in result.findings
+            f["rule_id"] == "no_pages" and f["severity"] == "warning" for f in result.findings
         )
 
-    async def test_page_missing_visual_containers(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_page_missing_visual_containers(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         report_dir = pbip / "report.Report"
         (report_dir / "pages" / "NoVisuals").mkdir(parents=True)
@@ -229,32 +202,23 @@ class TestValidatePbir:
         )
         engine = PythonReportEngine()
         result = await engine.validate_pbir(_make_conn(pbip))
-        assert any(
-            f["rule_id"] == "page_missing_visual_containers"
-            for f in result.findings
-        )
+        assert any(f["rule_id"] == "page_missing_visual_containers" for f in result.findings)
 
     async def test_invalid_page_json(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         report_dir = pbip / "report.Report"
         (report_dir / "pages" / "Bad").mkdir(parents=True)
-        (report_dir / "pages" / "Bad" / "page.json").write_text(
-            "{ broken", encoding="utf-8"
-        )
+        (report_dir / "pages" / "Bad" / "page.json").write_text("{ broken", encoding="utf-8")
         engine = PythonReportEngine()
         result = await engine.validate_pbir(_make_conn(pbip))
-        assert any(
-            f["rule_id"] == "page_json_invalid" for f in result.findings
-        )
+        assert any(f["rule_id"] == "page_json_invalid" for f in result.findings)
 
     async def test_clean_pbip_valid(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         report_dir = pbip / "report.Report"
         (report_dir / "pages" / "Overview").mkdir(parents=True)
         (report_dir / "pages" / "Overview" / "page.json").write_text(
-            json.dumps(
-                {"visualContainers": [{"id": "v1"}]}
-            ),
+            json.dumps({"visualContainers": [{"id": "v1"}]}),
             encoding="utf-8",
         )
         engine = PythonReportEngine()
@@ -301,29 +265,17 @@ def _get_executor() -> Any:
         )
 
         args = step.args
-        pbip_path = Path(
-            args.get("pbip_path")
-            or args.get("target_ref")
-            or "."
-        )
+        pbip_path = Path(args.get("pbip_path") or args.get("target_ref") or ".")
         try:
             conn = await engine.connect(pbip_path)
             try:
                 action = step.action
                 if action == "add_page":
-                    layout = (
-                        PageLayout(**args.get("layout", {}))
-                        if "layout" in args
-                        else None
-                    )
-                    result = await engine.add_page(
-                        conn, args["page_name"], layout
-                    )
+                    layout = PageLayout(**args.get("layout", {})) if "layout" in args else None
+                    result = await engine.add_page(conn, args["page_name"], layout)
                 elif action == "add_visual":
                     spec = VisualSpec(**args.get("spec", args))
-                    result = await engine.add_visual(
-                        conn, args["page"], spec
-                    )
+                    result = await engine.add_visual(conn, args["page"], spec)
                 elif action == "update_visual":
                     result = await engine.update_visual(
                         conn,
@@ -353,9 +305,7 @@ def _get_executor() -> Any:
                 await engine.disconnect(conn)
             return StepOutcome(
                 success=result.success,
-                error_message=None
-                if result.success
-                else "report engine returned failure",
+                error_message=None if result.success else "report engine returned failure",
                 changed_files=result.changed_files,
             )
         except Exception as exc:
@@ -368,13 +318,14 @@ def _get_executor() -> Any:
     return _PythonReportExecutor()
 
 
-def _make_step(
-    *, action: str, args: dict[str, object]
-) -> object:
+def _make_step(*, action: str, args: dict[str, object]) -> object:
     from powerbi_orchestrator_mcp.orchestrator.plan_models import PlanStep
 
     return PlanStep(
-        id="s1", engine="report", action=action, args=args  # type: ignore[arg-type]
+        id="s1",
+        engine="report",
+        action=action,
+        args=args,  # type: ignore[arg-type]
     )
 
 
@@ -406,9 +357,7 @@ class TestPythonReportExecutor:
         report_dir = pbip / "report.Report"
         (report_dir / "pages" / "Overview").mkdir(parents=True)
         (report_dir / "pages" / "Overview" / "page.json").write_text(
-            json.dumps(
-                {"visualContainers": [{"id": "v1"}]}
-            ),
+            json.dumps({"visualContainers": [{"id": "v1"}]}),
             encoding="utf-8",
         )
         step = _make_step(
@@ -461,9 +410,7 @@ class TestPythonReportExecutor:
         result = await _get_executor().execute_step(step)
         assert hasattr(result, "success")
 
-    async def test_unknown_action_returns_failure(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_unknown_action_returns_failure(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         step = _make_step(
             action="not-a-real-action",
@@ -495,9 +442,7 @@ class TestPythonReportExecutor:
         assert result.success is False
         assert "boom" in (result.error_message or "")
 
-    async def test_pbip_path_falls_back_to_target_ref(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_pbip_path_falls_back_to_target_ref(self, tmp_path: Path) -> None:
         pbip = _make_pbip(tmp_path)
         # No pbip_path in args; falls back to target_ref.
         step = _make_step(
