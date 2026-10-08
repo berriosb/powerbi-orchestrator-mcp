@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.16.0] — 2026-10-08
+
+### Added
+- **`confirm_each_step` is now real per-step confirmation.** Previously a
+  placeholder (`noqa: ARG001 — elicitation hook for v2`) that silently did
+  nothing. It now asks the user to approve each step via MCP elicitation
+  before it runs. It **fails closed**: with no interactive client, a declined
+  prompt, or an answer that is not an explicit yes (`y`/`yes`/`si`/`ok`),
+  the step is not run and the remaining steps are reported as skipped with
+  `result="stopped_by_user"`. A decline is not treated as a failure, so it
+  does not trigger the rollback path for steps that never executed.
+  `elicit()` gained `bypass_rate_limit` for this loop, since the 5 s cooldown
+  would otherwise stall an interactive confirmation session.
+
+### Fixed
+- **Silent API failures were reported as empty state.** Four helpers swallowed
+  exceptions and returned an empty result, making a broken Fabric API
+  indistinguishable from an empty workspace:
+  `_enumerate_workspace_items`, `_snapshot_workspace` and `_enumerate_items` now
+  surface the failure through `warnings` instead of pretending the target had
+  no items (which, for `sync_git_to_workspace`, meant a failed conflict check
+  looked like a clean deploy target).
+- **`set_sensitivity_labels` swallowed audit-logger failures with `pass`**,
+  meaning a *blocked* operation could leave no trace. Now reported.
+- **Dead `try: pass` block in `sync_git_to_workspace`** left the
+  `pre_deploy_check` import unprotected — the `except` branch was unreachable
+  and the import now sits inside the `try`.
+
+### Changed
+- Test coverage of the model/report write paths raised: `step_executor.py`
+  56 % → 88 %, `te_adapter.py` 51 % → 71 %, project total 86 % → 88 %.
+  New `tests/unit/test_write_paths.py` covers measure create/update/delete,
+  snapshot/restore round-trip, TMDL and PBISM persistence, and the report
+  executor dispatch.
+
+---
+
 ## [1.15.0] — 2026-10-08
 
 ### Security

@@ -127,10 +127,15 @@ def _detect_local_changes(repo_path: Path) -> _LocalChangeSnapshot:
     return _LocalChangeSnapshot(dirty_paths=dirty, branch=branch)
 
 
-def _snapshot_workspace(workspace_id: str, fabric_client: Any) -> dict[str, dict[str, Any]]:
+def _snapshot_workspace(
+    workspace_id: str, fabric_client: Any, warnings: list[str] | None = None
+) -> dict[str, dict[str, Any]]:
     """Call fabric_client.snapshot_workspace or return an empty stub.
 
     The client must return a mapping ``item_id -> {name, type, blob}``.
+    A failure here means the workspace content is unknown, not empty, so it
+    is surfaced through ``warnings`` instead of silently producing a no-op
+    commit.
     """
     if fabric_client is None:
         # Without a real client we have nothing to commit; caller can
@@ -138,9 +143,13 @@ def _snapshot_workspace(workspace_id: str, fabric_client: Any) -> dict[str, dict
         return {}
     try:
         result = fabric_client.snapshot_workspace(workspace_id)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        if warnings is not None:
+            warnings.append(f"could not snapshot workspace {workspace_id}: {exc}")
         return {}
     if not isinstance(result, dict):
+        if warnings is not None:
+            warnings.append(f"snapshot_workspace returned {type(result).__name__}, expected dict")
         return {}
     return result
 
@@ -247,7 +256,7 @@ def commit_workspace_to_git(
                 warnings=[f"git checkout {branch!r} failed: {(exc.stderr or '').strip()}"],
             )
 
-    snapshot = _snapshot_workspace(workspace_id, fabric_client)
+    snapshot = _snapshot_workspace(workspace_id, fabric_client, warnings)
     if not snapshot:
         if fabric_client is None:
             warnings.append(

@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from pydantic import BaseModel, Field
 
 from powerbi_orchestrator_mcp import __version__
@@ -36,6 +36,13 @@ from powerbi_orchestrator_mcp.orchestrator.context import (
     SessionContext,
     SessionStore,
     Target,
+)
+from powerbi_orchestrator_mcp.orchestrator.elicitation import (
+    ElicitationChoice,
+    ElicitationRequest,
+)
+from powerbi_orchestrator_mcp.orchestrator.elicitation import (
+    elicit as _elicit,
 )
 from powerbi_orchestrator_mcp.orchestrator.engine_detector import detect_all_engines
 from powerbi_orchestrator_mcp.orchestrator.identifiers import (
@@ -511,21 +518,119 @@ def _resolve_executor(step: PlanStep, *, dry_run: bool) -> StepExecutor:
     return registry.get(step.engine)
 
 
+_CONFIRM_YES = {"y", "yes", "s", "si", "sí", "1", "true", "ok", "okay", "go", "run"}
+
+
+async def _confirm_step(
+    ctx: Context[Any, Any, Any] | None,
+    step: PlanStep,
+    *,
+    index: int,
+    total: int,
+    dry_run: bool,
+) -> tuple[bool, str]:
+    """Ask the user to approve one plan step. Returns ``(approved, reason)``.
+
+    Fails closed: if there is no MCP context, the client cannot elicit, or
+    the prompt errors, the step is NOT run. A confirmation flag that silently
+    executes anyway would be worse than no flag at all.
+    """
+    if ctx is None:
+        return False, (
+            "confirm_each_step=True requires an interactive MCP client with "
+            "elicitation support; no context available, so the step was not run"
+        )
+    mode = "DRY RUN" if dry_run else "REAL EXECUTION"
+    question = (
+        f"[{index + 1}/{total}] {mode} — run step '{step.id}'?\n"
+        f"  engine={step.engine} action={step.action}"
+    )
+    try:
+        response = await _elicit(
+            ctx,
+            ElicitationRequest(
+                question=question,
+                choices=[
+                    ElicitationChoice(label="Yes, run this step"),
+                    ElicitationChoice(label="No, stop here"),
+                ],
+            ),
+            bypass_rate_limit=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return False, f"confirmation prompt failed ({exc}); step was not run"
+
+    if not response.accepted:
+        return False, f"declined by user at step {index + 1}/{total}; step was not run"
+    answer = str(response.values.get("response", "")).strip().lower()
+    if answer in _CONFIRM_YES:
+        return True, ""
+    return False, (
+        f"answer {answer!r} is not an explicit yes; step was not run (expected y/yes/si/ok)"
+    )
+
+
 async def _run_plan_steps(
     plan: Plan,
     execution: PlanExecution,
     *,
     dry_run: bool,
+    ctx: Context[Any, Any, Any] | None = None,
+    confirm_each_step: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Execute plan steps sequentially. Returns (executed, failed).
 
     On any step failure, returns the (executed, failed) tuple WITHOUT
     raising — the caller decides whether to rollback or continue.
+
+    When ``confirm_each_step`` is set, each step is confirmed by the user
+    before it runs. A decline (or an unavailable client) stops execution
+    and reports the remaining steps as not run — it never silently
+    continues, and it never silently skips the confirmation.
     """
     store = PlanExecutionStore()
     executed: list[dict[str, Any]] = []
+    total = len(plan.steps)
 
     for idx, step in enumerate(plan.steps):
+        if confirm_each_step:
+            approved, reason = await _confirm_step(
+                ctx, step, index=idx, total=total, dry_run=dry_run
+            )
+            if not approved:
+                executed.append(
+                    {
+                        "id": step.id,
+                        "engine": step.engine,
+                        "action": step.action,
+                        "success": False,
+                        "error_message": reason,
+                        "changed_files": [],
+                        "skipped": True,
+                    }
+                )
+                # Record the steps that will never run, so the caller sees
+                # the full picture rather than a short executed_steps list.
+                for remaining in plan.steps[idx + 1 :]:
+                    executed.append(
+                        {
+                            "id": remaining.id,
+                            "engine": remaining.engine,
+                            "action": remaining.action,
+                            "success": False,
+                            "error_message": "not run: execution stopped by user",
+                            "changed_files": [],
+                            "skipped": True,
+                        }
+                    )
+                return executed, {
+                    "id": step.id,
+                    "engine": step.engine,
+                    "action": step.action,
+                    "error_message": reason,
+                    "stopped_by_user": True,
+                }
+
         store.update_heartbeat(
             execution.execution_id,
             current_step_index=idx,
@@ -602,19 +707,23 @@ async def _rollback_plan(
 async def apply_plan(
     plan_id: str,
     dry_run: bool = True,
-    confirm_each_step: bool = False,  # noqa: ARG001 — elicitation hook for v2
+    confirm_each_step: bool = False,
+    ctx: Context[Any, Any, Any] | None = None,
 ) -> ApplyResult:
     """Execute an approved plan with automatic rollback on step failure.
 
     Use this tool when the user asks to:
     - Execute or apply an approved plan created by plan_change.
     - Run plan steps in dry-run mode before modifying actual files.
+    - Approve each step individually before it runs.
 
     Args:
         plan_id: ID of the plan previously created by plan_change.
         dry_run: If True (DEFAULT), simulate execution without modifying files
             or cloud resources. Pass dry_run=False explicitly to apply for real.
-        confirm_each_step: Reserved hook for interactive step confirmations.
+        confirm_each_step: If True, ask the user to approve every step before
+            it runs. Declining (or having no interactive client) stops
+            execution and reports the remaining steps as not run.
 
     Returns:
         ApplyResult with execution status, executed steps, and rollback details if needed.
@@ -641,9 +750,31 @@ async def apply_plan(
     )
     PlanExecutionStore().create(execution)
 
-    executed, failed_step = await _run_plan_steps(plan, execution, dry_run=dry_run)
+    executed, failed_step = await _run_plan_steps(
+        plan,
+        execution,
+        dry_run=dry_run,
+        ctx=ctx,
+        confirm_each_step=confirm_each_step,
+    )
 
     if failed_step is not None:
+        # A user decline is not a failure: nothing needs unwinding, and
+        # running the rollback path here would either report a bogus
+        # "rolled_back" or trip NoRollbackAvailableError for steps that
+        # were never executed.
+        if failed_step.get("stopped_by_user"):
+            PlanExecutionStore().complete(
+                execution.execution_id,
+                result_status="stopped_by_user",
+                state=PlanExecutionState.PARTIAL,
+            )
+            return ApplyResult(
+                result="stopped_by_user",
+                executed_steps=executed,
+                failed_step=failed_step,
+                artifacts_changed=[],
+            )
         try:
             rollback_log = await _rollback_plan(plan, executed, failed_step)
             rollback_handle = new_rollback_handle()

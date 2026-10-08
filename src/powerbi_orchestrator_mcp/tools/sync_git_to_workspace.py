@@ -125,20 +125,33 @@ def _parse_item_path(path: Path) -> tuple[str, str] | None:
 
 
 def _enumerate_workspace_items(
-    workspace_id: str, fabric_client: Any
+    workspace_id: str, fabric_client: Any, warnings: list[str] | None = None
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """Return ``{(type, name): item_dict}`` for every workspace item.
 
-    Without a real ``fabric_client.list_workspace_items`` impl returns
-    an empty dict so the tool behaves as if the workspace were fresh.
+    When ``fabric_client.list_workspace_items`` fails, the workspace state is
+    *unknown*, not empty. Returning ``{}`` here would make the caller treat
+    a failing API as a pristine workspace and deploy straight over existing
+    content, so the failure is surfaced through ``warnings``.
     """
     if fabric_client is None:
         return {}
     try:
         result = fabric_client.list_workspace_items(workspace_id)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        if warnings is not None:
+            warnings.append(
+                f"could not list workspace items for {workspace_id}: {exc}. "
+                "Treating the workspace as empty — conflict detection was "
+                "NOT performed."
+            )
         return {}
     if not isinstance(result, list):
+        if warnings is not None:
+            warnings.append(
+                f"list_workspace_items returned {type(result).__name__}, "
+                "expected list; conflict detection was NOT performed."
+            )
         return {}
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for item in result:
@@ -301,14 +314,12 @@ def sync_git_to_workspace(
     pre_deploy_check_result: dict[str, Any] = {}
     if pre_deploy_profile is not None:
         try:
-            pass
-        except Exception as exc:  # noqa: BLE001
-            warnings.append(f"could not import pre_deploy_check: {exc}")
-        else:
             from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
                 pre_deploy_check as _pre_deploy,
             )
-
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"could not import pre_deploy_check: {exc}")
+        else:
             result = _pre_deploy(pre_deploy_findings or [], profile=pre_deploy_profile)
             pre_deploy_check_result = result.model_dump(mode="json")
             if not result.passed:
@@ -332,7 +343,7 @@ def sync_git_to_workspace(
             ],
         )
 
-    workspace_items = _enumerate_workspace_items(workspace_id, fabric_client)
+    workspace_items = _enumerate_workspace_items(workspace_id, fabric_client, warnings)
 
     deployed: list[DeployedItem] = []
     skipped: list[DeployedItem] = []

@@ -198,8 +198,10 @@ def set_sensitivity_labels(
                     reason=reason,
                 )
                 audit_entries.append("blocked:scope")
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                # Audit logging is best-effort, but a swallowed failure here
+                # means a *blocked* operation left no trace.
+                warnings.append(f"audit_logger raised while recording a blocked scope: {exc}")
         return SetSensitivityLabelsResult(
             dry_run=dry_run,
             warnings=[
@@ -207,6 +209,7 @@ def set_sensitivity_labels(
                 "remediation: assign *.Admin.* or "
                 "InformationProtectionPolicy.Apply.All scope to the SPN "
                 "via Purview admin center",
+                *warnings,
             ],
         )
 
