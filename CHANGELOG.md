@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [Unreleased]
+
+### ⚠️ Breaking
+- **Plugins no longer load by default.** Setting `PBI_ENABLE_PLUGINS=1` is
+  now required. Loading a plugin executes arbitrary Python, so any local
+  user who could write a `.py` file into the plugin directory previously got
+  code execution inside the MCP server. When enabled, the plugin directory
+  must be owner-only and symlinked plugin files are refused.
+- **`plans.db` gained an `owner` column.** Existing rows are migrated to
+  owner `local`. Over the HTTP transport, a plan is only visible to the
+  principal that created it, so a `plan_id` alone is no longer sufficient
+  to execute someone else's plan.
+- The misspelled `PBI_ORCHestrATOR_AUDIT_SECRET` environment variable is no
+  longer read. Use `PBI_ORCHESTRATOR_AUDIT_SECRET`.
+
+### Security
+- `sync_git_to_workspace` now refuses to read a tracked file that is a
+  symlink or that resolves outside the repository, so a hostile repository
+  cannot have its contents deployed to Fabric.
+- `powerbi_health` reports a `plugins` check, so a disabled or misconfigured
+  plugin directory is visible instead of silent.
+
+### Verification
+1157 tests passing (from 1130), 27 new.
+
 ## [1.17.0] — 2026-10-16
 
 ### ⚠️ Breaking
