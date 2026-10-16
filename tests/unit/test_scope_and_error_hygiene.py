@@ -83,8 +83,8 @@ class TestScopeSeparation:
         assert cred.recorder.scopes == [WRITE_SCOPES]
 
     def test_read_and_write_scopes_differ(self) -> None:
-        assert READ_SCOPES != WRITE_SCOPES
         assert set(READ_SCOPES) < set(WRITE_SCOPES)
+        assert set(READ_SCOPES) != set(WRITE_SCOPES)
 
 
 class TestErrorBodySummarisation:
@@ -113,8 +113,9 @@ class TestErrorsDoNotLeakBodies:
 
         cred = _Cred()
         client = _client(cred)
-        client._fabric_client = _Http(_Resp(400, "secret " * 2000))
-        client._pbi_client = client._fabric_client
+        fake = _Http(_Resp(400, "secret " * 2000))
+        client._fabric_client = fake  # type: ignore[assignment]
+        client._pbi_client = fake  # type: ignore[assignment]
 
         with pytest.raises(FabricAPIError) as excinfo:
             await client.get("/groups/x")
@@ -130,8 +131,9 @@ class TestErrorsDoNotLeakBodies:
 
         cred = _Cred()
         client = _client(cred)
-        client._fabric_client = _Http(_Resp(500, "y" * 4000))
-        client._pbi_client = client._fabric_client
+        fake = _Http(_Resp(500, "y" * 4000))
+        client._fabric_client = fake  # type: ignore[assignment]
+        client._pbi_client = fake  # type: ignore[assignment]
 
         with pytest.raises(FabricAPIError) as excinfo:
             await client.post("/groups/x/items", json={})

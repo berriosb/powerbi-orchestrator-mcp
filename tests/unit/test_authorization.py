@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -17,7 +18,7 @@ from powerbi_orchestrator_mcp.orchestrator.authorization import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_identity() -> None:
+def _clear_identity() -> Iterator[None]:
     from powerbi_orchestrator_mcp.orchestrator.transport import set_current_user
 
     set_current_user(None)
