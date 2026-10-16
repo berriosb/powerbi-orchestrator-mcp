@@ -1,0 +1,102 @@
+name: pilot-validation
+
+# Optional, read-only validation against a real Fabric / Power BI tenant.
+#
+# Why this exists: the unit and integration suites never call a live API, so
+# response-shape drift and service principal permission problems only
+# surface when someone runs against a tenant by hand. This job makes that
+# check repeatable.
+#
+# Safety properties, in order of importance:
+#
+#   1. Manual trigger only. It never runs on push or on pull requests, so it
+#      cannot become a required status check or block a merge.
+#   2. Skips cleanly when the secrets are absent, following the same pattern
+#      publish.yml uses for TEST_PYPI_API_TOKEN.
+#   3. The workspace and dataset must be named explicitly as inputs. There
+#      is no default and no discovery, so it cannot be pointed at an
+#      unintended tenant by accident.
+#   4. pilot_check.py is read-only. It never creates, updates, refreshes or
+#      deletes anything.
+#
+# To activate, set in repository settings -> Secrets:
+#   PBI_PILOT_TENANT_ID       Azure tenant id
+#   PBI_PILOT_CLIENT_ID       Service principal (app) id
+#   PBI_PILOT_CLIENT_SECRET   Service principal secret
+# and create the environment named `pilot-validation` below if you want
+# approval gating before it runs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      workspace_id:
+        description: 'Fabric workspace id to validate against (required)'
+        required: true
+        type: string
+      dataset_id:
+        description: 'Dataset id to run the DAX check against (required)'
+        required: true
+        type: string
+      i_understand_this_touches_a_real_tenant:
+        description: 'Confirm this is a sandbox workspace, not a client one'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pilot-validation-${{ inputs.workspace_id }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: preflight (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pilot-validation
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse unless explicitly confirmed
+        if: inputs.i_understand_this_touches_a_real_tenant != true
+        run: |
+          echo "::error::Set the confirmation input to true before running this workflow."
+          exit 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Skip cleanly when the pilot secrets are not configured
+        id: secrets
+        env:
+          TENANT: ${{ secrets.PBI_PILOT_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.PBI_PILOT_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.PBI_PILOT_CLIENT_SECRET }}
+        run: |
+          if [ -z "$TENANT" ] || [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PBI_PILOT_* secrets are not configured; skipping the live preflight. See docs/pilot-validation.md."
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run the read-only preflight
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          PBI_AUTH_MODE: service_principal
+          AZURE_TENANT_ID: ${{ secrets.PBI_PILOT_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.PBI_PILOT_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.PBI_PILOT_CLIENT_SECRET }}
+        run: |
+          python scripts/pilot_check.py \
+            --workspace-id "${{ inputs.workspace_id }}" \
+            --dataset-id "${{ inputs.dataset_id }}"

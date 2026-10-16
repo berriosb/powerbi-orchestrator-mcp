@@ -86,6 +86,31 @@ Salida esperada si todo va bien:
 desalineado con la API real. Es el único fallo que indica un defecto del
 orquestador; todos los demás son de configuración.
 
+### Repetirlo desde CI (opcional)
+
+Existe el workflow `pilot-validation.yml`, que corre este mismo script y
+**solo se dispara a mano**: nunca en push ni en pull requests, así que no
+entra como check requerido ni bloquea merges. Por defecto es inerte —si los
+secrets no están configurados, el job se salta con un aviso.
+
+Para activarlo:
+
+1. En *Settings → Environments*, crea un environment llamado
+   `pilot-validation` (opcional, pero da un gate de aprobación antes de
+   correr).
+2. En *Settings → Secrets and variables → Actions*, agrega:
+   - `PBI_PILOT_TENANT_ID`
+   - `PBI_PILOT_CLIENT_ID`
+   - `PBI_PILOT_CLIENT_SECRET`
+3. Lanza el workflow desde *Actions → pilot-validation → Run workflow*,
+   indicando `workspace_id`, `dataset_id` y marcando la casilla de
+   confirmación.
+
+Usa un service principal de **mínimo privilegio apuntando únicamente al
+workspace de pruebas**. Aunque el script es de solo lectura, un token con
+permisos amplios sobre un tenant equivocado es una posición incómoda de
+mantener.
+
 ---
 
 ## Fase 2 — Escritura en PBIP (local, sin nube)
