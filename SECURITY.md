@@ -92,7 +92,7 @@ We aim to:
 | Least-privilege token scopes (read vs write) | `cloud/fabric_client.py`, `cloud/auth.py` |
 | HMAC-chained audit log (tamper-evident) | `orchestrator/audit.py` |
 | Truncation detection via out-of-DB chain anchor | `orchestrator/audit.py` |
-| Owner-only permissions on plan/session/audit stores | `orchestrator/paths.py` |
+| Owner-only permissions on plan/session/audit stores (POSIX hosts) | `orchestrator/paths.py` |
 | PII / token redaction in audit log | `cloud/audit_cloud.py` (wired via `orchestrator/audit_guard.py`) |
 | Audit coverage for state-changing tools | `orchestrator/audit_guard.py` |
 | Elicitation before writes (configurable) | `orchestrator/elicitation.py` |
@@ -142,6 +142,11 @@ Audit log entries are HMAC-chained — each row signs the previous row's
 hash, so a tampered entry breaks the chain and surfaces in verification.
 A separate anchor file records the expected tail of the chain, so deleting
 the most recent rows is detected as truncation instead of verifying clean.
+
+Plan, session and audit stores are created with owner-only permissions
+(`0o700` directories, `0o600` databases) on POSIX hosts. On Windows,
+`chmod` only toggles the read-only attribute, so restrict access with NTFS
+ACLs instead.
 
 ---
 

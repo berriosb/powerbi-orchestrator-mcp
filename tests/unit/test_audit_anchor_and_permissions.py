@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import sqlite3
 import stat
+import sys
 from pathlib import Path
 
 import pytest
 
 from powerbi_orchestrator_mcp.orchestrator import audit as audit_mod
 from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog
+
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits are not meaningful on Windows; "
+    "st_mode always reports 0o666/0o777 there and chmod only toggles read-only",
+)
 
 
 @pytest.fixture
@@ -105,6 +112,7 @@ class TestTruncationDetection:
         assert log.verify().valid is True
 
 
+@posix_only
 class TestFilePermissions:
     def test_audit_dir_is_owner_only(self, audit_db: Path) -> None:
         AuditLog().insert(tool_name="t", tool_args={"a": 1}, result_status="success")
