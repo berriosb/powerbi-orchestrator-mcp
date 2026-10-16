@@ -8,6 +8,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.17.0] — 2026-10-16
+
+### ⚠️ Breaking
+- **`deploy_to_workspace` and `run_refresh` now default to `dry_run=True`.**
+  A single tool call could previously publish to a production Fabric
+  workspace and trigger a full refresh with no approval step. Real
+  execution now requires an explicit `dry_run=False`. `DeployResult` gains
+  `dry_run` and `planned_actions`; `run_refresh` reports `status="DryRun"`.
+
+### Security
+- **`client_secret` removed from every MCP tool signature.** It was a tool
+  argument, so it travelled in the JSON-RPC payload and therefore in the
+  model context, client logs and provider requests. Credentials now come
+  from the environment or a workload identity.
+- **Per-tool authorization.** The documented `Tools.Read` / `Tools.Write` /
+  `Tools.Admin` hierarchy is now enforced before the tool body runs;
+  previously a single global scope let a read-only token invoke mutating
+  tools.
+- **Write-path containment.** New `validate_write_path` always enforces a
+  root, defaulting to the process working directory. Seven tools that write
+  to disk now use it.
+- **Full audit trail.** The 20 state-changing and data-access tools record
+  `success` / `failed` / `dry_run` / `partial` / `rolled_back`. Arguments
+  are stored hashed, only exception types are recorded, and an audit write
+  failure surfaces as `_audit_warning` instead of being swallowed.
+  `CloudAuditLog`'s PII redaction is now wired in rather than dead code.
+- **Truncation detection.** `verify()` recomputed the chain from genesis,
+  so deleting the newest rows still verified clean. An anchor file outside
+  the database records the expected tail.
+- **Store permissions.** Audit, plan and session directories are `0o700`
+  and their databases `0o600`.
+- **TMDL identifier validation.** Table, column, measure, relationship and
+  hierarchy names are rejected if they contain newlines, quotes, brackets
+  or comment markers. Names with spaces are now correctly quoted, fixing
+  invalid TMDL output that predates this release.
+- **Least-privilege tokens.** GET/HEAD/OPTIONS request `READ_SCOPES`;
+  only mutations request `WRITE_SCOPES`.
+- **DAX row cap.** `execute_dax_query` returns at most 1000 rows by
+  default (ceiling 10000) and flags truncation.
+- **Error body hygiene.** Fabric API error bodies are truncated before they
+  can reach the model context.
+
+### Fixed
+- **`run_dax_regression` no longer reports a false green.** `query_executor`
+  was an MCP parameter a client can never inject, so the default executor
+  returned empty results and the tool claimed `passed=True` without running
+  a single query. It now reports `executed=False` with an explicit message,
+  and `_fabric_dax_executor` runs the baseline against a live dataset when
+  `workspace_id` and `dataset_id` are supplied.
+
+### Docs
+- `SECURITY.md` no longer claims controls that do not exist (`--readonly`,
+  `engines/versions.py`, active PII redaction). Added a "Not implemented"
+  section, and the supported-versions table now reflects 1.17.x.
+- `README.md` documents the safe-by-default table and how to actually run
+  each write tool.
+
+### Verification
+1130 tests passing (from 997), 88% coverage, ruff and mypy clean,
+`pip-audit` reports 0 vulnerabilities, MCP handshake verified with 28 tools.
+
 ## [1.16.0] — 2026-10-08
 
 ### Added

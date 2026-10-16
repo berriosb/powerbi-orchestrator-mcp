@@ -13,11 +13,12 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.16.0 — Beta. 28 tools (`execute_dax_query` added), 88% cobertura,
-product-readiness pass (CLI, Dockerfile, examples, plugin system).
-Write tools are safe-by-default (`dry_run=True`); `apply_plan` supports
-per-step confirmation via `confirm_each_step`.
-See [release notes](./RELEASE-NOTES-v1.16.0.md) · [changelog](./CHANGELOG.md).
+**Status:** v1.17.0 — Beta. 28 tools, 88% cobertura, enterprise hardening
+(per-tool scopes, write-path containment, full audit trail).
+Every state-changing tool is safe by default: `dry_run=True` on
+`deploy_to_workspace` and `run_refresh`, per-step confirmation on
+`apply_plan`, and `Tools.Write` required for mutating tools over HTTP.
+See [release notes](./RELEASE-NOTES-v1.17.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
@@ -48,6 +49,41 @@ python scripts/verify_mcp_server.py
 
 That's it — your LLM now sees 28 tools for Power BI / Fabric. See the
 [`examples/`](./examples/) directory for 3 reproducible workflows.
+
+---
+
+## Defaults de seguridad (léelo antes de tocar producción)
+
+Todas las tools que modifican estado son **safe-by-default**. Nada escribe
+en un workspace real ni en disco sin una acción explícita.
+
+| Tool | Default | Cómo se ejecuta de verdad |
+|---|---|---|
+| `deploy_to_workspace` | `dry_run=True` | `dry_run=False` |
+| `run_refresh` | `dry_run=True` | `dry_run=False` |
+| `apply_plan` | `dry_run=True` | `dry_run=False` (+ `confirm_each_step`) |
+| `promote_in_pipeline` | `dry_run=True` | `dry_run=False` |
+| `run_dax_regression` | no ejecuta sin dataset | pasar `workspace_id` + `dataset_id` |
+
+Además:
+
+- **Sin secretos en el contexto del LLM.** Ninguna tool acepta un
+  `client_secret`. Las credenciales se leen del entorno
+  (`AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET`) o de una
+  workload identity.
+- **Las escrituras están contenidas.** Las tools que escriben en disco
+  rechazan rutas fuera de `PBI_WORKSPACE_ROOT`, que por defecto es el
+  directorio de trabajo del proceso.
+- **Auditoría de todo lo que muta.** Las 20 tools con efecto sobre el
+  workspace dejan registro (`success` / `failed` / `dry_run` / `partial` /
+  `rolled_back`) en un log encadenado con HMAC.
+- **DAX acotado.** `execute_dax_query` devuelve como máximo 1000 filas por
+  defecto (techo 10 000) y marca el truncamiento.
+- **Scopes por tool** sobre transporte HTTP: las tools mutantes requieren
+  `Tools.Write` (`Tools.Admin` los concede todos).
+
+Detalle completo del modelo de amenazas en [`SECURITY.md`](./SECURITY.md),
+incluidos los controles que **no** existen.
 
 ---
 

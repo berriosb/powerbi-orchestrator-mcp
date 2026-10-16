@@ -30,7 +30,25 @@ from typing import Any
 
 import httpx
 
-from powerbi_orchestrator_mcp.cloud.auth import FabricCredential
+from powerbi_orchestrator_mcp.cloud.auth import READ_SCOPES, WRITE_SCOPES, FabricCredential
+
+_ERROR_BODY_MAX_CHARS = 300
+
+
+def _summarize_response_body(body: str) -> str:
+    """Keep only the diagnostic shape of an error body.
+
+    The raw body reaches the model context through the exception message and
+    can carry table names or record fragments, so long or binary-ish payloads
+    are reduced to a bounded preview plus its length.
+    """
+    if not body:
+        return "<empty body>"
+    collapsed = " ".join(body.split())
+    if len(collapsed) <= _ERROR_BODY_MAX_CHARS:
+        return collapsed
+    return f"{collapsed[:_ERROR_BODY_MAX_CHARS]}... <truncated, {len(body)} chars>"
+
 
 # ---------------------------------------------------------------------------
 # Concurrency primitives
@@ -262,7 +280,9 @@ class FabricClient:
             if not acquired:
                 raise CircuitBreakerOpenError("token bucket timeout (rate limit exceeded)")
 
-            token = await self._credential.get_token()
+            token = await self._credential.get_token(
+                READ_SCOPES if method.upper() in {"GET", "HEAD", "OPTIONS"} else WRITE_SCOPES
+            )
             try:
                 response = await http_client.request(
                     method,
@@ -303,26 +323,29 @@ class FabricClient:
                     await asyncio.sleep(2**attempt)
                     continue
                 raise FabricAPIError(
-                    f"Fabric API error: {response.status_code} {response.text}",
+                    f"Fabric API error: {response.status_code} "
+                    f"{_summarize_response_body(response.text)}",
                     status_code=response.status_code,
-                    response_body=response.text,
+                    response_body=_summarize_response_body(response.text),
                 )
 
             if response.status_code >= 500:
                 await self._breaker.record_5xx()
                 raise FabricAPIError(
-                    f"Fabric API error: {response.status_code} {response.text}",
+                    f"Fabric API error: {response.status_code} "
+                    f"{_summarize_response_body(response.text)}",
                     status_code=response.status_code,
-                    response_body=response.text,
+                    response_body=_summarize_response_body(response.text),
                 )
 
             await self._breaker.record_success()
 
             if response.status_code >= 400:
                 raise FabricAPIError(
-                    f"Fabric API error: {response.status_code} {response.text}",
+                    f"Fabric API error: {response.status_code} "
+                    f"{_summarize_response_body(response.text)}",
                     status_code=response.status_code,
-                    response_body=response.text,
+                    response_body=_summarize_response_body(response.text),
                 )
 
             return response.json() if response.content else {}

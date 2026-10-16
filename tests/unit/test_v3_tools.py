@@ -215,8 +215,8 @@ tables:
     def test_tmdl_render_contains_measures(self) -> None:
         spec = ModelSpec.model_validate(yaml.safe_load(YAML_SPEC))
         text = render_tmdl(spec)
-        assert "measure Total Sales" in text
-        assert "measure Avg Units" in text
+        assert "measure 'Total Sales'" in text
+        assert "measure 'Avg Units'" in text
 
     def test_tmdl_render_contains_relationships(self) -> None:
         spec = ModelSpec.model_validate(yaml.safe_load(YAML_SPEC))
@@ -449,3 +449,126 @@ def pbip_v3(tmp_path: Path) -> Path:
     (pbip / "demo.Dataset").mkdir()
     (pbip / "demo.Report").mkdir()
     return pbip
+
+
+class TestTmdlIdentifierSafety:
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "Sales\n    partition x = source",
+            "Sales\n\tmeasure 'pwned' = 1",
+            "Sales'",
+            "Sales' }",
+            "Sales\n// comment",
+            "Sales {",
+            "Sales[",
+            "",
+            "   ",
+        ],
+    )
+    def test_unsafe_table_names_are_rejected(self, bad_name: str) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ModelSpec.model_validate(
+                {"tables": [{"name": bad_name, "columns": [{"name": "c", "type": "int64"}]}]}
+            )
+
+    @pytest.mark.parametrize("bad_name", ["M\n    x = 1", "M'", "M //c", "M{"])
+    def test_unsafe_measure_names_are_rejected(self, bad_name: str) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ModelSpec.model_validate(
+                {
+                    "tables": [
+                        {
+                            "name": "T",
+                            "measures": [{"name": bad_name, "expression": "1"}],
+                        }
+                    ]
+                }
+            )
+
+    def test_unsafe_column_names_are_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ModelSpec.model_validate(
+                {"tables": [{"name": "T", "columns": [{"name": "C\n x", "type": "int64"}]}]}
+            )
+
+    def test_unsafe_relationship_refs_are_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ModelSpec.model_validate(
+                {
+                    "tables": [{"name": "T", "columns": [{"name": "C", "type": "int64"}]}],
+                    "relationships": [
+                        {
+                            "from_table": "T\nx",
+                            "from_column": "C",
+                            "to_table": "T",
+                            "to_column": "C",
+                        }
+                    ],
+                }
+            )
+
+    def test_unsafe_hierarchy_names_are_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ModelSpec.model_validate(
+                {
+                    "tables": [{"name": "T", "columns": [{"name": "C", "type": "int64"}]}],
+                    "hierarchies": [{"table": "T", "name": "H\nx", "levels": ["C"]}],
+                }
+            )
+
+    def test_overlong_name_is_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ModelSpec.model_validate(
+                {"tables": [{"name": "T" * 129, "columns": [{"name": "C", "type": "int64"}]}]}
+            )
+
+    def test_names_with_spaces_are_accepted_and_quoted(self) -> None:
+        spec = ModelSpec.model_validate(
+            {
+                "name": "m",
+                "tables": [
+                    {
+                        "name": "Fact Sales",
+                        "columns": [{"name": "Order Date", "type": "dateTime"}],
+                        "measures": [{"name": "Total Sales", "expression": "SUM(1)"}],
+                    }
+                ],
+                "relationships": [
+                    {
+                        "from_table": "Fact Sales",
+                        "from_column": "Order Date",
+                        "to_table": "Fact Sales",
+                        "to_column": "Order Date",
+                    }
+                ],
+            }
+        )
+        text = render_tmdl(spec)
+
+        assert "table 'Fact Sales'" in text
+        assert "column 'Order Date'" in text
+        assert "measure 'Total Sales'" in text
+        assert "relationship 'Fact Sales'['Order Date']" in text
+
+    def test_bare_identifiers_stay_unquoted(self) -> None:
+        spec = ModelSpec.model_validate(
+            {
+                "name": "m",
+                "tables": [{"name": "FactSales", "columns": [{"name": "Key", "type": "int64"}]}],
+            }
+        )
+
+        assert "table FactSales" in render_tmdl(spec)

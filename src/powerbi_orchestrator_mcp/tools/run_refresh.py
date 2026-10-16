@@ -14,15 +14,15 @@ class RunRefresh(BaseModel):
 
     workspace_id: str
     dataset_id: str
-    refresh_type: str = "full"  # full | automatic | data_only | calculate | clearValues
-    commit_mode: str | None = None  # transactional | partialBatch
+    refresh_type: str = "full"
+    commit_mode: str | None = None
     tables: list[str] | None = None
     wait: bool = True
-    timeout_s: int = 1800  # 30 min default per spec §3
+    timeout_s: int = 1800
     auth_mode: str = "interactive"
     tenant_id: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
+    dry_run: bool = True
 
 
 async def run_refresh(
@@ -37,18 +37,38 @@ async def run_refresh(
     auth_mode: str = "interactive",
     tenant_id: str | None = None,
     client_id: str | None = None,
-    client_secret: str | None = None,
+    dry_run: bool = True,
 ) -> RefreshResult:
     """Trigger (and optionally wait for) a dataset refresh.
+
+    ``dry_run`` defaults to True: no refresh is triggered and the result
+    reports ``status="DryRun"``. Real execution requires
+    ``dry_run=False``.
 
     Returns RefreshResult per spec §3 (status, duration, errors,
     rollback_performed).
     """
+    if dry_run:
+        return RefreshResult(
+            refresh_id="dry-run",
+            status="DryRun",
+            duration_ms=0,
+            errors=[
+                {
+                    "code": "dry_run",
+                    "message": (
+                        f"dry_run: no refresh was triggered on dataset {dataset_id}; "
+                        "pass dry_run=False to refresh for real"
+                    ),
+                }
+            ],
+            rollback_performed=False,
+        )
+
     config = AuthConfig.from_env_or_args(
         mode=auth_mode,
         tenant_id=tenant_id,
         client_id=client_id,
-        client_secret=client_secret,
     )
     cred = FabricCredential(config)
     client = FabricClient(cred)

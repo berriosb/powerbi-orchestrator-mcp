@@ -31,7 +31,7 @@ class DeployToWorkspace(BaseModel):
 
     pbip_path: str
     workspace_id: str
-    refresh_daily_hour: int = 6  # 0-23 UTC
+    refresh_daily_hour: int = 6
     findings: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Findings to evaluate against the pre-deploy gate.",
@@ -40,8 +40,7 @@ class DeployToWorkspace(BaseModel):
     auth_mode: str = "interactive"
     tenant_id: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
-    # Mock mode: short-circuit the actual cloud calls.
+    dry_run: bool = True
     mock: bool = False
 
 
@@ -54,6 +53,8 @@ class DeployResult(BaseModel):
     dataset_id: str | None = None
     schedule_ok: bool = False
     refresh_id: str | None = None
+    dry_run: bool = False
+    planned_actions: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
 
@@ -99,10 +100,15 @@ async def deploy_to_workspace(
     auth_mode: str = "interactive",
     tenant_id: str | None = None,
     client_id: str | None = None,
-    client_secret: str | None = None,
+    dry_run: bool = True,
     mock: bool = False,
 ) -> DeployResult:
     """Pre-deploy gate → publish PBIP → schedule refresh → initial refresh.
+
+    ``dry_run`` defaults to True: the gate is evaluated and the exact
+    cloud operations that *would* run are listed in ``planned_actions``,
+    but no Fabric API call is made. Real deployment requires
+    ``dry_run=False``.
 
     With ``mock=True`` (or when ``fabric_client`` raises), steps 2-5
     return synthetic success responses. With ``mock=False`` and valid
@@ -125,6 +131,22 @@ async def deploy_to_workspace(
         result.errors.extend([f"gate_blocked: {c}" for c in gate_result.failed_checks])
         return result
 
+    planned_dataset_id = Path(pbip_path).stem
+    planned_actions = [
+        f"create PowerBIDataset '{planned_dataset_id}' in workspace {workspace_id}",
+        f"set daily refresh schedule at {max(0, min(23, int(refresh_daily_hour))):02d}:00 UTC",
+        f"trigger full refresh on dataset '{planned_dataset_id}'",
+    ]
+
+    if dry_run:
+        result.dry_run = True
+        result.dataset_id = planned_dataset_id
+        result.planned_actions = planned_actions
+        result.errors.append(
+            "dry_run: no cloud call was made; pass dry_run=False to deploy for real"
+        )
+        return result
+
     if mock:
         result.publish_ok = True
         result.item_id = "mock-item-id"
@@ -137,7 +159,6 @@ async def deploy_to_workspace(
         mode=auth_mode,
         tenant_id=tenant_id,
         client_id=client_id,
-        client_secret=client_secret,
     )
     cred = FabricCredential(config)
     client = FabricClient(cred)

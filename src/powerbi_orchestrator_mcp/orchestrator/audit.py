@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -18,6 +19,14 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
+from powerbi_orchestrator_mcp.orchestrator.paths import (
+    atomic_write_private,
+    ensure_private_dir,
+    restrict_file,
+)
+
+log = logging.getLogger(__name__)
 
 
 def _resolve_audit_dir() -> Path:
@@ -89,13 +98,43 @@ def _compute_row_hash(key: bytes, prev_hash: str, row_id: int, timestamp: str, r
 
 
 def _ensure_audit_dir() -> Path:
-    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(AUDIT_DIR)
     return AUDIT_DIR
+
+
+def _anchor_file() -> Path:
+    return AUDIT_DIR / ".audit_anchor"
+
+
+def _read_anchor() -> dict[str, Any] | None:
+    path = _anchor_file()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_anchor(last_id: int, last_hash: str, count: int) -> None:
+    """Persist the expected chain tail outside the audit database.
+
+    ``verify()`` recomputes the chain from genesis, so deleting the newest
+    rows leaves a self-consistent prefix that still verifies. Comparing the
+    database tail against this sidecar is what makes removal detectable.
+    """
+    payload = json.dumps({"last_id": last_id, "last_hash": last_hash, "count": count, "version": 1})
+    try:
+        atomic_write_private(_anchor_file(), payload)
+    except OSError:
+        log.warning("audit.anchor_write_failed: %s", _anchor_file())
 
 
 def _get_conn() -> sqlite3.Connection:
     _ensure_audit_dir()
     conn = sqlite3.connect(str(AUDIT_DB))
+    restrict_file(AUDIT_DB)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         """
@@ -123,8 +162,9 @@ class AuditLog:
         self._db_path = db_path or AUDIT_DB
 
     def _connect(self) -> sqlite3.Connection:
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(self._db_path.parent)
         conn = sqlite3.connect(str(self._db_path))
+        restrict_file(self._db_path)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             """
@@ -209,6 +249,8 @@ class AuditLog:
             )
             conn.commit()
 
+            _write_anchor(new_id, row_hash, new_id)
+
             return AuditEntry(
                 id=new_id,
                 timestamp=ts,
@@ -239,6 +281,14 @@ class AuditLog:
             ).fetchall()
 
             if not rows:
+                anchor = _read_anchor()
+                if anchor and int(anchor.get("count", 0)) > 0:
+                    return AuditVerifyResult(
+                        valid=False,
+                        total_rows=0,
+                        error_message="audit log is empty but the anchor recorded "
+                        f"{anchor.get('count')} entries: the log was truncated",
+                    )
                 return AuditVerifyResult(valid=True, total_rows=0)
 
             prev_hash = "0"
@@ -279,6 +329,36 @@ class AuditLog:
                     )
 
                 prev_hash = stored_hash
+
+            anchor = _read_anchor()
+            if anchor is not None:
+                anchor_id: Any = anchor.get("last_id")
+                anchor_hash: Any = anchor.get("last_hash")
+                anchor_count: Any = anchor.get("count")
+                if anchor_count is not None and int(anchor_count) != len(rows):
+                    return AuditVerifyResult(
+                        valid=False,
+                        total_rows=len(rows),
+                        error_message=f"entry count mismatch: anchor recorded "
+                        f"{anchor_count}, database holds {len(rows)}; "
+                        "entries were added or removed outside the audit writer",
+                    )
+                last_id, last_hash = rows[-1][0], rows[-1][7]
+                if anchor_id is not None and int(anchor_id) != int(last_id):
+                    return AuditVerifyResult(
+                        valid=False,
+                        total_rows=len(rows),
+                        error_message=f"tail anchor mismatch: expected last id "
+                        f"{anchor_id}, found {last_id}; the newest entries were removed",
+                    )
+                if anchor_hash is not None and not hmac.compare_digest(
+                    str(anchor_hash), str(last_hash)
+                ):
+                    return AuditVerifyResult(
+                        valid=False,
+                        total_rows=len(rows),
+                        error_message="tail anchor mismatch: the newest entries were removed",
+                    )
 
             return AuditVerifyResult(valid=True, total_rows=len(rows))
         finally:

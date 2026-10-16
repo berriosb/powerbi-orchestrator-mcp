@@ -29,6 +29,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
+
 # ---------------------------------------------------------------------------
 # Spec
 # ---------------------------------------------------------------------------
@@ -300,6 +302,7 @@ def setup_rls_and_roles(
     original_text: str = ""
     if not dry_run:
         try:
+            validate_write_path(target)
             tmdl_path = _locate_tmdl(target)
             original_text = tmdl_path.read_text(encoding="utf-8")
         except FileNotFoundError as exc:
@@ -307,6 +310,12 @@ def setup_rls_and_roles(
                 dry_run=dry_run,
                 risk_score=risk,
                 warnings=[f"could not locate TMDL: {exc}"],
+            )
+        except ValueError as exc:
+            return SetupRlsAndRolesResult(
+                dry_run=dry_run,
+                risk_score=risk,
+                warnings=[f"write path rejected: {exc}"],
             )
 
     test_results: list[TestResult] = []

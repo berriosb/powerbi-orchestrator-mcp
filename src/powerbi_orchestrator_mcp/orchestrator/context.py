@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from powerbi_orchestrator_mcp.orchestrator.paths import ensure_private_dir, restrict_file
+
 # ---------------------------------------------------------------------------
 # Pydantic models (spec section 2.3)
 # ---------------------------------------------------------------------------
@@ -61,8 +63,7 @@ SESSIONS_DIR = _resolve_sessions_dir()
 
 
 def _ensure_sessions_dir() -> Path:
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    return SESSIONS_DIR
+    return ensure_private_dir(SESSIONS_DIR)
 
 
 def _get_db_path(session_id: str) -> Path:
@@ -115,6 +116,7 @@ class SessionStore:
         ctx = context or SessionContext()
         db_path = _get_db_path(ctx.session_id)
         conn = sqlite3.connect(str(db_path))
+        restrict_file(db_path)
         try:
             _init_db(conn)
             conn.execute(
@@ -141,6 +143,7 @@ class SessionStore:
         if not db_path.exists():
             return None
         conn = sqlite3.connect(str(db_path))
+        restrict_file(db_path)
         conn.row_factory = sqlite3.Row
         try:
             _init_db(conn)
@@ -157,6 +160,7 @@ class SessionStore:
         """Update an existing session."""
         db_path = _get_db_path(context.session_id)
         conn = sqlite3.connect(str(db_path))
+        restrict_file(db_path)
         try:
             _init_db(conn)
             conn.execute(
@@ -184,6 +188,7 @@ class SessionStore:
         if not db_path.exists():
             return False
         conn = sqlite3.connect(str(db_path))
+        restrict_file(db_path)
         try:
             _init_db(conn)
             cursor = conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
@@ -198,6 +203,7 @@ class SessionStore:
         sessions: list[SessionContext] = []
         for db_file in SESSIONS_DIR.glob("*.db"):
             conn = sqlite3.connect(str(db_file))
+            restrict_file(db_file)
             conn.row_factory = sqlite3.Row
             try:
                 _init_db(conn)

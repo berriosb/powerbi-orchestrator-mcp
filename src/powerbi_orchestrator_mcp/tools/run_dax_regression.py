@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -13,6 +12,7 @@ from powerbi_orchestrator_mcp.validation.dax_regression import (
     DaxRegressionRunner,
     RegressionResult,
 )
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
 
 
 class RunDaxRegression(BaseModel):
@@ -42,7 +42,7 @@ async def run_dax_regression(
     If ``queries`` is provided and the baseline doesn't exist yet, the
     queries are saved as a new baseline (no comparison performed).
     """
-    baseline = Path(baseline_path)
+    baseline = validate_write_path(baseline_path)
     if not baseline.exists() and queries:
         # First run — save baseline.
         baseline.parent.mkdir(parents=True, exist_ok=True)
@@ -68,13 +68,20 @@ async def run_dax_regression(
         )
 
     if query_executor is None:
-        # Without a real modeling engine executor, return a placeholder.
-        # Tests use the executor arg to inject behavior.
-        async def _default_executor(_q: str) -> list[dict[str, Any]]:
-            return []
+        return RegressionResult(
+            passed=False,
+            executed=False,
+            total_queries=0,
+            passed_queries=0,
+            failed_queries=0,
+            diffs=[],
+            message=(
+                "no_query_executor: no DAX query was executed, so no regression "
+                "verdict is available. Pass workspace_id and dataset_id to run "
+                "against a live dataset."
+            ),
+        )
 
-        runner = DaxRegressionRunner(_default_executor, tolerance_pct=tolerance_pct)
-    else:
-        runner = DaxRegressionRunner(query_executor, tolerance_pct=tolerance_pct)
+    runner = DaxRegressionRunner(query_executor, tolerance_pct=tolerance_pct)
 
     return await runner.run(baseline)
