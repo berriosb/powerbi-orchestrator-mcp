@@ -24,6 +24,7 @@ import sqlite3
 from pathlib import Path
 
 from powerbi_orchestrator_mcp.orchestrator.identifiers import new_plan_id
+from powerbi_orchestrator_mcp.orchestrator.paths import ensure_private_dir, restrict_file
 from powerbi_orchestrator_mcp.orchestrator.plan_models import Plan
 
 
@@ -38,14 +39,14 @@ PLAN_DB = PLAN_DIR / "plans.db"
 
 
 def _ensure_plan_dir() -> Path:
-    PLAN_DIR.mkdir(parents=True, exist_ok=True)
-    return PLAN_DIR
+    return ensure_private_dir(PLAN_DIR)
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     path = db_path or PLAN_DB
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(path.parent)
     conn = sqlite3.connect(str(path))
+    restrict_file(path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         """
