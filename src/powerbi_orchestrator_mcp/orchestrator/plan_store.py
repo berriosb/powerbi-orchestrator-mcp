@@ -58,11 +58,16 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
             risk_score REAL NOT NULL DEFAULT 0.0,
             estimated_changes_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,
-            target_id TEXT
+            target_id TEXT,
+            owner TEXT NOT NULL DEFAULT 'local'
         )
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(plans)")}
+    if "owner" not in columns:
+        conn.execute("ALTER TABLE plans ADD COLUMN owner TEXT NOT NULL DEFAULT 'local'")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_plans_created ON plans(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_plans_owner ON plans(owner)")
     conn.commit()
     return conn
 
@@ -109,19 +114,25 @@ class PlanStore:
     def _conn(self) -> sqlite3.Connection:
         return _connect(self._db_path)
 
-    def put(self, plan: Plan) -> Plan:
-        """Insert or replace a plan."""
+    def put(self, plan: Plan, owner: str | None = None) -> Plan:
+        """Insert or replace a plan, recording the identity that owns it."""
         import json
 
+        from powerbi_orchestrator_mcp.orchestrator.authorization import (
+            LOCAL_IDENTITY,
+            current_identity,
+        )
+
+        resolved_owner = owner or current_identity() or LOCAL_IDENTITY
         conn = self._conn()
         try:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO plans (
                     plan_id, plan_yaml, steps_json, rollback_steps_json,
-                    risk_score, estimated_changes_json, created_at
+                    risk_score, estimated_changes_json, created_at, owner
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     plan.id,
@@ -131,6 +142,7 @@ class PlanStore:
                     plan.risk_score,
                     plan.estimated_changes.model_dump_json(),
                     plan.id,  # plan_id is a UUID; treat as created_at for ordering
+                    resolved_owner,
                 ),
             )
             conn.commit()
@@ -138,14 +150,36 @@ class PlanStore:
             conn.close()
         return plan
 
-    def get(self, plan_id: str) -> Plan | None:
+    def get(self, plan_id: str, owner: str | None = None) -> Plan | None:
+        """Return a plan only when the caller owns it.
+
+        Without an authenticated identity the caller is the local process, so
+        only plans owned by ``LOCAL_IDENTITY`` are visible.
+        """
+        from powerbi_orchestrator_mcp.orchestrator.authorization import (
+            LOCAL_IDENTITY,
+            current_identity,
+        )
+
+        wanted = owner or current_identity() or LOCAL_IDENTITY
         conn = self._conn()
         try:
             conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM plans WHERE plan_id = ?", (plan_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM plans WHERE plan_id = ? AND owner = ?",
+                (plan_id, wanted),
+            ).fetchone()
             if row is None:
                 return None
             return _row_to_plan(row)
+        finally:
+            conn.close()
+
+    def owner_of(self, plan_id: str) -> str | None:
+        conn = self._conn()
+        try:
+            row = conn.execute("SELECT owner FROM plans WHERE plan_id = ?", (plan_id,)).fetchone()
+            return row[0] if row else None
         finally:
             conn.close()
 
@@ -158,19 +192,37 @@ class PlanStore:
         finally:
             conn.close()
 
-    def list_all(self) -> list[Plan]:
+    def list_all(self, owner: str | None = None) -> list[Plan]:
+        from powerbi_orchestrator_mcp.orchestrator.authorization import (
+            LOCAL_IDENTITY,
+            current_identity,
+        )
+
+        wanted = owner or current_identity() or LOCAL_IDENTITY
         conn = self._conn()
         try:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM plans ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM plans WHERE owner = ? ORDER BY created_at DESC",
+                (wanted,),
+            ).fetchall()
             return [_row_to_plan(r) for r in rows]
         finally:
             conn.close()
 
-    def count(self) -> int:
+    def count(self, owner: str | None = None) -> int:
+        """Count plans, scoped to the caller when an identity is bound."""
+        from powerbi_orchestrator_mcp.orchestrator.authorization import current_identity
+
         conn = self._conn()
         try:
-            row = conn.execute("SELECT COUNT(*) FROM plans").fetchone()
+            identity = owner or current_identity()
+            if identity is None:
+                row = conn.execute("SELECT COUNT(*) FROM plans").fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM plans WHERE owner = ?", (identity,)
+                ).fetchone()
             return int(row[0]) if row else 0
         finally:
             conn.close()

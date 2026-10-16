@@ -20,6 +20,29 @@ SCOPE_READ = "Tools.Read"
 SCOPE_WRITE = "Tools.Write"
 SCOPE_ADMIN = "Tools.Admin"
 
+LOCAL_IDENTITY = "local"
+
+_IDENTITY_CLAIMS = ("oid", "sub", "upn", "preferred_username", "appid", "unique_name", "name")
+
+
+def current_identity() -> str | None:
+    """Return a stable identifier for the caller, or None when unauthenticated.
+
+    Used for object-level ownership checks: a plan created by one principal
+    must not be executable by another that merely knows its id.
+    """
+    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+
+    claims = get_current_user()
+    if not claims:
+        return None
+    for key in _IDENTITY_CLAIMS:
+        value = claims.get(key)
+        if value:
+            return str(value)
+    return None
+
+
 _WRITE_TOOLS: frozenset[str] = frozenset(
     {
         "add_measure_with_validation",
@@ -111,12 +134,14 @@ def requires_scope(tool_name: str) -> Callable[[Callable[..., Any]], Callable[..
 
 
 __all__ = [
+    "LOCAL_IDENTITY",
     "SCOPE_ADMIN",
     "SCOPE_READ",
     "SCOPE_WRITE",
     "TOOL_REQUIRED_SCOPE",
     "ToolAuthorizationError",
     "authorize_tool",
+    "current_identity",
     "required_scope_for_tool",
     "requires_scope",
 ]

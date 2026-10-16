@@ -238,7 +238,34 @@ mcp._mcp_server.version = __version__
 # ---------------------------------------------------------------------------
 
 _plans: dict[str, Plan] = {}
+_plan_owners: dict[str, str] = {}
 _plan_store = PlanStore()
+
+
+def _owner_now() -> str:
+    from powerbi_orchestrator_mcp.orchestrator.authorization import (
+        LOCAL_IDENTITY,
+        current_identity,
+    )
+
+    return current_identity() or LOCAL_IDENTITY
+
+
+def _owned_plan(plan_id: str) -> Plan | None:
+    """Fetch a plan only if the current principal owns it.
+
+    Both the in-memory cache and the store are filtered, so a plan created
+    by one principal cannot be executed by another that knows its id.
+    """
+    from powerbi_orchestrator_mcp.orchestrator.authorization import LOCAL_IDENTITY
+
+    owner = _owner_now()
+    cached = _plans.get(plan_id)
+    if cached is not None and _plan_owners.get(plan_id, LOCAL_IDENTITY) == owner:
+        return cached
+    return _plan_store.get(plan_id, owner=owner)
+
+
 _session_state: dict[str, str | None] = {"active_id": None}
 _active_session_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "active_session_id", default=None
@@ -266,6 +293,7 @@ def set_active_session_id(session_id: str | None) -> None:
 
 def _reset_server_state() -> None:
     _plans.clear()
+    _plan_owners.clear()
     _session_state["active_id"] = None
     _active_session_var.set(None)
 
@@ -492,8 +520,10 @@ async def plan_change(
         raise PlanValidationError(f"invalid PlanOptions in options: {exc}") from exc
 
     plan = _build_plan_from_intent(intent, template_args, opts)
+    owner = _owner_now()
     _plans[plan.id] = plan
-    _plan_store.put(plan)
+    _plan_owners[plan.id] = owner
+    _plan_store.put(plan, owner=owner)
     return PlanResult(
         plan_id=plan.id,
         plan_yaml=plan.yaml,
@@ -733,12 +763,12 @@ async def apply_plan(
     Returns:
         ApplyResult with execution status, executed steps, and rollback details if needed.
     """
-    plan = _plans.get(plan_id) or _plan_store.get(plan_id)
+    plan = _owned_plan(plan_id)
     if plan is None:
         return ApplyResult(
             result="failed",
             executed_steps=[],
-            failed_step={"id": plan_id, "error_message": "plan not found"},
+            failed_step={"id": plan_id, "error_message": "plan not found or not owned by caller"},
             rollback_steps_executed=[],
             artifacts_changed=[],
             rollback_handle=None,
