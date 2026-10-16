@@ -23,12 +23,15 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
+
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
 
 # ---------------------------------------------------------------------------
 # Spec Pydantic models
@@ -44,6 +47,38 @@ _VALID_DATA_TYPES: set[str] = {
     "dateTime",
     "dateTime_",
 }
+
+
+_BARE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_TMDL_UNSAFE = re.compile(r"[\n\r'{}[\]]|//")
+
+
+def _check_identifier(value: str, field: str) -> str:
+    """Names are interpolated into TMDL source, so they must stay identifiers.
+
+    Spaces are legal in TMDL when the name is single-quoted, but a newline,
+    a quote, a bracket or a comment marker lets a caller append arbitrary
+    directives to the generated model.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"invalid {field}: expected a string")
+    if not value.strip():
+        raise ValueError(f"invalid {field}: must not be empty")
+    if len(value) > 128:
+        raise ValueError(f"invalid {field}: must be 128 characters or fewer")
+    if _TMDL_UNSAFE.search(value):
+        raise ValueError(
+            f"invalid {field} {value!r}; must not contain newlines, quotes, "
+            "brackets or comment markers"
+        )
+    return value
+
+
+def _quote_identifier(value: str) -> str:
+    """Emit a TMDL identifier, quoting it when it is not a bare name."""
+    if _BARE_IDENTIFIER.match(value):
+        return value
+    return f"'{value}'"
 
 
 class ColumnSpec(BaseModel):
@@ -62,6 +97,11 @@ class ColumnSpec(BaseModel):
             raise ValueError(f"invalid type {v!r}; expected one of {sorted(_VALID_DATA_TYPES)}")
         return v
 
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        return _check_identifier(v, "column name")
+
 
 class MeasureSpec(BaseModel):
     """One DAX measure attached to a table."""
@@ -70,6 +110,11 @@ class MeasureSpec(BaseModel):
     expression: str
     format_string: str | None = None
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        return _check_identifier(v, "measure name")
 
 
 class TableSpec(BaseModel):
@@ -81,6 +126,11 @@ class TableSpec(BaseModel):
     is_date_table: bool = False
     date_column: str | None = None
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        return _check_identifier(v, "table name")
 
 
 class RelationshipSpec(BaseModel):
@@ -108,6 +158,11 @@ class RelationshipSpec(BaseModel):
             raise ValueError(f"invalid cross_filter {v!r}")
         return v
 
+    @field_validator("from_table", "to_table", "from_column", "to_column")
+    @classmethod
+    def _check_refs(cls, v: str) -> str:
+        return _check_identifier(v, "relationship reference")
+
 
 class HierarchySpec(BaseModel):
     """One user-defined hierarchy."""
@@ -115,6 +170,16 @@ class HierarchySpec(BaseModel):
     table: str
     name: str
     levels: list[str]
+
+    @field_validator("table", "name")
+    @classmethod
+    def _check_refs(cls, v: str) -> str:
+        return _check_identifier(v, "hierarchy reference")
+
+    @field_validator("levels")
+    @classmethod
+    def _check_levels(cls, v: list[str]) -> list[str]:
+        return [_check_identifier(level, "hierarchy level") for level in v]
 
 
 class ModelSpec(BaseModel):
@@ -195,16 +260,16 @@ def _format_string_for_type(t: str) -> str:
 def _render_table(table: TableSpec) -> str:
     """Render one table block in TMDL."""
     parts: list[str] = []
-    parts.append(f"table {table.name}")
+    parts.append(f"table {_quote_identifier(table.name)}")
     if table.description:
         parts.append(f"    description: {json.dumps(table.description)}")
     if table.is_date_table:
         parts.append("    isDateTable: true")
         if table.date_column:
-            parts.append(f"    dateColumn: {table.date_column}")
+            parts.append(f"    dateColumn: {_quote_identifier(table.date_column)}")
 
     for col in table.columns:
-        parts.append(f"    column {col.name}")
+        parts.append(f"    column {_quote_identifier(col.name)}")
         parts.append(f"        dataType: {col.type}")
         if col.format_string:
             parts.append(f"        formatString: {json.dumps(col.format_string)}")
@@ -218,7 +283,7 @@ def _render_table(table: TableSpec) -> str:
             parts.append(f"        description: {json.dumps(col.description)}")
 
     for m in table.measures:
-        parts.append(f"    measure {m.name}")
+        parts.append(f"    measure {_quote_identifier(m.name)}")
         # Multi-line DAX expressions: indent under measure.
         body_lines = m.expression.replace("\r\n", "\n").split("\n")
         parts.append(f"        expression: {body_lines[0]}")
@@ -236,8 +301,9 @@ def _render_table(table: TableSpec) -> str:
 def _render_relationship(rel: RelationshipSpec) -> str:
     """Render one relationship block."""
     return (
-        f"relationship {rel.from_table}[{rel.from_column}] -> "
-        f"{rel.to_table}[{rel.to_column}]\n"
+        f"relationship {_quote_identifier(rel.from_table)}"
+        f"[{_quote_identifier(rel.from_column)}] -> "
+        f"{_quote_identifier(rel.to_table)}[{_quote_identifier(rel.to_column)}]\n"
         f"    cardinality: {rel.cardinality}\n"
         f"    crossFilterBehavior: {rel.cross_filter}\n"
         f"    isActive: {str(rel.is_active).lower()}\n"
@@ -246,8 +312,8 @@ def _render_relationship(rel: RelationshipSpec) -> str:
 
 def _render_hierarchy(h: HierarchySpec) -> str:
     """Render a hierarchy block (added at the end of its table)."""
-    levels = "\n".join(f"        level {lvl}" for lvl in h.levels)
-    return f"    hierarchy {h.name}\n{levels}\n"
+    levels = "\n".join(f"        level {_quote_identifier(lvl)}" for lvl in h.levels)
+    return f"    hierarchy {_quote_identifier(h.name)}\n{levels}\n"
 
 
 def render_tmdl(spec: ModelSpec) -> str:
@@ -493,7 +559,7 @@ def create_semantic_model_from_schema(
             warnings=["dry_run=False requires output_pbip_path"],
         )
 
-    pbip = Path(output_pbip_path)
+    pbip = validate_write_path(output_pbip_path)
     tmdl = render_tmdl(spec)
 
     # Optional seam: if a TE/TOM-compatible modeling_engine is

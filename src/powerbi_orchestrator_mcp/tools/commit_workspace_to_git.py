@@ -35,6 +35,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
+
 # 50 MB default cap per Fabric Git Integration docs.
 _LARGE_FILE_BYTES_DEFAULT = 50 * 1024 * 1024
 
@@ -240,7 +242,7 @@ def commit_workspace_to_git(
     large_warnings: list[str] = []
     conflicts: list[str] = []
 
-    repo_path = Path(output_repo_path)
+    repo_path = validate_write_path(output_repo_path)
     if not (repo_path / ".git").exists():
         return CommitWorkspaceToGitResult(
             dry_run=dry_run,

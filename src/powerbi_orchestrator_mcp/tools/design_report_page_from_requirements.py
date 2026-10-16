@@ -21,6 +21,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
 from powerbi_orchestrator_mcp.viz.visual_suggester import (
     SuggesterInput,
     suggest,
@@ -136,7 +137,7 @@ def design_report_page_from_requirements(
     inspector: Any = None,  # noqa: ARG001
 ) -> DesignReportPageResult:
     """Scaffold a full PBIR page from an NL brief."""
-    pbip = Path(pbip_path)
+    pbip = validate_write_path(pbip_path)
     if not pbip.exists():
         return DesignReportPageResult(
             page_name=page_name,

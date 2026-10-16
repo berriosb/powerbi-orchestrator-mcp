@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from powerbi_orchestrator_mcp.tools.apply_theme_and_accessibility_rules import (
     OKABE_ITO_PALETTE,
 )
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
 
 
 class CreateReportFromDataset(BaseModel):
@@ -64,7 +65,7 @@ def create_report_from_dataset(
             "rollback_handle": None,
         }
 
-    pbip_root = Path(pbip_path)
+    pbip_root = validate_write_path(pbip_path)
     if not pbip_root.exists():
         return {
             "success": False,

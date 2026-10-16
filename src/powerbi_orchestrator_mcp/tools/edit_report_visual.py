@@ -11,10 +11,11 @@ import contextlib
 import json
 import os
 import tempfile
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
 
 
 class EditReportVisual(BaseModel):
@@ -57,7 +58,7 @@ def edit_report_visual(
     Atomic write: serialize the modified page.json to a temp file in
     the same directory, then `os.replace()` it over the original.
     """
-    pbip_root = Path(pbip_path)
+    pbip_root = validate_write_path(pbip_path)
     if not pbip_root.exists():
         return {
             "success": False,
