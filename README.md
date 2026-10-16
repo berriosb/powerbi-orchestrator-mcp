@@ -50,6 +50,15 @@ python scripts/verify_mcp_server.py
 That's it — your LLM now sees 28 tools for Power BI / Fabric. See the
 [`examples/`](./examples/) directory for 3 reproducible workflows.
 
+> **Antes de usarlo con datos de clientes**, la suite de tests no cubre nada
+> contra una API real. Sigue
+> [`docs/pilot-validation.md`](./docs/pilot-validation.md) y ejecuta el
+> preflight de solo lectura:
+>
+> ```bash
+> python scripts/pilot_check.py --workspace-id <ws-id> --dataset-id <ds-id>
+> ```
+
 ---
 
 ## Defaults de seguridad (léelo antes de tocar producción)
