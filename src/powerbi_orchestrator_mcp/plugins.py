@@ -63,12 +63,36 @@ LLM can show users "your plugin X failed to load" with a hint.
 from __future__ import annotations
 
 import importlib.util
+import os
+import stat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from powerbi_orchestrator_mcp.validation.pre_deploy_gate import GateProfile
+
+PLUGINS_ENV_VAR = "PBI_ENABLE_PLUGINS"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def plugins_enabled() -> bool:
+    """Plugin loading is opt-in.
+
+    Loading a plugin executes arbitrary Python. Making it the default meant
+    that anyone able to write a ``.py`` file into the plugin directory got
+    code execution inside the MCP server, with no signal to the operator.
+    """
+    return os.environ.get(PLUGINS_ENV_VAR, "").strip().lower() in _TRUTHY
+
+
+def directory_is_private(path: Path) -> bool:
+    """True when only the owner can write to ``path``."""
+    try:
+        mode = path.stat().st_mode
+    except OSError:
+        return False
+    return not bool(mode & (stat.S_IWGRP | stat.S_IWOTH))
 
 
 def _resolve_plugin_dir() -> Path:
@@ -186,16 +210,59 @@ def _load_one(path: Path) -> LoadedPlugin | PluginLoadError:
 def load_plugins(plugin_dir: Path | None = None) -> PluginRegistry:
     """Discover + load all plugins from ``plugin_dir``.
 
-    If the directory doesn't exist, returns an empty registry.
+    Returns an empty registry unless plugins are explicitly enabled with
+    ``PBI_ENABLE_PLUGINS``. When the directory exists but is writable by
+    other users, loading is refused: a shared plugin directory would hand
+    code execution to any local account.
+
     Failures are collected, not raised: one broken plugin doesn't
     take the others down.
     """
     target = plugin_dir or _resolve_plugin_dir()
     registry = PluginRegistry()
+
+    if not plugins_enabled():
+        if target.exists() and any(target.glob("*.py")):
+            registry.errors.append(
+                PluginLoadError(
+                    name="<plugins>",
+                    path=target,
+                    error=(
+                        f"plugins are present but not loaded: set {PLUGINS_ENV_VAR}=1 "
+                        "to enable them (loading a plugin executes Python code)"
+                    ),
+                )
+            )
+        return registry
+
     if not target.exists():
         return registry
+
+    if not directory_is_private(target):
+        registry.errors.append(
+            PluginLoadError(
+                name="<plugins>",
+                path=target,
+                error=(
+                    f"plugin directory is group- or world-writable; refusing to load "
+                    f"plugins from {target}. Restrict it to the owner "
+                    f"(chmod 700 {target}) or point PBI_ORCHESTRATOR_HOME elsewhere"
+                ),
+            )
+        )
+        return registry
+
     for path in sorted(target.glob("*.py")):
         if path.name == "__init__.py":
+            continue
+        if path.is_symlink() or not directory_is_private(path):
+            registry.errors.append(
+                PluginLoadError(
+                    name=path.stem,
+                    path=path,
+                    error="refusing to load a symlinked or non-owner-only plugin file",
+                )
+            )
             continue
         result = _load_one(path)
         if isinstance(result, LoadedPlugin):
@@ -220,10 +287,13 @@ def merge_gate_profiles(
 
 
 __all__ = [
+    "PLUGINS_ENV_VAR",
     "LoadedPlugin",
     "PLUGIN_DIR",
     "PluginLoadError",
     "PluginRegistry",
+    "directory_is_private",
     "load_plugins",
     "merge_gate_profiles",
+    "plugins_enabled",
 ]
