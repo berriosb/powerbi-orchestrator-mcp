@@ -81,6 +81,11 @@ Además:
   defecto (techo 10 000) y marca el truncamiento.
 - **Scopes por tool** sobre transporte HTTP: las tools mutantes requieren
   `Tools.Write` (`Tools.Admin` los concede todos).
+- **Los planes tienen dueño.** Cada plan registra la identidad que lo creó y
+  solo su dueño puede ejecutarlo; conocer el `plan_id` no alcanza.
+- **Plugins desactivados por defecto.** Cargar un plugin ejecuta Python
+  arbitrario, así que requiere `PBI_ENABLE_PLUGINS=1` y un directorio
+  escribible solo por el propietario.
 
 Detalle completo del modelo de amenazas en [`SECURITY.md`](./SECURITY.md),
 incluidos los controles que **no** existen.

@@ -84,6 +84,19 @@ class SyncGitToWorkspaceResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _is_inside(path: Path, root: Path) -> bool:
+    """True when ``path`` resolves to a location inside ``root``.
+
+    A symlink tracked in a third-party repo can otherwise point at any file
+    on the host, whose contents would then be deployed to Fabric.
+    """
+    try:
+        resolved = path.resolve()
+        return resolved.is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
 def _list_pbip_files(repo_path: Path, ref: str) -> list[Path]:
     """Return PBIP files in the repo at the given ref.
 
@@ -357,6 +370,9 @@ def sync_git_to_workspace(
         if not path.exists():
             # ref-only path (commit not checked out locally); skip for v3
             warnings.append(f"ref-only path {path}; cannot deploy without local checkout")
+            continue
+        if path.is_symlink() or not _is_inside(path, repo):
+            warnings.append(f"skipping {path}: not a regular file inside the repository")
             continue
         local_blob = path.read_text(encoding="utf-8", errors="replace")
         ws_match = workspace_items.get((item_type, item_name))

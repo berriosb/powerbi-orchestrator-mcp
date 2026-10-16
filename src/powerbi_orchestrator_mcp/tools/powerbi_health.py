@@ -124,6 +124,29 @@ async def powerbi_health(
         )
     )
 
+    from powerbi_orchestrator_mcp.plugins import PLUGINS_ENV_VAR, load_plugins, plugins_enabled
+
+    plugin_registry = load_plugins()
+    if not plugins_enabled():
+        detail = (
+            "disabled by default; set "
+            f"{PLUGINS_ENV_VAR}=1 to load plugins from the plugin directory"
+        )
+        if plugin_registry.errors:
+            detail += f" ({plugin_registry.errors[0].error})"
+            checks.append(HealthCheck(name="plugins", ok=False, detail=detail))
+        else:
+            checks.append(HealthCheck(name="plugins", ok=True, detail=detail))
+    else:
+        ok = not plugin_registry.has_errors()
+        loaded = len(plugin_registry.loaded)
+        detail = (
+            f"{loaded} plugin(s) loaded, {len(plugin_registry.errors)} error(s)"
+            if ok
+            else "; ".join(err.error for err in plugin_registry.errors)
+        )
+        checks.append(HealthCheck(name="plugins", ok=ok, detail=detail))
+
     # Execution store.
     try:
         # Cheap: select COUNT(*) via direct SQL (no Pydantic roundtrip).

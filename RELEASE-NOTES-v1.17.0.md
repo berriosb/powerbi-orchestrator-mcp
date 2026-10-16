@@ -183,10 +183,19 @@ Cada corrección tiene test de regresión: se añadieron 6 archivos de test
 
 ## Pendiente (no bloqueante)
 
-- Sin columna de propietario en `plans.db`: cualquier usuario autenticado
-  puede ejecutar un `plan_id` que conozca o adivine.
-- `sync_git_to_workspace` sigue symlinks dentro del repo al leer blobs.
-- `plugins.py` ejecuta cualquier `*.py` del directorio de plugins, sin
-  verificación de firma.
-- Variable de entorno con typo mantenida como "legacy":
-  `PBI_ORCHestrATOR_AUDIT_SECRET`.
+Resuelto en la tanda posterior al lanzamiento de 1.17.0:
+
+- ~~Sin columna de propietario en `plans.db`~~ → corregido después.
+- ~~`sync_git_to_workspace` sigue symlinks dentro del repo al leer blobs~~
+  → corregido después.
+- ~~`plugins.py` ejecuta cualquier `*.py`~~ → ahora es opt-in con
+  `PBI_ENABLE_PLUGINS=1`, directorio owner-only y sin symlinks.
+- ~~Variable de entorno con typo mantenida como "legacy"~~ → eliminada.
+
+Lo que sigue abierto:
+
+- La propiedad de planes se apoya en el SQLite local y en los claims
+  presentados al crear el plan; no revalida que sigan vigentes.
+- No hay verificación de firma de código para plugins: uno que el operador
+  habilita ejecuta con acceso completo al intérprete.
+- La cadena HMAC sigue siendo tamper-evident, no tamper-proof.

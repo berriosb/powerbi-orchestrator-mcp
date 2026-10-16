@@ -62,6 +62,11 @@ We aim to:
   `AZURE_CLIENT_SECRET`) or from a workload identity by `azure-identity`;
   no MCP tool signature takes a secret, so credentials never enter the
   JSON-RPC payload, the model context, or client logs.
+- It **does not load plugins unless explicitly enabled**. Plugin execution
+  requires `PBI_ENABLE_PLUGINS`, and even then the plugin directory must be
+  writable only by the owner and contain no symlinks.
+- It **does not let one principal run another's plan**. Plans record the
+  identity that created them and lookups are scoped to the caller.
 - It **does not log raw DAX outputs or PII unless** the caller opts into a
   higher `max_rows`; audit payloads pass through `CloudAuditLog`, which
   redacts bearer tokens, connection strings and email addresses before
@@ -98,6 +103,9 @@ We aim to:
 | Elicitation before writes (configurable) | `orchestrator/elicitation.py` |
 | Write-path containment (`PBI_WORKSPACE_ROOT`) | `validation/path_safety.py` |
 | Per-tool scope enforcement (HTTP transport) | `orchestrator/authorization.py` |
+| Plan ownership (object-level authorization) | `orchestrator/plan_store.py` |
+| Symlink refusal when reading repo files | `tools/sync_git_to_workspace.py` |
+| Opt-in, owner-only plugin loading | `plugins.py` |
 | `dry_run=True` default on cloud write tools | `tools/deploy_to_workspace.py`, `tools/run_refresh.py` |
 | Row cap on DAX results (`max_rows`) | `orchestrator/server.py` |
 | Atomic file writes (temp + rename) | `tools/edit_report_visual.py`, `tools/edit_report_visual.py` |
@@ -107,10 +115,16 @@ We aim to:
 
 Stated explicitly so nobody assumes a control that is not there:
 
+- Plan ownership is **per-process state in a local SQLite file**, not an
+  enterprise identity provider. It binds plans to the claims presented at
+  creation time; it does not re-validate that those claims are still valid.
+
 - There is **no `--readonly` flag**. Write tools are made safe by
   `dry_run=True` defaults and per-tool scopes, not by a global mode switch.
-- There is **no code-signing or signature check for plugins**;
-  `plugins.py` executes any `*.py` found in the plugins directory.
+- There is **no code-signing or signature check for plugins**. Plugin loading
+  is opt-in via `PBI_ENABLE_PLUGINS`, refuses directories that are group- or
+  world-writable, and refuses symlinked plugin files, but a plugin that an
+  operator deliberately enables runs with full interpreter access.
 - The HMAC chain is **tamper-evident, not tamper-proof**: an attacker with
   write access to the audit directory can rewrite both the database and the
   anchor file. Ship the audit directory on append-only storage if you need

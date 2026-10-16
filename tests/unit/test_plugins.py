@@ -12,7 +12,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from powerbi_orchestrator_mcp.plugins import (
+    PLUGINS_ENV_VAR,
     LoadedPlugin,
     PluginLoadError,
     PluginRegistry,
@@ -23,6 +26,12 @@ from powerbi_orchestrator_mcp.validation.pre_deploy_gate import (
     BUILTIN_PROFILES,
     GateProfile,
 )
+
+
+@pytest.fixture(autouse=True)
+def _enable_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Loading is opt-in; these tests cover the loader once it is enabled."""
+    monkeypatch.setenv(PLUGINS_ENV_VAR, "1")
 
 
 def _write_plugin(

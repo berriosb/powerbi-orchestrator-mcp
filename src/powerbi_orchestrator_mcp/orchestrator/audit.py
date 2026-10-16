@@ -38,7 +38,6 @@ def _resolve_audit_dir() -> Path:
 AUDIT_DIR = _resolve_audit_dir()
 AUDIT_DB = AUDIT_DIR / "audit.db"
 _HMAC_KEY_ENV = "PBI_ORCHESTRATOR_AUDIT_SECRET"
-_LEGACY_HMAC_KEY_ENV = "PBI_ORCHestrATOR_AUDIT_SECRET"
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +74,13 @@ class AuditVerifyResult(BaseModel):
 
 
 def _get_hmac_key() -> bytes:
-    """Get the HMAC secret key from env or generate one."""
-    secret = os.environ.get(_HMAC_KEY_ENV) or os.environ.get(_LEGACY_HMAC_KEY_ENV)
+    """Get the HMAC secret key from the environment or generate one.
+
+    Only ``PBI_ORCHESTRATOR_AUDIT_SECRET`` is recognised. A misspelled
+    variant used to be accepted silently, which made a misconfigured
+    deployment look configured.
+    """
+    secret = os.environ.get(_HMAC_KEY_ENV)
     if secret:
         return secret.encode("utf-8")
     key_path = AUDIT_DIR / ".audit_key"
