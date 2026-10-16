@@ -13,12 +13,12 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.17.0 — Beta. 28 tools, 88% cobertura, enterprise hardening
-(per-tool scopes, write-path containment, full audit trail).
+**Status:** v1.18.0 — Beta. 28 tools, 88% cobertura, enterprise hardening
+(per-tool scopes, write-path containment, plan ownership, full audit trail).
 Every state-changing tool is safe by default: `dry_run=True` on
 `deploy_to_workspace` and `run_refresh`, per-step confirmation on
 `apply_plan`, and `Tools.Write` required for mutating tools over HTTP.
-See [release notes](./RELEASE-NOTES-v1.17.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./RELEASE-NOTES-v1.18.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
