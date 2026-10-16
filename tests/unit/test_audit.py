@@ -85,11 +85,18 @@ class TestHmacKey:
         key = _get_hmac_key()
         assert key == b"my-env-secret"
 
-    def test_legacy_env_var_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_misspelled_env_var_is_ignored(
+        self, monkeypatch: pytest.MonkeyPatch, isolated_audit: tuple[Path, Path]
+    ) -> None:
         monkeypatch.delenv("PBI_ORCHESTRATOR_AUDIT_SECRET", raising=False)
         monkeypatch.setenv("PBI_ORCHestrATOR_AUDIT_SECRET", "legacy-secret")
+        audit_dir, _ = isolated_audit
+
         key = _get_hmac_key()
-        assert key == b"legacy-secret"
+
+        assert key != b"legacy-secret"
+        assert len(key) == 32
+        assert (audit_dir / ".audit_key").exists()
 
     def test_generates_and_persists_key(self, isolated_audit: tuple[Path, Path]) -> None:
         audit_dir, _ = isolated_audit
