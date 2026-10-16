@@ -56,6 +56,8 @@ class RegressionResult(BaseModel):
     total_queries: int
     passed_queries: int
     failed_queries: int
+    executed: bool = True
+    message: str | None = None
     diffs: list[QueryDiff] = Field(default_factory=list)
 
 
