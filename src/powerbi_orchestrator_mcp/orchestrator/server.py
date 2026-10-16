@@ -22,7 +22,7 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import BaseModel, Field
@@ -31,6 +31,8 @@ from powerbi_orchestrator_mcp import __version__
 from powerbi_orchestrator_mcp.cloud.auth import AuthConfig, FabricCredential
 from powerbi_orchestrator_mcp.cloud.fabric_client import FabricClient
 from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog
+from powerbi_orchestrator_mcp.orchestrator.audit_guard import audited
+from powerbi_orchestrator_mcp.orchestrator.authorization import requires_scope
 from powerbi_orchestrator_mcp.orchestrator.context import (
     EngineStatus,
     SessionContext,
@@ -336,6 +338,7 @@ def _detect_engine_warnings(engines: dict[str, EngineStatus]) -> list[str]:
 
 
 @mcp.tool()
+@audited("connect_target")
 async def connect_target(
     target_type: str,
     target_ref: str,
@@ -704,6 +707,8 @@ async def _rollback_plan(
 
 
 @mcp.tool()
+@requires_scope("apply_plan")
+@audited("apply_plan")
 async def apply_plan(
     plan_id: str,
     dry_run: bool = True,
@@ -891,6 +896,8 @@ async def audit_model_and_report(
 
 
 @mcp.tool()
+@requires_scope("deploy_to_workspace")
+@audited("deploy_to_workspace", target_arg="workspace_id")
 async def deploy_to_workspace(
     pbip_path: str,
     workspace_id: str,
@@ -900,7 +907,7 @@ async def deploy_to_workspace(
     auth_mode: str = "interactive",
     tenant_id: str | None = None,
     client_id: str | None = None,
-    client_secret: str | None = None,
+    dry_run: bool = True,
     mock: bool = False,
 ) -> dict[str, Any]:
     """Deploy a PBIP project to a Fabric/Power BI workspace with pre-deploy gates.
@@ -919,7 +926,9 @@ async def deploy_to_workspace(
         auth_mode: "interactive" (default, browser login) or "service_principal".
         tenant_id: Azure AD tenant ID.
         client_id: Azure AD client ID.
-        client_secret: Azure AD client secret.
+        dry_run: When True (default) evaluates the gate and reports the planned
+            operations WITHOUT calling any Fabric API. Pass dry_run=False to
+            actually publish.
         mock: If True, simulate deployment without calling external APIs.
 
     Returns:
@@ -937,7 +946,7 @@ async def deploy_to_workspace(
         auth_mode=auth_mode,
         tenant_id=tenant_id,
         client_id=client_id,
-        client_secret=client_secret,
+        dry_run=dry_run,
         mock=mock,
     )
     out = result.model_dump(mode="json")
@@ -947,6 +956,8 @@ async def deploy_to_workspace(
 
 
 @mcp.tool()
+@requires_scope("run_refresh")
+@audited("run_refresh", target_arg="dataset_id")
 async def run_refresh(
     workspace_id: str,
     dataset_id: str,
@@ -956,7 +967,7 @@ async def run_refresh(
     auth_mode: str = "interactive",
     tenant_id: str | None = None,
     client_id: str | None = None,
-    client_secret: str | None = None,
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Trigger, monitor, and optionally wait for a Power BI dataset refresh.
 
@@ -974,7 +985,8 @@ async def run_refresh(
         auth_mode: "interactive" or "service_principal".
         tenant_id: Azure AD tenant ID.
         client_id: Azure AD client ID.
-        client_secret: Azure AD client secret.
+        dry_run: When True (default) no refresh is triggered and status is
+            "DryRun". Pass dry_run=False to actually refresh.
 
     Returns:
         Dict with refresh status, duration, error details, and rollback status if applicable.
@@ -988,17 +1000,24 @@ async def run_refresh(
         auth_mode=auth_mode,
         tenant_id=tenant_id,
         client_id=client_id,
-        client_secret=client_secret,
+        dry_run=dry_run,
     )
     return result.model_dump(mode="json")
 
 
 @mcp.tool()
+@requires_scope("run_dax_regression")
+@audited("run_dax_regression")
 async def run_dax_regression(
     baseline_path: str,
     queries_json: Any = "[]",
     tolerance_pct: float = 0.1,
-    query_executor: Any = None,
+    workspace_id: str | None = None,
+    dataset_id: str | None = None,
+    auth_mode: str = "interactive",
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+    fabric_client: Any = None,
 ) -> dict[str, Any]:
     """Run DAX queries against a baseline and assert regression tolerance.
 
@@ -1011,22 +1030,128 @@ async def run_dax_regression(
         baseline_path: Path to the JSON baseline file containing expected results.
         queries_json: Optional list or JSON string of DAX queries to execute.
         tolerance_pct: Maximum allowed percentage difference between actual and expected numeric values (default: 0.1%).
-        query_executor: Optional custom query execution callable.
+        workspace_id: Fabric / Power BI workspace ID holding the dataset.
+        dataset_id: Published semantic model / dataset ID to query.
+        auth_mode: "interactive" or "service_principal".
+        tenant_id: Azure AD tenant ID.
+        client_id: Azure AD client ID.
+        fabric_client: Optional injected FabricClient instance (for testing).
 
     Returns:
         Dict containing diff summary, passed/failed queries, and variance details.
+        ``executed=False`` means no query ran and no verdict is available.
     """
     queries = _parse_json_arg(queries_json, default=None)
-    result = await _dax_regress(
-        baseline_path=baseline_path,
-        queries=queries,
-        tolerance_pct=tolerance_pct,
-        query_executor=query_executor,
-    )
+
+    executor: Any = None
+    close_client = False
+    if workspace_id and dataset_id:
+        if fabric_client is not None:
+            client = fabric_client
+        else:
+            config = AuthConfig.from_env_or_args(
+                mode=auth_mode,
+                tenant_id=tenant_id,
+                client_id=client_id,
+            )
+            client = FabricClient(FabricCredential(config))
+            close_client = True
+        executor = _fabric_dax_executor(client, workspace_id, dataset_id)
+
+    try:
+        result = await _dax_regress(
+            baseline_path=baseline_path,
+            queries=queries,
+            tolerance_pct=tolerance_pct,
+            query_executor=executor,
+        )
+    finally:
+        if close_client and hasattr(client, "aclose"):
+            await client.aclose()
     return result.model_dump(mode="json")
 
 
+def _fabric_dax_executor(client: Any, workspace_id: str, dataset_id: str) -> Any:
+    """Build a query executor backed by the Fabric executeQueries endpoint."""
+
+    async def _run(query: str) -> list[dict[str, Any]]:
+        payload = await client.execute_queries(
+            workspace_id=workspace_id,
+            dataset_id=dataset_id,
+            queries=[{"query": query}],
+        )
+        rows: list[dict[str, Any]] = []
+        for result in payload.get("results", []) if isinstance(payload, dict) else []:
+            if not isinstance(result, dict):
+                continue
+            for table in result.get("tables", []) or []:
+                if not isinstance(table, dict):
+                    continue
+                columns = [c.get("name") for c in table.get("columns", []) or []]
+                for row in table.get("rows", []) or []:
+                    if isinstance(row, list):
+                        rows.append(dict(zip(columns, row, strict=False)))
+                    else:
+                        rows.append({"value": row})
+        return rows
+
+    return _run
+
+
+DAX_ROW_LIMIT_CEILING = 10_000
+_DAX_DEFAULT_MAX_ROWS = 1_000
+
+
+def _cap_dax_rows(payload: Any, max_rows: int) -> tuple[dict[str, Any], bool]:
+    """Truncate tabular rows in a Power BI query response to ``max_rows``.
+
+    Returns ``(payload, truncated)``. Row data is the channel through which
+    business records reach the model context, so an unbounded result can
+    exfiltrate a full customer table in one tool call.
+    """
+    if not isinstance(payload, dict):
+        return {}, False
+    limit = max(1, min(int(max_rows), DAX_ROW_LIMIT_CEILING))
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return dict(payload), False
+    budget = limit
+    truncated = False
+    new_results: list[Any] = []
+    for result in results:
+        if not isinstance(result, dict):
+            new_results.append(result)
+            continue
+        tables = result.get("tables")
+        if not isinstance(tables, list):
+            new_results.append(result)
+            continue
+        new_tables: list[Any] = []
+        for table in tables:
+            if not isinstance(table, dict) or not isinstance(table.get("rows"), list):
+                new_tables.append(table)
+                continue
+            rows = table["rows"]
+            kept = rows[:budget] if budget > 0 else []
+            if len(kept) < len(rows):
+                truncated = True
+            budget -= len(kept)
+            new_table = dict(table)
+            new_table["rows"] = kept
+            new_tables.append(new_table)
+        new_result = dict(result)
+        new_result["tables"] = new_tables
+        new_results.append(new_result)
+    out = dict(payload)
+    out["results"] = new_results
+    if truncated:
+        out["rows_truncated"] = True
+        out["rows_limit"] = limit
+    return out, truncated
+
+
 @mcp.tool()
+@audited("execute_dax_query", target_arg="dataset_id")
 async def execute_dax_query(
     workspace_id: str,
     dataset_id: str,
@@ -1035,7 +1160,7 @@ async def execute_dax_query(
     auth_mode: str = "interactive",
     tenant_id: str | None = None,
     client_id: str | None = None,
-    client_secret: str | None = None,
+    max_rows: int = _DAX_DEFAULT_MAX_ROWS,
     fabric_client: Any = None,
 ) -> dict[str, Any]:
     """Execute a DAX query against a published Power BI semantic model / Fabric dataset.
@@ -1053,7 +1178,9 @@ async def execute_dax_query(
         auth_mode: "interactive" (default, browser login) or "service_principal".
         tenant_id: Azure AD tenant ID (required for service_principal).
         client_id: Azure AD client ID (for service_principal).
-        client_secret: Azure AD client secret (for service_principal).
+        max_rows: Maximum number of rows returned to the caller (default 1000,
+            hard ceiling 10000). Prevents bulk extraction of business records
+            into the model context.
         fabric_client: Optional injected FabricClient instance (for testing).
 
     Returns:
@@ -1067,7 +1194,6 @@ async def execute_dax_query(
             mode=auth_mode,
             tenant_id=tenant_id,
             client_id=client_id,
-            client_secret=client_secret,
         )
         cred = FabricCredential(config)
         client = FabricClient(cred)
@@ -1086,7 +1212,8 @@ async def execute_dax_query(
             queries=[{"query": formatted_query}],
             impersonated_user_name=impersonated_user_name,
         )
-        return cast(dict[str, Any], result)
+        capped, _truncated = _cap_dax_rows(result, max_rows)
+        return capped
     finally:
         if close_client and hasattr(client, "aclose"):
             await client.aclose()
@@ -1142,6 +1269,7 @@ async def pre_deploy_check(
 
 
 @mcp.tool()
+@audited("generate_data_dictionary")
 async def generate_data_dictionary(
     pbip_path: str,
     output_path: str | None = None,
@@ -1171,6 +1299,8 @@ async def generate_data_dictionary(
 
 
 @mcp.tool()
+@requires_scope("apply_theme_and_accessibility_rules")
+@audited("apply_theme_and_accessibility_rules")
 async def apply_theme_and_accessibility_rules(
     pbip_path: str,
     palette: str = "okabe_ito",
@@ -1208,6 +1338,8 @@ async def apply_theme_and_accessibility_rules(
 
 
 @mcp.tool()
+@requires_scope("add_measure_with_validation")
+@audited("add_measure_with_validation")
 async def add_measure_with_validation(
     target: str,
     measure_name: str,
@@ -1263,6 +1395,8 @@ async def add_measure_with_validation(
 
 
 @mcp.tool()
+@requires_scope("create_report_from_dataset")
+@audited("create_report_from_dataset")
 async def create_report_from_dataset(
     pbip_path: str,
     page_name: str = "Overview",
@@ -1300,6 +1434,8 @@ async def create_report_from_dataset(
 
 
 @mcp.tool()
+@requires_scope("edit_report_visual")
+@audited("edit_report_visual")
 async def edit_report_visual(
     pbip_path: str,
     page_name: str,
@@ -1356,6 +1492,8 @@ async def edit_report_visual(
 
 
 @mcp.tool()
+@requires_scope("refactor_to_calculation_groups")
+@audited("refactor_to_calculation_groups")
 async def refactor_to_calculation_groups(
     target: str,
     min_candidates: int = 3,
@@ -1432,6 +1570,8 @@ async def select_visuals_for_kpis(
 
 
 @mcp.tool()
+@requires_scope("design_report_page_from_requirements")
+@audited("design_report_page_from_requirements")
 async def design_report_page_from_requirements(
     pbip_path: str,
     brief: str,
@@ -1527,6 +1667,7 @@ async def audit_report_ux_and_storytelling(
 
 
 @mcp.tool()
+@audited("screenshot_report_pages")
 async def screenshot_report_pages(
     pbip_path: str,
     pages: list[str] | None = None,
@@ -1570,6 +1711,8 @@ async def screenshot_report_pages(
 
 
 @mcp.tool()
+@requires_scope("create_semantic_model_from_schema")
+@audited("create_semantic_model_from_schema")
 async def create_semantic_model_from_schema(
     spec_yaml: str | None = None,
     spec_json: Any = None,
@@ -1606,6 +1749,8 @@ async def create_semantic_model_from_schema(
 
 
 @mcp.tool()
+@requires_scope("setup_rls_and_roles")
+@audited("setup_rls_and_roles")
 async def setup_rls_and_roles(
     target: str,
     spec_yaml: str | None = None,
@@ -1645,6 +1790,8 @@ async def setup_rls_and_roles(
 
 
 @mcp.tool()
+@requires_scope("promote_in_pipeline")
+@audited("promote_in_pipeline")
 async def promote_in_pipeline(
     pipeline_id: str,
     source_stage: str = "dev",
@@ -1686,6 +1833,8 @@ async def promote_in_pipeline(
 
 
 @mcp.tool()
+@requires_scope("commit_workspace_to_git")
+@audited("commit_workspace_to_git")
 async def commit_workspace_to_git(
     workspace_id: str,
     output_repo_path: str,
@@ -1723,6 +1872,8 @@ async def commit_workspace_to_git(
 
 
 @mcp.tool()
+@requires_scope("sync_git_to_workspace")
+@audited("sync_git_to_workspace")
 async def sync_git_to_workspace(
     repo_path: str,
     workspace_id: str,
@@ -1757,6 +1908,8 @@ async def sync_git_to_workspace(
 
 
 @mcp.tool()
+@requires_scope("set_sensitivity_labels")
+@audited("set_sensitivity_labels")
 async def set_sensitivity_labels(
     items: list[dict[str, str]],
     label_id: str,
