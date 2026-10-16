@@ -10,13 +10,12 @@
 
 | Version | Supported           |
 |---------|---------------------|
-| 1.10.x  | ✅ active           |
-| 1.9.x   | ✅ active           |
-| 1.8.x   | ✅ critical fixes only |
-| < 1.8   | ❌ unsupported       |
+| 1.16.x  | ✅ active           |
+| 1.15.x  | ✅ critical security fixes |
+| < 1.15  | ❌ upgrade required |
 
-We follow semver. Patch releases (1.10.x) get critical security fixes;
-minor releases (1.x) get full backports for one cycle.
+We follow semver. Patch releases get critical security fixes; the current
+minor receives full backports for one cycle.
 
 ---
 
@@ -58,14 +57,20 @@ We aim to:
 
 ### What the orchestrator **does not** do
 
-- It **does not** store credentials on disk. `DefaultAzureCredential`
-  is the only auth flow; tokens come from the Azure SDK / `az` CLI /
-  managed-identity endpoint.
-- It **does not** log raw DAX outputs or PII unless `audit_cloud`
-  explicitly tags them — and it redacts Bearer tokens, connection
-  strings, and emails by default (see `cloud/audit_cloud.py`).
-- It **does not** execute DAX locally (queries go to the dataset via
+- It **does not accept credentials as tool arguments**. Secrets are read from
+  the environment (`AZURE_CLIENT_ID` / `AZURE_TENANT_ID` /
+  `AZURE_CLIENT_SECRET`) or from a workload identity by `azure-identity`;
+  no MCP tool signature takes a secret, so credentials never enter the
+  JSON-RPC payload, the model context, or client logs.
+- It **does not log raw DAX outputs or PII unless** the caller opts into a
+  higher `max_rows`; audit payloads pass through `CloudAuditLog`, which
+  redacts bearer tokens, connection strings and email addresses before
+  persisting, and tool arguments are stored as a SHA-256 hash.
+- It **does not execute DAX locally** (queries go to the dataset via
   Power BI Service REST).
+- It **does not write outside its workspace root**. Write tools reject paths
+  outside `PBI_WORKSPACE_ROOT`, which defaults to the process working
+  directory, and additionally refuse system and credential directories.
 
 ### Out-of-scope
 
@@ -84,12 +89,32 @@ We aim to:
 |---|---|
 | Token-bucket rate limiting per tenant | `cloud/fabric_client.py` |
 | Circuit breaker (opens after 5 consecutive 5xx) | `cloud/fabric_client.py` |
+| Least-privilege token scopes (read vs write) | `cloud/fabric_client.py`, `cloud/auth.py` |
 | HMAC-chained audit log (tamper-evident) | `orchestrator/audit.py` |
-| PII / token redaction in audit log | `cloud/audit_cloud.py` |
+| Truncation detection via out-of-DB chain anchor | `orchestrator/audit.py` |
+| Owner-only permissions on plan/session/audit stores | `orchestrator/paths.py` |
+| PII / token redaction in audit log | `cloud/audit_cloud.py` (wired via `orchestrator/audit_guard.py`) |
+| Audit coverage for state-changing tools | `orchestrator/audit_guard.py` |
 | Elicitation before writes (configurable) | `orchestrator/elicitation.py` |
-| `--readonly` flag to disable all write tools | `orchestrator/server.py` (planned for v1.9.0) |
+| Write-path containment (`PBI_WORKSPACE_ROOT`) | `validation/path_safety.py` |
+| Per-tool scope enforcement (HTTP transport) | `orchestrator/authorization.py` |
+| `dry_run=True` default on cloud write tools | `tools/deploy_to_workspace.py`, `tools/run_refresh.py` |
+| Row cap on DAX results (`max_rows`) | `orchestrator/server.py` |
 | Atomic file writes (temp + rename) | `tools/edit_report_visual.py`, `tools/edit_report_visual.py` |
 | Cross-engine rollback | `orchestrator/rollback.py` |
+
+### Not implemented
+
+Stated explicitly so nobody assumes a control that is not there:
+
+- There is **no `--readonly` flag**. Write tools are made safe by
+  `dry_run=True` defaults and per-tool scopes, not by a global mode switch.
+- There is **no code-signing or signature check for plugins**;
+  `plugins.py` executes any `*.py` found in the plugins directory.
+- The HMAC chain is **tamper-evident, not tamper-proof**: an attacker with
+  write access to the audit directory can rewrite both the database and the
+  anchor file. Ship the audit directory on append-only storage if you need
+  resistance against a host-level attacker.
 
 ---
 
@@ -103,14 +128,20 @@ We aim to:
 
 ### What we log
 
-- Tool name + args (no secrets).
-- Result status (`success` / `failed` / `rolled_back`).
-- Duration.
-- Plan execution ID (UUID).
-- Target ID (workspace ID + dataset ID + report ID).
+- Tool name, with the operation recorded as `cloud:<tool>`.
+- A SHA-256 hash of the tool arguments — never the arguments themselves.
+- Result status (`success` / `failed` / `partial` / `dry_run` / `rolled_back`).
+- Known result identifiers (`item_id`, `dataset_id`, `refresh_id`,
+  `execution_id`, `plan_id`, `session_id`).
+- Target ID (workspace ID, dataset ID, report ID).
+- Raw error messages are **not** persisted: only the exception type is
+  recorded, and API response bodies are truncated before they can reach the
+  model context.
 
 Audit log entries are HMAC-chained — each row signs the previous row's
 hash, so a tampered entry breaks the chain and surfaces in verification.
+A separate anchor file records the expected tail of the chain, so deleting
+the most recent rows is detected as truncation instead of verifying clean.
 
 ---
 
@@ -118,12 +149,12 @@ hash, so a tampered entry breaks the chain and surfaces in verification.
 
 We pin all dependencies in `pyproject.toml` with upper bounds
 (e.g. `mcp[cli]>=1.0.0,<2.0.0`) so a breaking change upstream can't
-silently land.
+silently land, and `uv.lock` pins exact versions for reproducible installs.
 
 Automated supply-chain monitoring:
 
-- **Dependabot** (planned — see roadmap).
-- **pip-audit** in CI (planned).
+- **Dependabot** (`.github/dependabot.yml`).
+- **pip-audit** (`--strict`) runs in CI and is available as a dev extra.
 
 If you find a vulnerability in a transitive dependency, please report
 privately as above so we can coordinate disclosure.
@@ -141,8 +172,10 @@ The orchestrator assumes:
 3. The **PBIP** files come from a trusted source (the user / org's Git
    repo). Malicious PBIP files can contain arbitrary DAX that runs
    against the user's workspace.
-4. The **subprocess engines** (`powerbi-modeling-mcp`, `te`, etc.) are
-   pinned to specific versions via `engines/versions.py`.
+4. The **subprocess engines** (`powerbi-modeling-mcp`, `superbi-mcp`, `te`)
+   are trusted local binaries. npm-sourced engines are pinned to a specific
+   version in `engines/modeling_mcp.py`; install and vet them yourself rather
+   than trusting whatever is on `PATH`.
 
 If any of these assumptions break, the orchestrator is not the right
 defense layer.

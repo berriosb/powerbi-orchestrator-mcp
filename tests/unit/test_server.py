@@ -625,6 +625,119 @@ class TestMcpInstructions:
         assert "powerbi_health" in mcp.instructions
 
 
+class TestDaxRegressionHonesty:
+    @staticmethod
+    def _queries() -> str:
+        import json
+
+        return json.dumps([{"name": "q", "query": "EVALUATE S"}])
+
+    @pytest.mark.asyncio
+    async def test_no_executor_does_not_report_a_green_gate(self, tmp_path: Path) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import run_dax_regression
+
+        baseline = tmp_path / "baseline.json"
+        await run_dax_regression(str(baseline), self._queries())
+
+        res = await run_dax_regression(str(baseline))
+
+        assert res["executed"] is False
+        assert res["passed"] is False
+        assert res["total_queries"] == 0
+        assert "no_query_executor" in res["message"]
+
+    @pytest.mark.asyncio
+    async def test_executor_runs_queries_against_fabric(self, tmp_path: Path) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from powerbi_orchestrator_mcp.orchestrator.server import run_dax_regression
+
+        baseline = tmp_path / "baseline.json"
+        await run_dax_regression(str(baseline), self._queries())
+
+        client = MagicMock()
+        client.execute_queries = AsyncMock(
+            return_value={
+                "results": [{"tables": [{"columns": [{"name": "Total"}], "rows": [[42]]}]}]
+            }
+        )
+
+        res = await run_dax_regression(
+            str(baseline),
+            workspace_id="ws-1",
+            dataset_id="ds-1",
+            fabric_client=client,
+        )
+
+        assert res["executed"] is True
+        assert res["total_queries"] == 1
+        client.execute_queries.assert_awaited_once()
+
+    def test_fabric_executor_maps_columns_to_dicts(self) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+
+        from powerbi_orchestrator_mcp.orchestrator.server import _fabric_dax_executor
+
+        client = MagicMock()
+        client.execute_queries = AsyncMock(
+            return_value={
+                "results": [
+                    {
+                        "tables": [
+                            {
+                                "columns": [{"name": "Region"}, {"name": "Total"}],
+                                "rows": [["North", 10], ["South", 20]],
+                            }
+                        ]
+                    }
+                ]
+            }
+        )
+
+        rows = asyncio.run(_fabric_dax_executor(client, "ws", "ds")("EVALUATE X"))
+
+        assert rows == [
+            {"Region": "North", "Total": 10},
+            {"Region": "South", "Total": 20},
+        ]
+
+    def test_run_dax_regression_has_no_injectable_executor_arg(self) -> None:
+        import inspect
+
+        from powerbi_orchestrator_mcp.orchestrator.server import run_dax_regression
+
+        assert "query_executor" not in inspect.signature(run_dax_regression).parameters
+
+
+class TestNoSecretsInMcpSurface:
+    def test_no_mcp_tool_accepts_client_secret(self) -> None:
+        """A credential must never be a tool argument: it would travel in the
+        JSON-RPC payload into the model context and client logs."""
+        import inspect
+
+        from powerbi_orchestrator_mcp.orchestrator import server as server_mod
+
+        offenders = [
+            name
+            for name, obj in vars(server_mod).items()
+            if inspect.isfunction(obj)
+            and not name.startswith("_")
+            and "client_secret" in inspect.signature(obj).parameters
+        ]
+
+        assert offenders == []
+
+    def test_cloud_write_tools_default_to_dry_run(self) -> None:
+        import inspect
+
+        from powerbi_orchestrator_mcp.orchestrator import server as server_mod
+
+        for name in ("deploy_to_workspace", "run_refresh"):
+            params = inspect.signature(getattr(server_mod, name)).parameters
+            assert params["dry_run"].default is True, name
+
+
 class TestJsonArgParsing:
     def test_dict_input_returned_as_is(self) -> None:
         from powerbi_orchestrator_mcp.orchestrator.server import _parse_json_arg
@@ -708,3 +821,47 @@ class TestExecuteDaxQuery:
             queries=[{"query": "EVALUATE ROW('Count', 1)"}],
             impersonated_user_name="user@company.com",
         )
+
+    @pytest.mark.asyncio
+    async def test_caps_rows_to_max_rows(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from powerbi_orchestrator_mcp.orchestrator.server import execute_dax_query
+
+        mock_client = MagicMock()
+        mock_client.execute_queries = AsyncMock(
+            return_value={"results": [{"tables": [{"rows": list(range(50))}]}]}
+        )
+
+        res = await execute_dax_query(
+            workspace_id="ws-123",
+            dataset_id="ds-456",
+            dax_query="EVALUATE Customers",
+            max_rows=5,
+            fabric_client=mock_client,
+        )
+
+        assert len(res["results"][0]["tables"][0]["rows"]) == 5
+        assert res["rows_truncated"] is True
+        assert res["rows_limit"] == 5
+
+    @pytest.mark.asyncio
+    async def test_max_rows_ceiling_is_enforced(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            DAX_ROW_LIMIT_CEILING,
+            _cap_dax_rows,
+        )
+
+        payload = {"results": [{"tables": [{"rows": [1, 2, 3]}]}]}
+        _out, truncated = _cap_dax_rows(payload, DAX_ROW_LIMIT_CEILING * 100)
+
+        assert truncated is False
+        assert _out["results"][0]["tables"][0]["rows"] == [1, 2, 3]
+
+    def test_cap_dax_rows_does_not_mutate_input(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import _cap_dax_rows
+
+        payload = {"results": [{"tables": [{"rows": [1, 2, 3, 4]}]}]}
+        _cap_dax_rows(payload, 2)
+
+        assert payload["results"][0]["tables"][0]["rows"] == [1, 2, 3, 4]
