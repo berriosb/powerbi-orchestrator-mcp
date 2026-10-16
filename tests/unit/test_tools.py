@@ -174,7 +174,6 @@ class TestRunDaxRegression:
 
 class TestRunRefresh:
     async def test_run_refresh_requires_credentials_or_fails_gracefully(self) -> None:
-        # No env vars set → auth fails → AuthModeError raised.
         from powerbi_orchestrator_mcp.cloud.auth import AuthModeError
         from powerbi_orchestrator_mcp.tools.run_refresh import run_refresh
 
@@ -183,7 +182,17 @@ class TestRunRefresh:
                 workspace_id="ws-abc",
                 dataset_id="ds-xyz",
                 auth_mode="service_principal",
+                dry_run=False,
             )
+
+    async def test_run_refresh_defaults_to_dry_run(self) -> None:
+        from powerbi_orchestrator_mcp.tools.run_refresh import run_refresh
+
+        result = await run_refresh(workspace_id="ws-abc", dataset_id="ds-xyz")
+
+        assert result.status == "DryRun"
+        assert result.refresh_id == "dry-run"
+        assert any(e["code"] == "dry_run" for e in result.errors)
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +469,7 @@ class TestDeployToWorkspace:
             workspace_id="ws-abc",
             findings=[],
             gate_profile="standard",
+            dry_run=False,
             mock=True,
         )
         assert result.publish_ok is True
@@ -467,6 +477,35 @@ class TestDeployToWorkspace:
         assert result.refresh_id == "mock-refresh-id"
         assert result.item_id == "mock-item-id"
         assert result.dataset_id == "test"
+
+    async def test_defaults_to_dry_run_without_touching_cloud(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The default must not call any Fabric API and must report a plan."""
+        import importlib
+
+        dt_module = importlib.import_module("powerbi_orchestrator_mcp.tools.deploy_to_workspace")
+
+        def _explode(*_a: Any, **_kw: Any) -> None:
+            raise AssertionError("dry_run must not construct a cloud client")
+
+        monkeypatch.setattr(dt_module, "FabricClient", _explode)
+        monkeypatch.setattr(dt_module, "FabricCredential", _explode)
+
+        pbip = tmp_path / "test.pbip"
+        pbip.mkdir()
+        (pbip / "test.pbip").write_text("{}")
+
+        result = await dt_module.deploy_to_workspace(
+            pbip_path=str(pbip),
+            workspace_id="ws-abc",
+            findings=[],
+        )
+
+        assert result.dry_run is True
+        assert result.publish_ok is False
+        assert result.planned_actions
+        assert any("dry_run" in e for e in result.errors)
 
     async def test_real_path_calls_create_item_schedule_and_refresh(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -520,8 +559,8 @@ class TestDeployToWorkspace:
             findings=[],
             gate_profile="standard",
             mock=False,
+            dry_run=False,
             client_id="cid",
-            client_secret="sec",
             tenant_id="tid",
         )
         assert result.publish_ok is True
@@ -573,6 +612,7 @@ class TestDeployToWorkspace:
             findings=[],
             gate_profile="standard",
             mock=False,
+            dry_run=False,
         )
         assert result.publish_ok is False
         assert any("publish_failed" in e for e in result.errors)
@@ -635,6 +675,7 @@ class TestDeployToWorkspace:
             workspace_id="ws-real",
             findings=[],
             mock=False,
+            dry_run=False,
         )
         assert result.publish_ok is True
         assert result.item_id == "uuid-dataset-123"
