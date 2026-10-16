@@ -17,6 +17,12 @@ from powerbi_orchestrator_mcp.plugins import (
 )
 from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import _is_inside
 
+posix_only = pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX permission bits are not meaningful on Windows; chmod there "
+    "only toggles the read-only attribute",
+)
+
 
 def _plan(store: Any, plan_id: str = "p1") -> Any:
     from powerbi_orchestrator_mcp.orchestrator.plan_models import (
@@ -248,7 +254,7 @@ class TestPluginOptIn:
 
         assert [p.name for p in registry.loaded] == ["rules"]
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes are not meaningful")
+    @posix_only
     def test_world_writable_directory_is_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -261,7 +267,7 @@ class TestPluginOptIn:
         assert registry.loaded == []
         assert "world-writable" in registry.errors[0].error
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes are not meaningful")
+    @posix_only
     def test_group_writable_directory_is_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -271,7 +277,7 @@ class TestPluginOptIn:
 
         assert load_plugins(tmp_path).loaded == []
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes are not meaningful")
+    @posix_only
     def test_private_directory_is_accepted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -298,13 +304,25 @@ class TestPluginOptIn:
         assert registry.loaded == []
         assert "symlinked" in registry.errors[0].error
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes are not meaningful")
+    @posix_only
     def test_directory_is_private_helper(self, tmp_path: Path) -> None:
         os.chmod(tmp_path, 0o700)
         assert directory_is_private(tmp_path) is True
 
         os.chmod(tmp_path, 0o707)
         assert directory_is_private(tmp_path) is False
+
+    def test_non_posix_platform_does_not_block_loading(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Windows reports fixed st_mode values, so gating on them would make
+        plugin loading impossible there."""
+        monkeypatch.setenv(PLUGINS_ENV_VAR, "1")
+        (tmp_path / "rules.py").write_text("BPA_RULES = []\n", encoding="utf-8")
+        monkeypatch.setattr(os, "name", "nt")
+
+        assert directory_is_private(tmp_path) is True
+        assert len(load_plugins(tmp_path).loaded) == 1
 
     def test_health_surfaces_disabled_state(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

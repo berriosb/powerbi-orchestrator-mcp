@@ -85,6 +85,11 @@ class TestHmacKey:
         key = _get_hmac_key()
         assert key == b"my-env-secret"
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows environment variable names are case-insensitive, so the "
+        "misspelled and correct names are the same variable there",
+    )
     def test_misspelled_env_var_is_ignored(
         self, monkeypatch: pytest.MonkeyPatch, isolated_audit: tuple[Path, Path]
     ) -> None:

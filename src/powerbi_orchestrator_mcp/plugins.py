@@ -87,7 +87,14 @@ def plugins_enabled() -> bool:
 
 
 def directory_is_private(path: Path) -> bool:
-    """True when only the owner can write to ``path``."""
+    """True when only the owner can write to ``path``.
+
+    On platforms without POSIX permission bits (Windows) ``st_mode`` reports
+    fixed values that carry no information, so refusing there would block
+    plugin loading entirely. The opt-in flag remains the control there.
+    """
+    if os.name != "posix":
+        return True
     try:
         mode = path.stat().st_mode
     except OSError:
