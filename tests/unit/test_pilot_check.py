@@ -123,11 +123,13 @@ class TestConfigFailurePath:
         assert report.failures[0].name == "auth.config"
 
     def test_exit_code_is_nonzero_on_failure(self, tmp_path: Path) -> None:
-        env = {
-            "PATH": "/usr/bin:/bin",
-            "PBI_AUTH_MODE": "service_principal",
-            "PBI_ORCHESTRATOR_HOME": str(tmp_path),
-        }
+        import os
+
+        env = dict(os.environ)
+        for var in ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"):
+            env.pop(var, None)
+        env["PBI_AUTH_MODE"] = "service_principal"
+        env["PBI_ORCHESTRATOR_HOME"] = str(tmp_path)
 
         result = subprocess.run(
             [sys.executable, str(_SCRIPT)],
