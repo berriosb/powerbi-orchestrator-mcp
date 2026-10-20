@@ -30,12 +30,17 @@ from powerbi_orchestrator_mcp.orchestrator.audit import (
 def isolated_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     """Redirect AUDIT_DIR and AUDIT_DB to a temp directory.
 
+    The orchestrator home is redirected too: the chain key lives there
+    when no secret is configured, and a test must not write to the real
+    one.
+
     Returns (audit_dir, audit_db_path) for convenience.
     """
     audit_dir = tmp_path / "audit"
     audit_db = audit_dir / "audit.db"
     monkeypatch.setattr(audit_mod, "AUDIT_DIR", audit_dir)
     monkeypatch.setattr(audit_mod, "AUDIT_DB", audit_db)
+    monkeypatch.setenv("PBI_ORCHESTRATOR_HOME", str(tmp_path / "home"))
     return audit_dir, audit_db
 
 
@@ -54,14 +59,14 @@ def log(isolated_audit: tuple[Path, Path]) -> AuditLog:
 class TestHmacHelpers:
     def test_compute_row_hash_deterministic(self) -> None:
         key = b"k" * 32
-        h1 = _compute_row_hash(key, "0", 1, "2026-08-21T00:00:00Z", "abc")
-        h2 = _compute_row_hash(key, "0", 1, "2026-08-21T00:00:00Z", "abc")
+        h1 = _compute_row_hash(key, "0", 1, "2026-08-21T00:00:00Z", ["abc"])
+        h2 = _compute_row_hash(key, "0", 1, "2026-08-21T00:00:00Z", ["abc"])
         assert h1 == h2
 
     def test_compute_row_hash_changes_with_input(self) -> None:
         key = b"k" * 32
-        h1 = _compute_row_hash(key, "0", 1, "t1", "abc")
-        h2 = _compute_row_hash(key, "0", 1, "t2", "abc")
+        h1 = _compute_row_hash(key, "0", 1, "t1", ["abc"])
+        h2 = _compute_row_hash(key, "0", 1, "t2", ["abc"])
         assert h1 != h2
 
     def test_compute_row_hash_matches_stdlib(self) -> None:
@@ -70,13 +75,25 @@ class TestHmacHelpers:
         prev = "prev"
         row_id = 42
         ts = "2026-01-01T00:00:00+00:00"
-        rest = "toolxxx"
+        fields = ["tool", "xxx"]
         expected = hmac.new(
             key,
-            f"{prev}{row_id}{ts}{rest}".encode(),
+            json.dumps([prev, row_id, ts, *fields], separators=(",", ":")).encode(),
             hashlib.sha256,
         ).hexdigest()
-        assert _compute_row_hash(key, prev, row_id, ts, rest) == expected
+        assert _compute_row_hash(key, prev, row_id, ts, fields) == expected
+
+    def test_the_field_boundaries_are_unambiguous(self) -> None:
+        """Moving a character between fields must change the hash.
+
+        The fields used to be concatenated, so the boundary between two
+        of them was ambiguous and a row could be edited in a way that
+        still verified.
+        """
+        key = b"k" * 32
+        before = _compute_row_hash(key, "0", 1, "ts", ["ws1", "success"])
+        after = _compute_row_hash(key, "0", 1, "ts", ["ws1success", ""])
+        assert before != after
 
 
 class TestHmacKey:
@@ -95,18 +112,17 @@ class TestHmacKey:
     ) -> None:
         monkeypatch.delenv("PBI_ORCHESTRATOR_AUDIT_SECRET", raising=False)
         monkeypatch.setenv("PBI_ORCHestrATOR_AUDIT_SECRET", "legacy-secret")
-        audit_dir, _ = isolated_audit
 
         key = _get_hmac_key()
 
         assert key != b"legacy-secret"
         assert len(key) == 32
-        assert (audit_dir / ".audit_key").exists()
 
     def test_generates_and_persists_key(self, isolated_audit: tuple[Path, Path]) -> None:
-        audit_dir, _ = isolated_audit
+        from powerbi_orchestrator_mcp.orchestrator.audit import _fallback_key_path
+
         key1 = _get_hmac_key()
-        key_path = audit_dir / ".audit_key"
+        key_path = _fallback_key_path()
         assert key_path.exists()
         assert len(key1) == 32
 
@@ -114,18 +130,22 @@ class TestHmacKey:
         key2 = _get_hmac_key()
         assert key1 == key2
 
-    def test_different_audits_get_different_keys(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # First audit dir.
-        dir1 = tmp_path / "a1"
-        dir2 = tmp_path / "a2"
-        monkeypatch.setattr(audit_mod, "AUDIT_DIR", dir1)
+    def test_the_key_is_not_next_to_the_database(self, isolated_audit: tuple[Path, Path]) -> None:
+        """The key is kept out of the audit directory on purpose.
+
+        The audit directory is the thing that gets shared, backed up and
+        shipped around; a key next to the database it protects protects
+        nothing against whoever can write there.
+        """
+        audit_dir, _ = isolated_audit
+        _get_hmac_key()
+        assert not (audit_dir / ".audit_key").exists()
+
+    def test_the_key_is_per_installation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Two audit databases of one installation share the chain key."""
         key1 = _get_hmac_key()
-        # Switch to second dir.
-        monkeypatch.setattr(audit_mod, "AUDIT_DIR", dir2)
         key2 = _get_hmac_key()
-        assert key1 != key2
+        assert key1 == key2
 
 
 # ---------------------------------------------------------------------------

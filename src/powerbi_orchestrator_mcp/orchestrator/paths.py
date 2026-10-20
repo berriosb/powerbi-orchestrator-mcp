@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import tempfile
 from pathlib import Path
 
 DIR_MODE = 0o700
@@ -11,7 +12,7 @@ FILE_MODE = 0o600
 def get_orchestrator_home() -> Path:
     env_path = os.environ.get("PBI_ORCHESTRATOR_HOME")
     if env_path:
-        return Path(env_path)
+        return Path(env_path).resolve()
     return Path.home() / ".powerbi-orchestrator-mcp"
 
 
@@ -34,11 +35,22 @@ def restrict_file(path: Path) -> None:
 
 
 def atomic_write_private(path: Path, data: str) -> None:
-    """Write ``data`` to ``path`` atomically with owner-only permissions."""
+    """Write ``data`` to ``path`` atomically with owner-only permissions.
+
+    The temporary file has a unique name: a fixed one would let two
+    writers racing on the same target clobber each other's partial
+    write.
+    """
     ensure_private_dir(path.parent)
-    tmp = path.with_name(f".{path.name}.tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, FILE_MODE)
-    with open(fd, "w", encoding="utf-8") as handle:
-        handle.write(data)
-    os.replace(tmp, path)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(data)
+        os.chmod(tmp, FILE_MODE)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
     restrict_file(path)
