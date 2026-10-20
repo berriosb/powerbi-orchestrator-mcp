@@ -39,7 +39,11 @@ from powerbi_orchestrator_mcp.engines.base import (
     VisualSpec,
     map_subprocess_error,
 )
-from powerbi_orchestrator_mcp.engines.errors import EngineError
+from powerbi_orchestrator_mcp.engines.errors import (
+    EngineError,
+    EngineMethodNotFoundError,
+    EngineNotFoundError,
+)
 from powerbi_orchestrator_mcp.orchestrator.context import EngineStatus
 
 # Pinned version per spec 05 §10 (versions.py in engines/).
@@ -48,6 +52,46 @@ DEFAULT_PINNED_VERSION = "1.5.0"
 # The executable the package installs. Its presence on PATH is what
 # tells the orchestrator the engine is installed.
 _PACKAGE_BIN = "superbi-mcp"
+
+
+def _method_unavailable(exc: Exception) -> bool:
+    """True when the engine simply does not offer the operation.
+
+    The built-in engine is the documented fallback for that case, and
+    only for that case. A crash, a timeout, an authentication problem
+    or a contract drift is a real error: falling back to the built-in
+    engine would hide it behind a success.
+    """
+    return isinstance(exc, (EngineNotFoundError, EngineMethodNotFoundError))
+
+
+def _write_succeeded(result: dict[str, Any]) -> bool:
+    """True when the engine reported the write as successful.
+
+    The adapter used to default to success, so a write the engine had
+    refused was reported as done. A payload that states the write
+    failed is honoured; a payload without a verdict means the call was
+    accepted without raising, which is the success signal the MCP
+    contract gives.
+    """
+    if not isinstance(result, dict):
+        return False
+    return result.get("success") is not False
+
+
+def _validation_passed(result: dict[str, Any]) -> bool:
+    """True when the engine reported the report as valid.
+
+    The default used to be valid, so a response without a verdict was
+    read as a clean report. A validation that returned no verdict has
+    proved nothing, so it is not a pass.
+    """
+    if not isinstance(result, dict):
+        return False
+    value = result.get("valid")
+    if value is None:
+        return False
+    return bool(value)
 
 
 class SuperBiMcpEngine(JsonRpcSubprocessEngine):
@@ -210,10 +254,12 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
                 extra={"page_name": page_name, "layout": layout},
             )
             return OperationResult(
-                success=bool(result.get("success", True)),
+                success=_write_succeeded(result),
                 changed_files=result.get("changed_files", []),
             )
-        except Exception:
+        except Exception as exc:
+            if not _method_unavailable(exc):
+                raise
             return await PythonReportEngine().add_page(conn, page_name, layout)
 
     async def add_visual(
@@ -239,10 +285,12 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
                 extra={"page": page, "visual_spec": visual_spec},
             )
             return OperationResult(
-                success=bool(result.get("success", True)),
+                success=_write_succeeded(result),
                 changed_files=result.get("changed_files", []),
             )
-        except Exception:
+        except Exception as exc:
+            if not _method_unavailable(exc):
+                raise
             return await PythonReportEngine().add_visual(conn, page, visual_spec)
 
     async def update_visual(
@@ -269,10 +317,12 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
                 extra={"page": page, "visual_id": visual_id, "changes": changes},
             )
             return OperationResult(
-                success=bool(result.get("success", True)),
+                success=_write_succeeded(result),
                 changed_files=result.get("changed_files", []),
             )
-        except Exception:
+        except Exception as exc:
+            if not _method_unavailable(exc):
+                raise
             return await PythonReportEngine().update_visual(conn, page, visual_id, changes)
 
     async def propagate_rename(
@@ -303,10 +353,12 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
                 extra={"old_path": old_path, "new_path": new_path, "scope": scope},
             )
             return OperationResult(
-                success=bool(result.get("success", True)),
+                success=_write_succeeded(result),
                 changed_files=result.get("changed_files", []),
             )
-        except Exception:
+        except Exception as exc:
+            if not _method_unavailable(exc):
+                raise
             return await PythonReportEngine().propagate_rename(conn, old_path, new_path, scope)
 
     async def validate_pbir(self, conn: ConnectionHandle) -> ValidationResult:
@@ -317,7 +369,7 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
         """
         result = await self._dispatch("report", "validate", conn)
         return ValidationResult(
-            valid=result.get("valid", True),
+            valid=_validation_passed(result),
             findings=result.get("findings", []),
         )
 

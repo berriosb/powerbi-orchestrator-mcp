@@ -66,6 +66,35 @@ _RPC_TO_MCP_TOOL: dict[str, str] = {
 }
 
 
+def _write_outcome(result: dict[str, Any], operation: str) -> OperationResult:
+    """Build the result of a write from what the engine answered.
+
+    The adapter used to say ``success=True`` whatever the engine
+    replied, so a write the engine had refused was reported as done.
+    When the engine states the outcome, the adapter states it too. A
+    payload without a verdict means the engine accepted the call
+    without raising, which is the success signal the MCP contract
+    gives.
+    """
+    payload = result if isinstance(result, dict) else {}
+    if payload.get("success") is False:
+        message = (
+            payload.get("error")
+            or payload.get("message")
+            or payload.get("error_message")
+            or f"{operation} failed"
+        )
+        return OperationResult(
+            success=False,
+            error_message=str(message),
+            changed_files=[],
+        )
+    return OperationResult(
+        success=True,
+        changed_files=list(payload.get("changed_files") or []),
+    )
+
+
 class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
     """Adapter for the ``@microsoft/powerbi-modeling-mcp`` MCP server.
 
@@ -241,10 +270,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "column": column, "changes": changes},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "column update")
 
     async def create_measure(
         self, conn: ConnectionHandle, table: str, measure: Measure
@@ -255,10 +281,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "measure": measure.model_dump(mode="json")},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "measure create")
 
     async def update_measure(
         self,
@@ -273,10 +296,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "measure": measure, "changes": changes},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "measure update")
 
     async def delete_measure(
         self, conn: ConnectionHandle, table: str, measure: str
@@ -287,10 +307,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "measure": measure},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "measure delete")
 
     # ------------------------------------------------------------------
     # DAX execution

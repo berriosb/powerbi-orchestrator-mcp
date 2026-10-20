@@ -46,6 +46,16 @@ class EngineNotFoundError(EngineError):
     """Binary or package not installed or not on PATH."""
 
 
+class EngineMethodNotFoundError(EngineError):
+    """The engine does not offer the requested operation.
+
+    Distinct from a crash: the engine is there and healthy, it simply
+    does not implement the method. This is the one case where falling
+    back to a built-in engine is the documented behaviour; a crash, a
+    timeout or a contract error must not be hidden that way.
+    """
+
+
 class EngineVersionMismatchError(EngineError):
     """Installed version is outside the range supported by the adapter."""
 

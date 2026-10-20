@@ -14,6 +14,7 @@ from powerbi_orchestrator_mcp.engines.base import (
 )
 from powerbi_orchestrator_mcp.engines.errors import (
     EngineError,
+    EngineMethodNotFoundError,
     EngineValidationError,
 )
 from powerbi_orchestrator_mcp.engines.superbi_mcp import (
@@ -31,6 +32,27 @@ def _engine(
         version="1.5.0",
         mock_responses=responses or {},
     )
+
+
+def _engine_without_the_method() -> SuperBiMcpEngine:
+    """An adapter whose engine does not offer the operation.
+
+    The built-in engine is the documented fallback for that case, and
+    only for that case: a crash or a timeout must not be hidden behind
+    it.
+    """
+    engine = _engine()
+
+    async def raise_method_not_found(*_a: object, **_k: object) -> dict[str, object]:
+        raise EngineMethodNotFoundError(
+            "superbi-mcp does not implement report/add_page()",
+            engine="superbi-mcp",
+            code="engine_method_not_found",
+            remediation_hint="use the built-in engine",
+        )
+
+    engine._dispatch = raise_method_not_found  # type: ignore[method-assign]  # noqa: SLF001
+    return engine
 
 
 @pytest.fixture()
@@ -133,7 +155,7 @@ class TestConnect:
 
 class TestPageCrud:
     async def test_add_page_delegates_to_python_report(self, pbip_dir: Path) -> None:
-        engine = _engine()
+        engine = _engine_without_the_method()
         conn = ConnectionHandle(
             engine="superbi-mcp",
             target_type="pbip_folder",
@@ -145,7 +167,7 @@ class TestPageCrud:
         assert result.success is True
 
     async def test_add_visual_delegates(self, pbip_dir: Path) -> None:
-        engine = _engine()
+        engine = _engine_without_the_method()
         conn = ConnectionHandle(
             engine="superbi-mcp",
             target_type="pbip_folder",
@@ -163,7 +185,7 @@ class TestPageCrud:
         assert result.success is True
 
     async def test_update_visual_delegates(self, pbip_dir: Path) -> None:
-        engine = _engine()
+        engine = _engine_without_the_method()
         conn = ConnectionHandle(
             engine="superbi-mcp",
             target_type="pbip_folder",
