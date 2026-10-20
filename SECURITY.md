@@ -73,6 +73,13 @@ We aim to:
   session is bound to the credential that opened it: a request carrying a
   different credential is rejected with 404, and the per-tool scope check
   runs against the claims of the current call.
+- It **does not let one principal delete another's plan.** Reading,
+  listing and deleting a plan are all scoped to its owner.
+- It **does not read outside the workspace root by default.** The read
+  path is bounded by `PBI_WORKSPACE_ROOT`, or by the working directory
+  when it is unset, exactly like the write path. Reading is how content
+  reaches the model context, so an unbounded read is never the default;
+  `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1` is the explicit opt-out.
 - It **does not log raw DAX outputs or PII unless** the caller opts into a
   higher `max_rows`; audit payloads pass through `CloudAuditLog`, which
   redacts bearer tokens, connection strings and email addresses before
@@ -106,16 +113,22 @@ We aim to:
 | Circuit breaker (opens after 5 consecutive 5xx) | `cloud/fabric_client.py` |
 | Least-privilege token scopes (read vs write) | `cloud/fabric_client.py`, `cloud/auth.py` |
 | HMAC-chained audit log (tamper-evident) | `orchestrator/audit.py` |
+| Unambiguous field encoding in the chain hash | `orchestrator/audit.py` |
+| Signed chain anchor (truncation cannot be covered up) | `orchestrator/audit.py` |
 | Truncation detection via out-of-DB chain anchor | `orchestrator/audit.py` |
 | Owner-only permissions on plan/session/audit stores (POSIX hosts) | `orchestrator/paths.py` |
 | PII / token redaction in audit log (by pattern and by key) | `cloud/audit_cloud.py` (wired via `orchestrator/audit_guard.py`) |
 | Audit coverage for state-changing tools | `orchestrator/audit_guard.py` |
 | Elicitation before writes (configurable) | `orchestrator/elicitation.py` |
 | Write-path containment (`PBI_WORKSPACE_ROOT`) | `validation/path_safety.py` |
+| Read-path containment (same root, explicit opt-out) | `validation/path_safety.py` |
 | Per-tool scope enforcement (HTTP transport) | `orchestrator/authorization.py` |
+| Scope check on every tool | `orchestrator/authorization.py`, `orchestrator/server.py` |
+| `Tools.Admin` required for release and labelling operations | `orchestrator/authorization.py` |
 | HTTP session bound to the calling credential | `orchestrator/transport.py` |
 | Host allowlist for the HTTP transport (DNS-rebinding protection) | `orchestrator/transport.py`, `orchestrator/server.py` |
 | REST path identifier validation | `cloud/fabric_client.py` |
+| TMDL identifier validation before rendering a role | `tools/setup_rls_and_roles.py` |
 | Plan ownership (object-level authorization) | `orchestrator/plan_store.py` |
 | Symlink refusal when reading repo files | `tools/sync_git_to_workspace.py` |
 | Opt-in, owner-only plugin loading | `plugins.py` |
@@ -141,10 +154,17 @@ Stated explicitly so nobody assumes a control that is not there:
 - The HMAC chain is **tamper-evident, not tamper-proof**: an attacker with
   write access to the audit directory can rewrite both the database and the
   anchor file. Ship the audit directory on append-only storage if you need
-  resistance against a host-level attacker. When `PBI_ORCHESTRATOR_AUDIT_SECRET`
-  is unset the HMAC key is generated next to the database, so it does not
-  protect against an attacker who can write to that directory — set the
-  variable to a secret held outside the audit directory.
+  resistance against a host-level attacker. The anchor is signed with the
+  chain key, so rewriting it to match a truncated database needs the key
+  too.
+- When `PBI_ORCHESTRATOR_AUDIT_SECRET` is unset the chain key is generated
+  and stored in the orchestrator home — deliberately **not** next to the
+  database, so an audit directory that gets shared, backed up or shipped
+  around does not carry the key that protects it. That still does not
+  protect against an attacker who can read the whole orchestrator home:
+  **set `PBI_ORCHESTRATOR_AUDIT_SECRET` to a secret held elsewhere** (a
+  secret manager, an injected environment variable, a mounted file) for
+  that. The orchestrator logs a warning when it has to generate a key.
 - The audit log is **fail-open**: if a row cannot be written, the tool call
   still goes ahead and the failure is surfaced as a warning in the result.
   The audit log is for forensics, not for access control.
