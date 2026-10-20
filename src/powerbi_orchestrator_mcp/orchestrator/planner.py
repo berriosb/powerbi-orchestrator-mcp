@@ -9,13 +9,14 @@ below. NL-to-plan decomposition is out of scope (per spec §2.2 step 4).
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
 
 from powerbi_orchestrator_mcp import __version__
-from powerbi_orchestrator_mcp.orchestrator.identifiers import new_plan_id
+from powerbi_orchestrator_mcp.orchestrator.identifiers import make_snapshot_label, new_plan_id
 from powerbi_orchestrator_mcp.orchestrator.plan_models import (
     EstimatedChanges,
     Plan,
@@ -123,7 +124,12 @@ class PlanBuilder:
 
         plan_id = new_plan_id()
 
-        snapshot_args: dict[str, Any] = {"label": f"pre-rename-{plan_id}"}
+        # The label goes to the filesystem and into a rollback handle,
+        # so it has to satisfy the project's own identifier contract.
+        # The nanoid may contain hyphens, so runs of them are collapsed
+        # and the edges are trimmed.
+        raw_label = re.sub(r"-+", "-", f"pre-rename-{plan_id}".lower().replace("_", "-"))
+        snapshot_args: dict[str, Any] = {"label": make_snapshot_label(raw_label.strip("-"))}
         if target:
             snapshot_args["pbip_path"] = target
 
