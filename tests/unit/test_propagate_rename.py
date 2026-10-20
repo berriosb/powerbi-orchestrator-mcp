@@ -163,7 +163,11 @@ class TestPropagateRename:
             )
         )
 
-        assert result.changed_files == ["sample.Report/pages/Overview/page.json"]
+        assert result.changed_files == [
+            # The path is relative to the PBIP root; the separator is
+            # the platform's.
+            str(Path("sample.Report") / "pages" / "Overview" / "page.json")
+        ]
         assert result.references_renamed == 1
 
         saved = json.loads((page_dir / "page.json").read_text())

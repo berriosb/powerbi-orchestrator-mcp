@@ -33,6 +33,7 @@ use the orchestrator as an MCP server.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -135,12 +136,21 @@ def main() -> int:
     print(f"Using MCP server binary: {binary}")
     print("Spawning MCP server over stdio...")
 
+    # The orchestrator bounds its reads and its writes to a workspace
+    # root: PBI_WORKSPACE_ROOT when it is set, the working directory
+    # otherwise. The fixtures below live in a temporary directory, so
+    # the server is told where its workspace is.
+    workspace = tempfile.mkdtemp(prefix="powerbi-orchestrator-verify-")
+    child_env = dict(os.environ)
+    child_env["PBI_WORKSPACE_ROOT"] = workspace
+
     proc = subprocess.Popen(  # noqa: S603 — controlled subprocess for verification
         [binary, "--start"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         bufsize=0,  # unbuffered; we read/write explicit newlines
+        env=child_env,
     )
 
     all_passed = True
@@ -259,7 +269,7 @@ def main() -> int:
 
         # ---- 3c. tools/call — apply_theme_and_accessibility_rules end-to-end ----
         print("\n[3c] tools/call — apply_theme_and_accessibility_rules on a PBIP")
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=workspace) as tmpdir:
             pbip_path = Path(tmpdir) / "test.pbip"
             pbip_path.mkdir()
             (pbip_path / "test.pbip").write_text("{}")
@@ -328,7 +338,7 @@ def main() -> int:
 
         # ---- 4. tools/call: connect_target to verify functional path ----
         print("\n[4] tools/call — connect_target with valid PBIP path")
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=workspace) as tmpdir:
             pbip_path = Path(tmpdir) / "test.pbip"
             pbip_path.mkdir()
             (pbip_path / "test.pbip").write_text("{}")
@@ -432,6 +442,7 @@ def main() -> int:
             all_passed &= _check("Process terminated cleanly", False, "killed after timeout")
         except Exception as exc:
             all_passed &= _check("Process terminated cleanly", False, f"exc={exc}")
+        shutil.rmtree(workspace, ignore_errors=True)
 
     print()
     if all_passed:
