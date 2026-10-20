@@ -109,6 +109,13 @@ class OperationResult(BaseModel):
     success: bool
     changed_files: list[str] = Field(default_factory=list)
     error_message: str | None = None
+    references_renamed: int = 0
+    """How many references the operation actually rewrote.
+
+    A rename that changed no file and no reference is a different
+    outcome from one that updated every binding, and the caller has to
+    be able to tell them apart.
+    """
 
 
 class DaxResult(BaseModel):
