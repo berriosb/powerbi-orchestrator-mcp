@@ -681,6 +681,7 @@ async def _run_plan_steps(
                 "success": outcome.success,
                 "error_message": outcome.error_message,
                 "changed_files": outcome.changed_files,
+                "details": outcome.details,
             }
         )
 
@@ -1253,7 +1254,6 @@ async def execute_dax_query(
 async def diff_models(
     before: str,
     after: str,
-    inspector: Any = None,
 ) -> dict[str, Any]:
     """Compare two semantic models and report structural differences.
 
@@ -1262,14 +1262,13 @@ async def diff_models(
     - See what tables, columns, measures, or relationships changed between branches or releases.
 
     Args:
-        before: Path to the baseline PBIP directory or snapshot.
-        after: Path to the target PBIP directory or snapshot.
-        inspector: Optional model inspector callable.
+        before: Path to the baseline PBIP directory.
+        after: Path to the target PBIP directory.
 
     Returns:
         Dict detailing added, removed, and modified tables, columns, measures, and relationships.
     """
-    result = _diff(before=before, after=after, inspector=inspector)
+    result = _diff(before=before, after=after)
     return result.model_dump(mode="json")
 
 

@@ -199,6 +199,7 @@ class TestDaxRegressionRunner:
         assert result.passed is False  # 5% > 0.1%
 
     async def test_missing_baseline_file(self, tmp_path: Path) -> None:
+        """A missing baseline means nothing was compared, so nothing passed."""
         missing = tmp_path / "does_not_exist.json"
 
         async def fake_exec(q: str) -> list[dict[str, Any]]:
@@ -206,9 +207,53 @@ class TestDaxRegressionRunner:
 
         runner = DaxRegressionRunner(fake_exec)
         result = await runner.run(missing)
-        # Empty baseline → trivially "passed" with 0 queries.
-        assert result.passed is True
+        assert result.passed is False
+        assert result.executed is False
         assert result.total_queries == 0
+        assert result.message is not None
+        assert "baseline file not found" in result.message
+
+    async def test_corrupt_baseline_file(self, tmp_path: Path) -> None:
+        """A corrupt baseline must fail rather than compare against nothing."""
+        corrupt = tmp_path / "baseline.json"
+        corrupt.write_text("{not json", encoding="utf-8")
+
+        async def fake_exec(q: str) -> list[dict[str, Any]]:
+            return []
+
+        runner = DaxRegressionRunner(fake_exec)
+        result = await runner.run(corrupt)
+        assert result.passed is False
+        assert result.executed is False
+        assert result.message is not None
+        assert "not valid JSON" in result.message
+
+    async def test_query_without_recorded_expectation_is_not_compared(self, tmp_path: Path) -> None:
+        """A baseline query with no expected rows is reported, not failed."""
+        import json
+
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(
+            json.dumps(
+                {
+                    "version": "1.0",
+                    "created_at": "",
+                    "queries": [{"name": "Q1", "query": "EVALUATE X"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        async def fake_exec(q: str) -> list[dict[str, Any]]:
+            return [{"x": 1}]
+
+        runner = DaxRegressionRunner(fake_exec)
+        result = await runner.run(baseline)
+        assert result.passed is True
+        assert result.total_queries == 1
+        assert result.compared_queries == 0
+        assert result.diffs[0].compared is False
+        assert "not compared" in result.diffs[0].diff_summary
 
 
 # ---------------------------------------------------------------------------

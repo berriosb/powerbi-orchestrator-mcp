@@ -40,6 +40,22 @@ from powerbi_orchestrator_mcp.orchestrator.step_executor import (
 )
 
 # ---------------------------------------------------------------------------
+# The PBIP fixture the audit-plan tests run against.
+SAMPLE_PBIP = Path(__file__).parent.parent / "fixtures" / "sample.pbip"
+
+
+@pytest.fixture()
+def sample_pbip(tmp_path: Path) -> Path:
+    """Copy the sample PBIP into the test workspace.
+
+    The write-path containment rules only allow paths under the active
+    workspace root, so the fixture has to live inside `tmp_path`.
+    """
+    dst = tmp_path / "sample.pbip"
+    shutil.copytree(SAMPLE_PBIP, dst)
+    return dst
+
+
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -374,10 +390,10 @@ class TestApplyPlan:
         assert all(s.get("skipped") for s in result.executed_steps)
 
     @pytest.mark.asyncio
-    async def test_confirm_each_step_accepted_runs_all_steps(self) -> None:
+    async def test_confirm_each_step_accepted_runs_all_steps(self, sample_pbip: Path) -> None:
         plan_res = await plan_change(
             intent="audit",
-            options={"target": "x", "checks": ["a"]},
+            options={"target": str(sample_pbip), "checks": ["dax_lint"]},
         )
 
         class _ApprovingCtx:
@@ -455,14 +471,43 @@ class TestApplyPlan:
         assert result.result == "failed"
 
     @pytest.mark.asyncio
-    async def test_apply_plan_with_default_executors_succeeds(self) -> None:
+    async def test_apply_plan_with_default_executors_succeeds(self, sample_pbip: Path) -> None:
+        """The audit plan runs the real checks over a real PBIP."""
         plan_res = await plan_change(
             intent="audit",
-            options={"target": "x", "checks": ["a"]},
+            options={"target": str(sample_pbip), "checks": ["dax_lint"]},
         )
         result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
         assert result.result == "success"
         assert len(result.executed_steps) == 3
+        assert all(s["success"] for s in result.executed_steps)
+
+    @pytest.mark.asyncio
+    async def test_audit_plan_fails_honestly_on_a_missing_target(self) -> None:
+        """A target that does not exist must fail, not report a green audit."""
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": "x", "checks": ["dax_lint"]},
+        )
+        result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+        assert result.result == "failed"
+        failed = result.failed_step
+        assert failed is not None
+        assert failed["action"] == "gather_metadata"
+        assert "does not exist" in (failed["error_message"] or "")
+
+    @pytest.mark.asyncio
+    async def test_audit_plan_rejects_an_unknown_check(self, sample_pbip: Path) -> None:
+        """An unknown check name must not be silently ignored."""
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": str(sample_pbip), "checks": ["not_a_check"]},
+        )
+        result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+        assert result.result == "failed"
+        failed = result.failed_step
+        assert failed is not None
+        assert "unknown audit check" in (failed["error_message"] or "")
 
 
 class ScriptedEngineExecutor:

@@ -391,12 +391,15 @@ class TestReportStepExecutor:
         assert out.changed_files == []
 
     @pytest.mark.asyncio
-    async def test_unknown_action_is_noop_success(self, tmp_path: Path) -> None:
+    async def test_unknown_action_fails_instead_of_claiming_success(self, tmp_path: Path) -> None:
+        """An action the executor does not implement must not report success."""
         engine = _StubReportEngine()
         out = await ReportStepExecutor(engine=engine).execute_step(
             _step("no_such_action", pbip_path=str(tmp_path))
         )
-        assert out.success is True
+        assert out.success is False
+        assert out.error_message is not None
+        assert "not implemented" in out.error_message
         assert out.changed_files == []
 
 

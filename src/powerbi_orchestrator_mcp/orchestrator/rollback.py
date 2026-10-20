@@ -20,7 +20,7 @@ model+report rollback). The engine accepts either:
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,12 @@ class StepOutcome(BaseModel):
     success: bool
     error_message: str | None = None
     changed_files: list[str] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+    """Structured result of the step (scores, counts, resolved paths).
+
+    A step that ran successfully reports what it found here, so the
+    caller can see the outcome instead of only a green checkmark.
+    """
 
 
 class FailedRollback(BaseModel):

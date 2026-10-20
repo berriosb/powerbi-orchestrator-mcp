@@ -41,29 +41,55 @@ async def run_dax_regression(
 
     If ``queries`` is provided and the baseline doesn't exist yet, the
     queries are saved as a new baseline (no comparison performed).
+
+    When a query executor is available the new baseline records the rows
+    it actually returned, so the next run has something to compare
+    against instead of failing on a row-count mismatch against an
+    expectation that was never stored.
     """
     baseline = validate_write_path(baseline_path)
     if not baseline.exists() and queries:
         # First run — save baseline.
+        runner = DaxRegressionRunner(query_executor, tolerance_pct=tolerance_pct)
+        recorded: list[dict[str, Any]] = []
+        for q in queries:
+            expected_rows: list[dict[str, Any]] = []
+            if query_executor is not None:
+                try:
+                    expected_rows = await runner.execute(str(q["query"]))
+                except Exception:  # noqa: BLE001 - a failed probe is not fatal here
+                    expected_rows = []
+            recorded.append(
+                BaselineQuery(
+                    name=str(q["name"]),
+                    query=str(q["query"]),
+                    expected_rows=expected_rows,
+                ).model_dump()
+            )
         baseline.parent.mkdir(parents=True, exist_ok=True)
         baseline.write_text(
             json.dumps(
                 {
                     "version": "1.0",
                     "created_at": "",
-                    "queries": [
-                        BaselineQuery(name=q["name"], query=q["query"]).model_dump()
-                        for q in queries
-                    ],
+                    "queries": recorded,
                 },
                 indent=2,
             )
         )
+        with_expectations = sum(1 for r in recorded if r.get("expected_rows"))
         return RegressionResult(
             passed=True,
             total_queries=0,
+            compared_queries=0,
             passed_queries=0,
             failed_queries=0,
+            executed=False,
+            message=(
+                f"baseline created with {len(recorded)} query/queries "
+                f"({with_expectations} with recorded expected rows); "
+                "no comparison was performed on this run"
+            ),
             diffs=[],
         )
 
@@ -72,6 +98,7 @@ async def run_dax_regression(
             passed=False,
             executed=False,
             total_queries=0,
+            compared_queries=0,
             passed_queries=0,
             failed_queries=0,
             diffs=[],
