@@ -74,6 +74,7 @@ from powerbi_orchestrator_mcp.orchestrator.plan_models import (
     PlanOptions,
     PlanStep,
     PlanValidationError,
+    RiskThresholdExceededError,
     UnknownTemplateError,
 )
 from powerbi_orchestrator_mcp.orchestrator.plan_store import PlanStore
@@ -448,6 +449,24 @@ async def connect_target(
 # ---------------------------------------------------------------------------
 
 
+def _active_session_target() -> str | None:
+    """The target of the active session, when it is a local PBIP folder.
+
+    Only a PBIP folder is a usable default for the plan templates: a
+    Fabric workspace id is not a path, and defaulting a `pbip_path` to
+    one would produce a plan that could never be applied.
+    """
+    active_sid = get_active_session_id()
+    if not active_sid:
+        return None
+    ctx = SessionStore().get(active_sid)
+    if ctx is None or ctx.target is None:
+        return None
+    if ctx.target.target_type != "pbip_folder":
+        return None
+    return ctx.target.target_ref or None
+
+
 def _build_plan_from_intent(
     intent: str,
     options: dict[str, Any] | None,
@@ -464,15 +483,21 @@ def _build_plan_from_intent(
     error, not a Python TypeError.
     """
     args = dict(options or {})
-    if "target" not in args:
-        if "pbip_path" in args:
-            args["target"] = args["pbip_path"]
-        else:
-            active_sid = get_active_session_id()
-            if active_sid:
-                ctx = SessionStore().get(active_sid)
-                if ctx and ctx.target and ctx.target.target_ref:
-                    args["target"] = ctx.target.target_ref
+    session_target = _active_session_target()
+
+    # The active session's target is a useful default, but only for the
+    # templates that actually take one. `deploy` takes a pbip_path and
+    # `dax_regression` a baseline_path; handing them an unexpected
+    # `target` made both templates unusable.
+    if intent in ("safe_rename", "audit"):
+        if "target" not in args:
+            if "pbip_path" in args:
+                args["target"] = args["pbip_path"]
+            elif session_target:
+                args["target"] = session_target
+    elif intent == "deploy" and "pbip_path" not in args and session_target:
+        args["pbip_path"] = session_target
+
     builder = PlanBuilder()
 
     try:
@@ -484,7 +509,13 @@ def _build_plan_from_intent(
             return builder.build_deploy(options=opts, **args)
         if intent == "dax_regression":
             return builder.build_dax_regression(options=opts, **args)
-    except TypeError as exc:
+    except PlanValidationError:
+        raise
+    except RiskThresholdExceededError as exc:
+        # The plan was refused for exceeding the caller's impact
+        # threshold. The message says which option to raise.
+        raise PlanValidationError(str(exc)) from exc
+    except (TypeError, KeyError) as exc:
         # Missing required kwargs land here before builder validation runs.
         raise PlanValidationError(
             f"missing or invalid args for template {intent!r}: {exc}"

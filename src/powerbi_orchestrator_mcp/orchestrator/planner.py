@@ -428,8 +428,14 @@ class PlanBuilder:
     def _enforce_risk_threshold(plan: Plan, opts: PlanOptions) -> None:
         threshold = opts.max_impact_threshold / 100.0
         if plan.risk_score > threshold:
+            required = int(plan.risk_score * 100 + 0.999)
             raise RiskThresholdExceededError(
-                f"plan {plan.id} risk_score {plan.risk_score:.2f} exceeds threshold {threshold:.2f}"
+                f"plan {plan.id} has risk_score {plan.risk_score:.2f}, above the "
+                f"max_impact_threshold of {threshold:.0%}. Some templates are "
+                f"inherently high impact and are refused by default. To build "
+                f"this one, pass "
+                f'options={{"max_impact_threshold": {required}}} — at least '
+                f"{required} — after the user has approved the change."
             )
 
     def _serialize(self, plan: Plan) -> str:
