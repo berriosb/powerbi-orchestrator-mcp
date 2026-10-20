@@ -67,9 +67,56 @@ def _inspector_with(snapshot: dict[str, Any]):
 
 
 class TestDiffModels:
-    def test_returns_empty_when_no_inspector(self) -> None:
-        result = diff_models(before="A", after="B")
-        assert result.total_changes == 0
+    def test_fails_when_a_model_cannot_be_inspected(self) -> None:
+        """An unreadable model must not be reported as "0 changes"."""
+        from powerbi_orchestrator_mcp.tools.diff_models import ModelDiffUnavailableError
+
+        with pytest.raises(ModelDiffUnavailableError):
+            diff_models(before="A", after="B")
+
+    def test_diffs_two_real_pbip_folders(self, tmp_path: Path) -> None:
+        """The default inspector reads the PBIP folders from disk."""
+        import json
+        import shutil
+
+        source = Path(__file__).parent.parent / "fixtures" / "sample.pbip"
+        before = tmp_path / "before.pbip"
+        after = tmp_path / "after.pbip"
+        shutil.copytree(source, before)
+        shutil.copytree(source, after)
+
+        # Rename a table in the "after" copy.
+        model_file = after / "sample.Dataset" / "definition.pbism"
+        payload = json.loads(model_file.read_text(encoding="utf-8"))
+        payload["model"]["tables"][0]["name"] = "FactSalesRenamed"
+        model_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        result = diff_models(before=str(before), after=str(after))
+
+        assert result.total_changes > 0
+        assert result.removed_objects >= 1
+        assert result.added_objects >= 1
+
+    def test_detects_a_breaking_column_type_change(self, tmp_path: Path) -> None:
+        """Changing a column's data type is a breaking change."""
+        import json
+        import shutil
+
+        source = Path(__file__).parent.parent / "fixtures" / "sample.pbip"
+        before = tmp_path / "before.pbip"
+        after = tmp_path / "after.pbip"
+        shutil.copytree(source, before)
+        shutil.copytree(source, after)
+
+        model_file = after / "sample.Dataset" / "definition.pbism"
+        payload = json.loads(model_file.read_text(encoding="utf-8"))
+        payload["model"]["tables"][0]["columns"][0]["dataType"] = "string"
+        model_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        result = diff_models(before=str(before), after=str(after))
+
+        assert result.breaking_changes >= 1
+        assert any(d.object_type == "column" for d in result.diffs)
 
     def test_returns_diff_when_inspector_provided(self) -> None:
         a = {

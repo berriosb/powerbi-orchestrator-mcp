@@ -22,14 +22,21 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import BaseModel, Field
 
 from powerbi_orchestrator_mcp import __version__
-from powerbi_orchestrator_mcp.cloud.auth import AuthConfig, FabricCredential
+from powerbi_orchestrator_mcp.cloud.auth import (
+    AuthConfig,
+    FabricCredential,
+    resolve_auth_mode,
+)
 from powerbi_orchestrator_mcp.cloud.fabric_client import FabricClient
+
+if TYPE_CHECKING:
+    from powerbi_orchestrator_mcp.orchestrator.transport import HttpConfig
 from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog
 from powerbi_orchestrator_mcp.orchestrator.audit_guard import audited
 from powerbi_orchestrator_mcp.orchestrator.authorization import requires_scope
@@ -74,6 +81,7 @@ from powerbi_orchestrator_mcp.orchestrator.planner import PlanBuilder
 from powerbi_orchestrator_mcp.orchestrator.rollback import (
     NoRollbackAvailableError,
     RollbackEngine,
+    RollbackResult,
     StepExecutor,
 )
 from powerbi_orchestrator_mcp.orchestrator.step_executor import (
@@ -276,18 +284,18 @@ def get_active_session_id() -> str | None:
     session_id = _active_session_var.get()
     if session_id is not None:
         return session_id
-    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+    from powerbi_orchestrator_mcp.orchestrator.transport import current_caller_claims
 
-    if get_current_user() is not None or os.environ.get("PBI_TRANSPORT") == "http":
+    if current_caller_claims() is not None or os.environ.get("PBI_TRANSPORT") == "http":
         return None
     return _session_state["active_id"]
 
 
 def set_active_session_id(session_id: str | None) -> None:
     _active_session_var.set(session_id)
-    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+    from powerbi_orchestrator_mcp.orchestrator.transport import current_caller_claims
 
-    if get_current_user() is None and os.environ.get("PBI_TRANSPORT") != "http":
+    if current_caller_claims() is None and os.environ.get("PBI_TRANSPORT") != "http":
         _session_state["active_id"] = session_id
 
 
@@ -370,7 +378,7 @@ def _detect_engine_warnings(engines: dict[str, EngineStatus]) -> list[str]:
 async def connect_target(
     target_type: str,
     target_ref: str,
-    auth_mode: str = "interactive",
+    auth_mode: str | None = None,
     tenant_id: str | None = None,
 ) -> ConnectResult:
     """Connect to a Power BI target and initialize an orchestrator session.
@@ -382,12 +390,14 @@ async def connect_target(
     Args:
         target_type: One of "pbi_desktop", "fabric_workspace", "pbip_folder", "pbix_file".
         target_ref: Reference path (for PBIP/PBIX) or workspace UUID (for Fabric).
-        auth_mode: "interactive" (default, browser login) or "service_principal".
+        auth_mode: "interactive" (browser login) or "service_principal". When
+            omitted, ``PBI_AUTH_MODE`` is used, falling back to "interactive".
         tenant_id: Azure AD tenant ID (required when auth_mode is service_principal).
 
     Returns:
         ConnectResult with session_id, engines_available status, and any diagnostic warnings.
     """
+    auth_mode = resolve_auth_mode(auth_mode)
     if target_type not in _TARGET_TYPES:
         raise ValueError(f"target_type must be one of {sorted(_TARGET_TYPES)}, got {target_type!r}")
     if auth_mode not in _AUTH_MODES:
@@ -681,6 +691,7 @@ async def _run_plan_steps(
                 "success": outcome.success,
                 "error_message": outcome.error_message,
                 "changed_files": outcome.changed_files,
+                "details": outcome.details,
             }
         )
 
@@ -699,10 +710,12 @@ async def _rollback_plan(
     plan: Plan,
     executed_steps: list[dict[str, Any]],
     failed_step: dict[str, Any],
-) -> list[str]:
+) -> RollbackResult:
     """Run rollback for the executed steps after a failure.
 
-    Returns the list of rollback step ids that ran (success + failure).
+    Returns the full ``RollbackResult``: the caller needs the status,
+    because "everything was reverted" and "some of it could not be
+    reverted" call for different answers.
     Uses the in-memory plan to reconstruct PlanStep objects. Passes a
     dispatcher to RollbackEngine so cross-engine rollback (e.g. safe_rename's
     modeling + report) routes each step to its correct engine.
@@ -716,7 +729,7 @@ async def _rollback_plan(
 
     failed_plan_step = step_by_id.get(failed_step["id"])
     if failed_plan_step is None:
-        return []
+        return RollbackResult(status="no_rollback", rolled_back_steps=[], failed_rollbacks=[])
 
     # Cross-engine dispatcher: routes each rollback step to its engine.
     registry = get_default_registry()
@@ -725,15 +738,10 @@ async def _rollback_plan(
         return registry.get(step.engine)
 
     rollback_engine = RollbackEngine(_dispatcher)
-    result = await rollback_engine.execute_plan(
+    return await rollback_engine.execute_plan(
         executed_steps=executed_plan_steps,
         failed_step=failed_plan_step,
     )
-    # We don't re-raise here — the caller's ApplyResult will reflect the
-    # outcome via ``result_status``. Paths are surfaced separately.
-    return list(result.rolled_back_steps) + [
-        f"FAILED: {f.step_id}" for f in result.failed_rollbacks
-    ]
 
 
 @mcp.tool()
@@ -811,18 +819,53 @@ async def apply_plan(
                 artifacts_changed=[],
             )
         try:
-            rollback_log = await _rollback_plan(plan, executed, failed_step)
+            rollback_result = await _rollback_plan(plan, executed, failed_step)
             rollback_handle = new_rollback_handle()
+            # Report the rollback status that actually happened. A partial
+            # rollback leaves the workspace in a mixed state and has to be
+            # distinguishable from a clean one.
+            if rollback_result.status == "rolled_back":
+                plan_status = "rolled_back"
+                plan_state = PlanExecutionState.ROLLED_BACK
+            elif rollback_result.status == "partial":
+                plan_status = "rollback_partial"
+                plan_state = PlanExecutionState.PARTIAL
+            else:
+                # The rollback steps themselves failed. The workspace may
+                # not be in the state it was in before the plan ran.
+                plan_status = "rollback_incomplete"
+                plan_state = PlanExecutionState.PARTIAL
             PlanExecutionStore().complete(
                 execution.execution_id,
-                result_status="rolled_back",
-                state=PlanExecutionState.ROLLED_BACK,
+                result_status=plan_status,
+                state=plan_state,
+            )
+            rollback_entries = (
+                [{"id": step_id, "status": "ok"} for step_id in rollback_result.rolled_back_steps]
+                + [
+                    {
+                        "id": f.step_id,
+                        "status": "failed",
+                        "error_message": f.error_message,
+                        "paths_affected": f.paths_affected,
+                    }
+                    for f in rollback_result.failed_rollbacks
+                ]
+                + [
+                    {
+                        "id": step_id,
+                        "status": "not_revertible",
+                        "error_message": "step has no rollback step; its changes are still in place",
+                        "paths_affected": [],
+                    }
+                    for step_id in rollback_result.non_revertible_steps
+                ]
             )
             return ApplyResult(
-                result="rolled_back",
+                result=plan_status,
                 executed_steps=executed,
                 failed_step=failed_step,
-                rollback_steps_executed=[{"id": r, "status": "ok"} for r in rollback_log],
+                rollback_steps_executed=rollback_entries,
                 artifacts_changed=[],
                 rollback_handle=rollback_handle,
             )
@@ -934,7 +977,7 @@ async def deploy_to_workspace(
     refresh_daily_hour: int = 6,
     findings_json: Any = "[]",
     gate_profile: str = "standard",
-    auth_mode: str = "interactive",
+    auth_mode: str | None = None,
     tenant_id: str | None = None,
     client_id: str | None = None,
     dry_run: bool = True,
@@ -953,7 +996,8 @@ async def deploy_to_workspace(
         refresh_daily_hour: Daily UTC hour (0-23) for scheduled refresh (default: 6 AM UTC).
         findings_json: Optional list or JSON string of pre-existing audit findings to evaluate.
         gate_profile: Quality gate profile ("strict", "standard", "lenient").
-        auth_mode: "interactive" (default, browser login) or "service_principal".
+        auth_mode: "interactive" (browser login) or "service_principal". When omitted,
+            ``PBI_AUTH_MODE`` is used, falling back to "interactive".
         tenant_id: Azure AD tenant ID.
         client_id: Azure AD client ID.
         dry_run: When True (default) evaluates the gate and reports the planned
@@ -994,7 +1038,7 @@ async def run_refresh(
     refresh_type: str = "full",
     wait: bool = True,
     timeout_s: int = 1800,
-    auth_mode: str = "interactive",
+    auth_mode: str | None = None,
     tenant_id: str | None = None,
     client_id: str | None = None,
     dry_run: bool = True,
@@ -1012,7 +1056,8 @@ async def run_refresh(
         refresh_type: "full", "automatic", "data_only", "calculate", or "clearValues".
         wait: Whether to poll and wait for the refresh to complete before returning.
         timeout_s: Maximum wait time in seconds (default: 1800).
-        auth_mode: "interactive" or "service_principal".
+        auth_mode: "interactive" or "service_principal". When omitted,
+            ``PBI_AUTH_MODE`` is used, falling back to "interactive".
         tenant_id: Azure AD tenant ID.
         client_id: Azure AD client ID.
         dry_run: When True (default) no refresh is triggered and status is
@@ -1044,7 +1089,7 @@ async def run_dax_regression(
     tolerance_pct: float = 0.1,
     workspace_id: str | None = None,
     dataset_id: str | None = None,
-    auth_mode: str = "interactive",
+    auth_mode: str | None = None,
     tenant_id: str | None = None,
     client_id: str | None = None,
     fabric_client: Any = None,
@@ -1187,7 +1232,7 @@ async def execute_dax_query(
     dataset_id: str,
     dax_query: str,
     impersonated_user_name: str | None = None,
-    auth_mode: str = "interactive",
+    auth_mode: str | None = None,
     tenant_id: str | None = None,
     client_id: str | None = None,
     max_rows: int = _DAX_DEFAULT_MAX_ROWS,
@@ -1253,7 +1298,6 @@ async def execute_dax_query(
 async def diff_models(
     before: str,
     after: str,
-    inspector: Any = None,
 ) -> dict[str, Any]:
     """Compare two semantic models and report structural differences.
 
@@ -1262,14 +1306,13 @@ async def diff_models(
     - See what tables, columns, measures, or relationships changed between branches or releases.
 
     Args:
-        before: Path to the baseline PBIP directory or snapshot.
-        after: Path to the target PBIP directory or snapshot.
-        inspector: Optional model inspector callable.
+        before: Path to the baseline PBIP directory.
+        after: Path to the target PBIP directory.
 
     Returns:
         Dict detailing added, removed, and modified tables, columns, measures, and relationships.
     """
-    result = _diff(before=before, after=after, inspector=inspector)
+    result = _diff(before=before, after=after)
     return result.model_dump(mode="json")
 
 
@@ -2008,6 +2051,38 @@ async def powerbi_health(
 # ---------------------------------------------------------------------------
 
 
+def _apply_transport_security(http_cfg: HttpConfig) -> None:
+    """Widen the Host allowlist to match the address the server binds.
+
+    The SDK enables DNS-rebinding protection with a loopback-only
+    allowlist when the server is created, and that allowlist does not
+    follow a later change of the bind host. A server bound to a
+    container address would then answer 421 Misdirected Request to
+    every client. The protection stays on; only the allowlist grows.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    current = mcp.settings.transport_security
+    allowed_hosts = list(current.allowed_hosts) if current else []
+    allowed_origins = list(current.allowed_origins) if current else []
+
+    extra = list(http_cfg.allowed_hosts)
+    if http_cfg.host not in {"127.0.0.1", "localhost", "::1"}:
+        extra.append(f"{http_cfg.host}:*")
+    for host in extra:
+        if host not in allowed_hosts:
+            allowed_hosts.append(host)
+        origin = f"http://{host}"
+        if origin not in allowed_origins:
+            allowed_origins.append(origin)
+
+    mcp.settings.transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+    )
+
+
 def main() -> None:
     """Run the MCP server.
 
@@ -2050,6 +2125,12 @@ def main() -> None:
     mcp.settings.host = http_cfg.host
     mcp.settings.port = http_cfg.port
     mcp.settings.mount_path = http_cfg.mount_path
+    # `PBI_LOG_LEVEL` is what the deployment docs tell an operator to
+    # set; honour it instead of silently using the default.
+    log_level = os.environ.get("PBI_LOG_LEVEL")
+    if log_level:
+        mcp.settings.log_level = log_level.upper()  # type: ignore[assignment]
+    _apply_transport_security(http_cfg)
     reconcile_orphan_executions_on_boot()
 
     import anyio

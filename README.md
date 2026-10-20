@@ -7,25 +7,28 @@
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-[![Tests](https://img.shields.io/badge/tests-950%20passing-brightgreen)](./tests/)
-[![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-1231%20passing-brightgreen)](./tests/)
+[![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](./tests/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](./pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.18.0 — Beta. 28 tools, 88% cobertura, enterprise hardening
+**Status:** v1.19.0 — Beta. 28 tools, 88% cobertura, enterprise hardening
 (per-tool scopes, write-path containment, plan ownership, full audit trail).
 Every state-changing tool is safe by default: `dry_run=True` on
 `deploy_to_workspace` and `run_refresh`, per-step confirmation on
 `apply_plan`, and `Tools.Write` required for mutating tools over HTTP.
-See [release notes](./RELEASE-NOTES-v1.18.0.md) · [changelog](./CHANGELOG.md).
+Every tool also **reports what it actually did**: a check that could not
+run says so instead of returning a green result, and a rollback that only
+partly succeeded is reported as partial.
+See [release notes](./RELEASE-NOTES-v1.19.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
 ## Quickstart (60 segundos)
 
 ```bash
-# 1. Install from PyPI (v1.14.2).
+# 1. Install from PyPI.
 pip install powerbi-orchestrator-mcp
 
 # 2. Configure your MCP client (Claude Desktop shown).
@@ -78,23 +81,39 @@ Además:
 
 - **Sin secretos en el contexto del LLM.** Ninguna tool acepta un
   `client_secret`. Las credenciales se leen del entorno
-  (`AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET`) o de una
-  workload identity.
+  (`PBI_CLIENT_ID` / `PBI_TENANT_ID` / `PBI_CLIENT_SECRET`, o los
+  equivalentes `AZURE_*`) o de una workload identity.
 - **Las escrituras están contenidas.** Las tools que escriben en disco
   rechazan rutas fuera de `PBI_WORKSPACE_ROOT`, que por defecto es el
   directorio de trabajo del proceso.
 - **Auditoría de todo lo que muta.** Las 20 tools con efecto sobre el
   workspace dejan registro (`success` / `failed` / `dry_run` / `partial` /
-  `rolled_back`) en un log encadenado con HMAC.
+  `rolled_back`) en un log encadenado con HMAC. Los valores guardados bajo
+  una clave que nombra un secreto se redactan enteros.
 - **DAX acotado.** `execute_dax_query` devuelve como máximo 1000 filas por
   defecto (techo 10 000) y marca el truncamiento.
 - **Scopes por tool** sobre transporte HTTP: las tools mutantes requieren
-  `Tools.Write` (`Tools.Admin` los concede todos).
+  `Tools.Write` (`Tools.Admin` los concede todos). Cada sesión HTTP queda
+  ligada a la credencial que la abrió: otra credencial recibe 404.
 - **Los planes tienen dueño.** Cada plan registra la identidad que lo creó y
   solo su dueño puede ejecutarlo; conocer el `plan_id` no alcanza.
 - **Plugins desactivados por defecto.** Cargar un plugin ejecuta Python
   arbitrario, así que requiere `PBI_ENABLE_PLUGINS=1` y un directorio
   escribible solo por el propietario.
+
+### Lo que una tool te dice es lo que ocurrió
+
+Este proyecto no reporta éxito por trabajo que no hizo:
+
+- Una validación que no pudo ejecutarse (por ejemplo, BPA sin Tabular
+  Editor) devuelve un score **parcial** con la lista de checks omitidos,
+  no un 100.
+- Un paso de plan sin ejecutor falla con el nombre de la acción, en vez de
+  devolverse como aplicado.
+- `run_dax_regression` falla si no encuentra el baseline: sin baseline no
+  hay nada contra qué comparar.
+- `apply_plan` distingue `rolled_back` de `rollback_partial` y de
+  `rollback_incomplete`, y cada entrada del rollback lleva su estado real.
 
 Detalle completo del modelo de amenazas en [`SECURITY.md`](./SECURITY.md),
 incluidos los controles que **no** existen.

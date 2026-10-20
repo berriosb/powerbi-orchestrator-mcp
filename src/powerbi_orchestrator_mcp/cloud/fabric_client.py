@@ -24,6 +24,7 @@ Concurrency primitives (per Tier-B §6):
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,6 +34,26 @@ import httpx
 from powerbi_orchestrator_mcp.cloud.auth import READ_SCOPES, WRITE_SCOPES, FabricCredential
 
 _ERROR_BODY_MAX_CHARS = 300
+
+# Identifiers that are interpolated into a REST path must not be able to
+# change the path they end up in. httpx collapses dot segments, so a
+# workspace id of "../../v1.0/myorg/admin/users" would send the
+# orchestrator's own token to a different endpoint than the one the
+# caller asked for. Every identifier is validated at this boundary.
+_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+class FabricIdError(ValueError):
+    """Raised when an identifier cannot safely be used in a REST path."""
+
+
+def _path_segment(value: str, name: str) -> str:
+    """Validate an identifier that will be interpolated into a URL path."""
+    if not isinstance(value, str) or not _ID_PATTERN.match(value):
+        raise FabricIdError(
+            f"{name} must be a plain identifier (letters, digits, '-' and '_'), got {value!r}"
+        )
+    return value
 
 
 def _summarize_response_body(body: str) -> str:
@@ -399,7 +420,9 @@ class FabricClient:
         return resp.get("value", [])  # type: ignore[no-any-return]
 
     async def get_workspace(self, workspace_id: str) -> dict[str, Any]:
-        return await self.get(f"/workspaces/{workspace_id}", service="fabric")
+        return await self.get(
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}", service="fabric"
+        )
 
     async def list_items(
         self, workspace_id: str, *, item_type: str | None = None
@@ -411,14 +434,18 @@ class FabricClient:
         """
         params: dict[str, Any] | None = {"type": item_type} if item_type else None
         resp = await self.get(
-            f"/workspaces/{workspace_id}/items",
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}/items",
             params=params,
             service="fabric",
         )
         return resp.get("value", [])  # type: ignore[no-any-return]
 
     async def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
-        return await self.get(f"/workspaces/{workspace_id}/items/{item_id}", service="fabric")
+        return await self.get(
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/items/{_path_segment(item_id, 'item_id')}",
+            service="fabric",
+        )
 
     async def create_item(
         self,
@@ -441,18 +468,32 @@ class FabricClient:
         }
         if definition:
             body["definition"] = definition
-        return await self.post(f"/workspaces/{workspace_id}/items", json=body, service="fabric")
+        return await self.post(
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}/items",
+            json=body,
+            service="fabric",
+        )
 
     async def delete_item(self, workspace_id: str, item_id: str) -> None:
         """Delete a Fabric item. Requires WRITE scope + elicitation."""
-        await self.delete(f"/workspaces/{workspace_id}/items/{item_id}", service="fabric")
+        await self.delete(
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/items/{_path_segment(item_id, 'item_id')}",
+            service="fabric",
+        )
 
     async def list_datasets(self, workspace_id: str) -> list[dict[str, Any]]:
-        resp = await self.get(f"/groups/{workspace_id}/datasets", service="pbi")
+        resp = await self.get(
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}/datasets", service="pbi"
+        )
         return resp.get("value", [])  # type: ignore[no-any-return]
 
     async def get_dataset(self, workspace_id: str, dataset_id: str) -> dict[str, Any]:
-        return await self.get(f"/groups/{workspace_id}/datasets/{dataset_id}", service="pbi")
+        return await self.get(
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}",
+            service="pbi",
+        )
 
     async def refresh_dataset(
         self,
@@ -476,7 +517,8 @@ class FabricClient:
         if tables:
             body["objects"] = [{"table": t, "partition": None} for t in tables]
         return await self.post(
-            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes",
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/refreshes",
             json=body,
             long_running=True,
             service="pbi",
@@ -485,7 +527,8 @@ class FabricClient:
     async def cancel_refresh(self, workspace_id: str, dataset_id: str) -> None:
         """Cancel an in-progress dataset refresh (per spec §2.3)."""
         await self.post(
-            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes/cancel",
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/refreshes/cancel",
             service="pbi",
         )
 
@@ -498,7 +541,8 @@ class FabricClient:
     ) -> list[dict[str, Any]]:
         """Return the most recent refreshes for a dataset."""
         resp = await self.get(
-            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshes",
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/refreshes",
             params={"$top": top},
             service="pbi",
         )
@@ -528,7 +572,8 @@ class FabricClient:
             }
         """
         return await self.patch(
-            f"/groups/{workspace_id}/datasets/{dataset_id}/refreshSchedule",
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/refreshSchedule",
             json=schedule,
             service="pbi",
         )
@@ -541,7 +586,8 @@ class FabricClient:
         the refresh schedule.
         """
         return await self.post(
-            f"/groups/{workspace_id}/datasets/{dataset_id}/takeover",
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/takeover",
             service="pbi",
         )
 
@@ -555,7 +601,9 @@ class FabricClient:
     ) -> dict[str, Any]:
         """Update a dataset data-source (server / gateway mapping)."""
         return await self.patch(
-            f"/groups/{workspace_id}/datasets/{dataset_id}/datasources/{datasource_id}",
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}"
+            f"/datasources/{_path_segment(datasource_id, 'datasource_id')}",
             json=body,
             service="pbi",
         )
@@ -578,7 +626,8 @@ class FabricClient:
         if impersonated_user_name:
             payload["impersonatedUserName"] = impersonated_user_name
         return await self.post(
-            f"/groups/{workspace_id}/datasets/{dataset_id}/queries",
+            f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/queries",
             json=payload,
             service="pbi",
         )

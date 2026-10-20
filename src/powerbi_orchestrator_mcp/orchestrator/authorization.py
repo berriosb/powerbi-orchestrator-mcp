@@ -31,9 +31,7 @@ def current_identity() -> str | None:
     Used for object-level ownership checks: a plan created by one principal
     must not be executable by another that merely knows its id.
     """
-    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
-
-    claims = get_current_user()
+    claims = _caller_claims()
     if not claims:
         return None
     for key in _IDENTITY_CLAIMS:
@@ -81,27 +79,26 @@ def required_scope_for_tool(tool_name: str) -> str:
     return TOOL_REQUIRED_SCOPE.get(tool_name, SCOPE_READ)
 
 
-def _granted_scopes() -> set[str] | None:
-    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+def _caller_claims() -> dict[str, object] | None:
+    """Claims of the principal driving the current tool call.
 
-    claims = get_current_user()
+    Resolved per request, not per session: the MCP server dispatches tool
+    calls from the session task, so a contextvar written while handling
+    the HTTP request would otherwise be the claims of whoever opened the
+    session rather than the claims of the caller of this call.
+    """
+    from powerbi_orchestrator_mcp.orchestrator.transport import current_caller_claims
+
+    return current_caller_claims()
+
+
+def _granted_scopes() -> set[str] | None:
+    from powerbi_orchestrator_mcp.orchestrator.transport import granted_scopes_from_claims
+
+    claims = _caller_claims()
     if not claims:
         return None
-
-    raw_scp = claims.get("scp", "")
-    scp_list: list[str]
-    if isinstance(raw_scp, str):
-        scp_list = raw_scp.split()
-    elif isinstance(raw_scp, (list, tuple, set)):
-        scp_list = [str(item) for item in raw_scp]
-    else:
-        scp_list = []
-    raw_roles = claims.get("roles", [])
-    if isinstance(raw_roles, (list, tuple, set)):
-        roles_list = [str(item) for item in raw_roles]
-    else:
-        roles_list = [str(raw_roles)] if raw_roles else []
-    return set(scp_list) | set(roles_list)
+    return granted_scopes_from_claims(claims)
 
 
 def authorize_tool(tool_name: str) -> None:

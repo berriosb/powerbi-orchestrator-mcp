@@ -218,12 +218,24 @@ def _run_regression(
             detail=f"runner error: {exc}",
         )
 
-    drift = getattr(result, "max_drift_pct", 0.0)
     threshold = gate.threshold if gate.threshold is not None else 0.1
+    # Gate on the regression's own verdict. Reading a `max_drift_pct`
+    # attribute that the result does not have always yielded 0.0, so the
+    # gate passed unconditionally — including when the regression failed.
+    detail = (
+        f"passed={result.passed} total_queries={result.total_queries} "
+        f"failed_queries={result.failed_queries} threshold={threshold}"
+    )
+    if not result.executed:
+        return GateExecuted(
+            type="run_dax_regression",
+            passed=False,
+            detail=f"regression did not run: {result.message or 'no baseline'}",
+        )
     return GateExecuted(
         type="run_dax_regression",
-        passed=drift <= threshold,
-        detail=f"max_drift_pct={drift} threshold={threshold}",
+        passed=bool(result.passed),
+        detail=detail,
     )
 
 

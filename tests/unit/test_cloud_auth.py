@@ -30,6 +30,57 @@ class TestAuthConfig:
         )
         assert cfg.tenant_id == "explicit"
 
+    def test_reads_the_documented_pbi_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The variables the deployment docs tell operators to set must work."""
+        monkeypatch.setenv("PBI_TENANT_ID", "pbi-tenant")
+        monkeypatch.setenv("PBI_CLIENT_ID", "pbi-client")
+        monkeypatch.setenv("PBI_CLIENT_SECRET", "pbi-secret")
+        monkeypatch.delenv("AZURE_TENANT_ID", raising=False)
+        monkeypatch.delenv("AZURE_CLIENT_ID", raising=False)
+        monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
+
+        cfg = AuthConfig.from_env_or_args(mode="service_principal")
+
+        assert cfg.tenant_id == "pbi-tenant"
+        assert cfg.client_id == "pbi-client"
+        assert cfg.client_secret == "pbi-secret"
+
+    def test_pbi_env_vars_win_over_azure_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A configured PBI_* identity must not be overridden by AZURE_*."""
+        monkeypatch.setenv("PBI_CLIENT_ID", "pbi-client")
+        monkeypatch.setenv("AZURE_CLIENT_ID", "azure-client")
+
+        cfg = AuthConfig.from_env_or_args(mode="service_principal")
+
+        assert cfg.client_id == "pbi-client"
+
+    def test_azure_env_vars_still_work(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PBI_CLIENT_ID", raising=False)
+        monkeypatch.setenv("AZURE_CLIENT_ID", "azure-client")
+
+        cfg = AuthConfig.from_env_or_args(mode="service_principal")
+
+        assert cfg.client_id == "azure-client"
+
+    def test_auth_mode_comes_from_pbi_auth_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PBI_AUTH_MODE", "service_principal")
+
+        cfg = AuthConfig.from_env_or_args()
+
+        assert cfg.mode == "service_principal"
+
+    def test_explicit_mode_wins_over_pbi_auth_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PBI_AUTH_MODE", "service_principal")
+
+        cfg = AuthConfig.from_env_or_args(mode="interactive")
+
+        assert cfg.mode == "interactive"
+
+    def test_default_mode_is_interactive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PBI_AUTH_MODE", raising=False)
+
+        assert AuthConfig.from_env_or_args().mode == "interactive"
+
     def test_interactive_mode_validates(self) -> None:
         cfg = AuthConfig(mode="interactive")
         cfg.validate()  # does not raise

@@ -29,11 +29,14 @@ import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 import jwt
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.auth.provider import AccessToken
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 _current_user_var: contextvars.ContextVar[dict[str, object] | None] = contextvars.ContextVar(
     "current_user", default=None
@@ -46,6 +49,110 @@ def get_current_user() -> dict[str, object] | None:
 
 def set_current_user(claims: dict[str, object] | None) -> None:
     _current_user_var.set(claims)
+
+
+# Claims that identify the calling principal, most specific first. `oid` is
+# the stable object id of the user or service principal; `sub` is the
+# pairwise subject; `appid`/`azp` identify the calling application.
+_PRINCIPAL_CLAIM_KEYS = ("oid", "sub", "appid", "azp", "unique_name", "upn", "preferred_username")
+
+# Claims that identify the *application* the call was made through.
+_CLIENT_ID_CLAIM_KEYS = ("appid", "azp", "client_id")
+
+
+def _first_claim(claims: dict[str, object], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = claims.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def granted_scopes_from_claims(claims: dict[str, object]) -> set[str]:
+    """Extract the scopes/app-roles an Entra token carries.
+
+    Handles both shapes Entra emits: delegated tokens use the space or
+    list separated `scp` claim, application tokens use the `roles`
+    claim.
+    """
+    raw_scp = claims.get("scp", "")
+    if isinstance(raw_scp, str):
+        scp_list = raw_scp.split()
+    elif isinstance(raw_scp, (list, tuple, set)):
+        scp_list = [str(item) for item in raw_scp]
+    else:
+        scp_list = []
+    raw_roles = claims.get("roles", [])
+    if isinstance(raw_roles, (list, tuple, set)):
+        roles_list = [str(item) for item in raw_roles]
+    else:
+        roles_list = [str(raw_roles)] if raw_roles else []
+    return set(scp_list) | set(roles_list)
+
+
+def build_authenticated_user(token: str, claims: dict[str, object]) -> AuthenticatedUser:
+    """Wrap Entra claims in the MCP SDK's `AuthenticatedUser`.
+
+    The SDK binds a streamable-HTTP session to the credential that opened
+    it: `streamable_http_manager` reads `scope["user"]`, derives an
+    `AuthorizationContext` from it and answers 404 when the caller of a
+    later request does not match the principal that created the session.
+
+    Without `scope["user"]` both sides of that comparison are `None`,
+    the comparison never rejects, and any authenticated principal can
+    join any other principal's session and inherit its scopes.
+    """
+    principal = _first_claim(claims, _PRINCIPAL_CLAIM_KEYS)
+    expires_at = claims.get("exp")
+    return AuthenticatedUser(
+        AccessToken(
+            token=token,
+            client_id=_first_claim(claims, _CLIENT_ID_CLAIM_KEYS) or principal,
+            scopes=sorted(granted_scopes_from_claims(claims)),
+            expires_at=int(expires_at) if isinstance(expires_at, int) else None,
+            subject=principal or None,
+            claims=dict(claims),
+        )
+    )
+
+
+def current_request_claims() -> dict[str, object] | None:
+    """Claims of the caller of the *current* MCP request, if any.
+
+    The MCP server dispatches tool calls from the session task, so the
+    contextvar written by the HTTP middleware while handling the HTTP
+    request is not visible from there. The SDK does attach the
+    originating Starlette request to the message metadata, and the
+    middleware stores the authenticated user in that request's ASGI
+    scope — so the per-call claims are read back from there.
+    """
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+    except ImportError:  # pragma: no cover - the SDK always ships it
+        return None
+    ctx = request_ctx.get(None)
+    request = getattr(ctx, "request", None)
+    scope = getattr(request, "scope", None)
+    if not isinstance(scope, dict):
+        return None
+    user = scope.get("user")
+    claims = getattr(getattr(user, "access_token", None), "claims", None)
+    if isinstance(claims, dict):
+        return dict(claims)
+    return None
+
+
+def current_caller_claims() -> dict[str, object] | None:
+    """Claims of the principal driving the current tool call.
+
+    Prefers the per-request claims (HTTP transport: the exact caller of
+    this call) and falls back to the contextvar (stdio transport: the
+    single local user).
+    """
+    claims = current_request_claims()
+    if claims is not None:
+        return claims
+    return get_current_user()
 
 
 Transport = Literal["stdio", "http"]
@@ -67,6 +174,14 @@ class HttpConfig:
     entra_audience: str = ""
     entra_required_scope: str = "Tools.Read"
     mount_path: str = "/mcp"
+    allowed_hosts: tuple[str, ...] = ()
+    """Extra Host header values the server answers to.
+
+    The SDK's DNS-rebinding protection only allows loopback hosts by
+    default, so a server bound to a container address would answer 421
+    to every client. These values are added to the allowlist; the
+    protection itself stays enabled.
+    """
 
 
 class AuthError(Exception):
@@ -240,6 +355,18 @@ def parse_transport_args(
         default=None,
         help="URL path for the MCP endpoint (default /mcp).",
     )
+    parser.add_argument(
+        "--http-allowed-host",
+        action="append",
+        default=None,
+        dest="http_allowed_host",
+        help=(
+            "Extra Host header value the server answers to. Repeatable. "
+            "Needed when the server is bound to a non-loopback address: "
+            "the SDK's DNS-rebinding protection otherwise rejects every "
+            "request with 421."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.transport == "stdio":
@@ -268,9 +395,20 @@ def parse_transport_args(
         entra_required_scope=args.http_entra_required_scope
         or os.environ.get("PBI_ENTRA_REQUIRED_SCOPE", "Tools.Read"),
         mount_path=args.http_mount_path or os.environ.get("PBI_HTTP_MOUNT_PATH", "/mcp"),
+        allowed_hosts=_allowed_hosts(args.http_allowed_host),
     )
 
     return "http", cfg
+
+
+def _allowed_hosts(explicit: list[str] | None) -> tuple[str, ...]:
+    """Resolve the extra Host header values the server answers to."""
+    hosts: list[str] = []
+    if explicit:
+        hosts.extend(h.strip() for h in explicit if h.strip())
+    env_value = os.environ.get("PBI_HTTP_ALLOWED_HOSTS", "")
+    hosts.extend(h.strip() for h in env_value.split(",") if h.strip())
+    return tuple(dict.fromkeys(hosts))
 
 
 def auth_middleware_factory(
@@ -307,20 +445,22 @@ def auth_middleware_factory(
 
 
 class EntraAuthMiddleware:
+    """ASGI middleware that validates the Entra ID bearer token.
+
+    Besides rejecting unauthenticated requests, it publishes the caller's
+    identity in the ASGI scope under `user` so the MCP SDK can bind the
+    session to that credential.
+    """
+
     def __init__(
         self,
-        app: Any,
+        app: ASGIApp,
         validate_fn: Callable[[str | None], dict[str, object]],
     ) -> None:
         self.app = app
         self.validate_fn = validate_fn
 
-    async def __call__(
-        self,
-        scope: dict[str, Any],
-        receive: Callable[[], Any],
-        send: Callable[[dict[str, Any]], Any],
-    ) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") == "http":
             headers = dict(scope.get("headers", []))
             auth_header = headers.get(b"authorization", b"").decode("latin1")
@@ -328,6 +468,11 @@ class EntraAuthMiddleware:
                 claims = self.validate_fn(auth_header)
                 set_current_user(claims)
                 scope["entra_claims"] = claims
+                # Bind the session to this credential. The SDK compares the
+                # caller of every later request against the principal that
+                # created the session and answers 404 on a mismatch; that
+                # check only works when `scope["user"]` is populated.
+                scope["user"] = build_authenticated_user(_extract_bearer(auth_header), claims)
             except AuthError as exc:
                 resp_headers = [(b"content-type", b"application/json")]
                 if exc.www_authenticate:
@@ -358,7 +503,11 @@ __all__ = [
     "HttpConfig",
     "Transport",
     "auth_middleware_factory",
+    "build_authenticated_user",
+    "current_caller_claims",
+    "current_request_claims",
     "get_current_user",
+    "granted_scopes_from_claims",
     "parse_transport_args",
     "set_current_user",
     "validate_entra_token",

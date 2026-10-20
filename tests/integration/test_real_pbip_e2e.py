@@ -337,12 +337,20 @@ class TestSafeRenameEndToEndOnRealFixture:
         )
         assert plan_res.plan_id is not None
         apply_res = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
-        assert apply_res.result in ("failed", "rolled_back")
+        # The rename failed, and so did the revert that followed it: the
+        # column the revert tried to restore never existed. The plan must
+        # say so rather than claim the workspace was rolled back.
+        assert apply_res.result in ("failed", "rolled_back", "rollback_incomplete")
         assert any(
             step.get("success") is False
             and step.get("error_message")
             and "no column" in str(step.get("error_message"))
             for step in apply_res.executed_steps
+        )
+        # No rollback entry may claim success for a rollback that failed.
+        assert all(
+            entry.get("status") != "ok" or "no column" not in str(entry.get("error_message"))
+            for entry in apply_res.rollback_steps_executed
         )
 
         model_file = pbip / "sample.Dataset" / "definition.pbism"

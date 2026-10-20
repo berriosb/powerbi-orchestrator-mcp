@@ -20,7 +20,7 @@ model+report rollback). The engine accepts either:
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,12 @@ class StepOutcome(BaseModel):
     success: bool
     error_message: str | None = None
     changed_files: list[str] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+    """Structured result of the step (scores, counts, resolved paths).
+
+    A step that ran successfully reports what it found here, so the
+    caller can see the outcome instead of only a green checkmark.
+    """
 
 
 class FailedRollback(BaseModel):
@@ -80,6 +86,13 @@ class RollbackResult(BaseModel):
     status: str  # "rolled_back" | "partial" | "no_rollback"
     rolled_back_steps: list[str] = Field(default_factory=list)
     failed_rollbacks: list[FailedRollback] = Field(default_factory=list)
+    non_revertible_steps: list[str] = Field(default_factory=list)
+    """Executed steps that had no rollback step.
+
+    Their side effects are still in place. They are reported so the
+    caller can see them, but they do not by themselves make the rollback
+    partial: the plan declared no way back for those steps.
+    """
 
 
 class RollbackError(Exception):
@@ -145,6 +158,7 @@ class RollbackEngine:
         """
         queue: list[tuple[PlanStep, PlanStep]] = []
         seen: set[str] = set()
+        non_revertible: list[str] = []
 
         if failed_step.rollback_step is not None:
             queue.append((failed_step, failed_step.rollback_step))
@@ -152,6 +166,10 @@ class RollbackEngine:
 
         for step in reversed(executed_steps):
             if step.rollback_step is None:
+                # The step ran and the plan declared no way to revert it.
+                # Its changes are still in place; report it rather than
+                # dropping it silently.
+                non_revertible.append(step.id)
                 continue
             if step.id in seen:
                 continue
@@ -181,22 +199,23 @@ class RollbackEngine:
                     )
                 )
 
-        if not failed:
+        if failed:
+            status = "partial" if rolled else "no_rollback"
             return RollbackResult(
-                status="rolled_back",
-                rolled_back_steps=rolled,
-                failed_rollbacks=[],
-            )
-        if rolled:
-            return RollbackResult(
-                status="partial",
+                status=status,
                 rolled_back_steps=rolled,
                 failed_rollbacks=failed,
+                non_revertible_steps=non_revertible,
             )
+        # Every rollback step succeeded. Steps without a rollback step are
+        # still reported — their changes are in place — but they do not
+        # make the rollback a partial one: the plan simply declared no
+        # way back for them.
         return RollbackResult(
-            status="no_rollback",
-            rolled_back_steps=[],
-            failed_rollbacks=failed,
+            status="rolled_back",
+            rolled_back_steps=rolled,
+            failed_rollbacks=[],
+            non_revertible_steps=non_revertible,
         )
 
     async def execute_single_step(self, step: PlanStep) -> StepOutcome:
@@ -226,9 +245,12 @@ def raise_if_partial(result: RollbackResult) -> None:
     # partial
     failed_ids = ", ".join(f.step_id for f in result.failed_rollbacks)
     paths = sorted({p for f in result.failed_rollbacks for p in f.paths_affected})
+    not_reverted = ", ".join(result.non_revertible_steps)
     msg = (
         f"rollback partial: {len(result.rolled_back_steps)} step(s) reverted, "
         f"{len(result.failed_rollbacks)} failed ({failed_ids}). "
         f"Manual fix needed at: {paths or '<no paths reported>'}"
     )
+    if not_reverted:
+        msg = f"{msg}. Steps left in place (no rollback step): {not_reverted}"
     raise RollbackError(msg, result=result)

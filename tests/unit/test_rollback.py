@@ -151,17 +151,22 @@ class TestExecutePlanErrors:
             await engine.execute_plan([s1], s2)
 
     async def test_step_without_rollback_is_skipped(self) -> None:
-        """Steps in executed_steps without rollback_step are silently skipped."""
+        """A step with no rollback step is reported, not dropped silently."""
         executor = ScriptedExecutor([("success",)])
         engine = RollbackEngine(executor)
         s1 = _step("s1", None)  # no rollback
         s2 = _step("s2", "s2-rb")
         failed = _step("s3", "s3-rb")
         result = await engine.execute_plan([s1, s2], failed)
-        assert result.status == "rolled_back"
         # Only s3 and s2 rolled back (s1 has no rollback).
         assert result.rolled_back_steps == ["s3", "s2"]
         assert [c.id for c in executor.calls] == ["s3-rb", "s2-rb"]
+        # s1 ran and the plan declared no way back for it, so it is
+        # reported: its changes are still in place.
+        assert result.non_revertible_steps == ["s1"]
+        # A step with no rollback step does not by itself make the
+        # rollback partial — the plan simply declared no way back.
+        assert result.status == "rolled_back"
 
 
 class TestExecuteSingleStep:

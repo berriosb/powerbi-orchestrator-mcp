@@ -37,6 +37,71 @@ class StepExecutor(Protocol):
     async def execute_step(self, step: PlanStep) -> StepOutcome: ...
 
 
+def unsupported_action(engine_name: str, action: str, *, hint: str = "") -> StepOutcome:
+    """Build the failure returned when an executor cannot run an action.
+
+    An executor that does not implement an action must say so. Reporting
+    success for work that was never performed makes a plan look applied
+    when nothing happened, which is how a "validated" or "published"
+    claim ends up being false.
+    """
+    message = (
+        f"action {action!r} is not implemented by the {engine_name} executor; no work was performed"
+    )
+    if hint:
+        message = f"{message}. {hint}"
+    return StepOutcome(success=False, error_message=message, changed_files=[])
+
+
+# Results produced by earlier steps of the same plan, keyed by plan id.
+# The plan id is the prefix of the step id (`<plan_id>:s1`).
+_PLAN_STATE: dict[str, dict[str, Any]] = {}
+
+
+def plan_state(step: PlanStep) -> dict[str, Any]:
+    """Return the mutable state shared by the steps of one plan."""
+    plan_id = step.id.split(":", 1)[0]
+    return _PLAN_STATE.setdefault(plan_id, {})
+
+
+def clear_plan_state(plan_id: str) -> None:
+    """Drop the state accumulated by a plan."""
+    _PLAN_STATE.pop(plan_id, None)
+
+
+def _audit_check_from_names(names: list[str]) -> Any:
+    """Translate the plan's check names into an ``AuditCheck``.
+
+    A name that maps to no known check is an error rather than a silent
+    no-op: a check that was asked for and quietly ignored is the same
+    false green this module exists to remove.
+    """
+    from powerbi_orchestrator_mcp.tools.audit_model_and_report import AuditCheck
+
+    known = {
+        "bpa": "bpa",
+        "dax_lint": "dax_lint",
+        "daxlint": "dax_lint",
+        "accessibility": "accessibility",
+        "wcag": "accessibility",
+        "star_schema": "star_schema",
+        "starshema": "star_schema",
+        "naming": "naming",
+    }
+    flags = dict.fromkeys(AuditCheck.model_fields, False)
+    if not names:
+        return AuditCheck()
+    for raw in names:
+        key = known.get(raw.strip().lower())
+        if key is None:
+            raise ValueError(
+                f"unknown audit check {raw!r}; known checks: "
+                f"{', '.join(sorted(set(known.values())))}"
+            )
+        flags[key] = True
+    return AuditCheck(**flags)
+
+
 class DryRunExecutor:
     """Default executor: returns success without performing any side effects.
 
@@ -119,6 +184,16 @@ class StepExecutorRegistry:
 
 
 class ValidationStepExecutor:
+    """Executes the validation-engine steps of a plan.
+
+    Only ``create_snapshot`` is implemented. Every other validation
+    action the planner can emit (``pbip_validate_full``,
+    ``gather_metadata``, ``run_checks_parallel``, ``aggregate_score``,
+    ``pre_deploy_check``, ``load_baseline``, ``diff_baseline``) has no
+    executor behind it, so it is reported as a failure: claiming that a
+    check ran when it did not is worse than reporting that it did not.
+    """
+
     engine_name = "validation"
 
     async def execute_step(self, step: PlanStep) -> StepOutcome:
@@ -127,12 +202,207 @@ class ValidationStepExecutor:
         if action == "create_snapshot":
             label = str(args.get("label", "snapshot"))
             pbip_path = args.get("pbip_path") or args.get("target_ref") or "."
+            handle = await self._snapshot(str(pbip_path), label)
+            if handle is None:
+                return StepOutcome(
+                    success=False,
+                    error_message=(
+                        f"could not snapshot {pbip_path!r}: no modeling engine "
+                        "is available to read the model files"
+                    ),
+                    changed_files=[],
+                )
+            return StepOutcome(success=True, error_message=None, changed_files=[str(handle.path)])
+        if action == "pbip_validate_full":
+            return await self._validate_pbip(args)
+        if action == "gather_metadata":
+            return self._gather_metadata(step, args)
+        if action == "run_checks_parallel":
+            return await self._run_checks(step, args)
+        if action == "aggregate_score":
+            return self._aggregate_score(step)
+        return unsupported_action(
+            self.engine_name,
+            action,
+            hint="run the dedicated validation tools instead of the plan path",
+        )
+
+    @staticmethod
+    def _gather_metadata(step: PlanStep, args: dict[str, Any]) -> StepOutcome:
+        """Read the PBIP and record what is inside it."""
+        from powerbi_orchestrator_mcp.validation.model_metadata import (
+            MetadataError,
+            gather_pbip_metadata,
+        )
+
+        target = str(args.get("target") or args.get("pbip_path") or args.get("target_ref") or "")
+        if not target:
             return StepOutcome(
-                success=True,
-                error_message=None,
-                changed_files=[f"{pbip_path}/.snapshot_{label}"],
+                success=False,
+                error_message="gather_metadata requires a 'target' argument",
+                changed_files=[],
             )
-        return StepOutcome(success=True, error_message=None, changed_files=[])
+        try:
+            meta = gather_pbip_metadata(target)
+        except MetadataError as exc:
+            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
+        state = plan_state(step)
+        state["metadata"] = meta
+        state["pbip_path"] = target
+        return StepOutcome(
+            success=True,
+            error_message=None,
+            changed_files=[],
+            details={
+                "tables": len(meta.tables),
+                "columns": sum(len(c) for c in meta.columns.values()),
+                "measures": len(meta.measures),
+                "pages": len(meta.pages),
+                "visuals": meta.visuals_count,
+                "sources": meta.sources,
+            },
+        )
+
+    @staticmethod
+    async def _run_checks(step: PlanStep, args: dict[str, Any]) -> StepOutcome:
+        """Run the requested checks over the gathered metadata."""
+        from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
+            audit_model_and_report,
+        )
+
+        state = plan_state(step)
+        meta = state.get("metadata")
+        pbip_path = state.get("pbip_path") or str(args.get("pbip_path") or "")
+        if meta is None:
+            return StepOutcome(
+                success=False,
+                error_message=("run_checks_parallel requires gather_metadata to have run first"),
+                changed_files=[],
+            )
+        requested = [str(c) for c in (args.get("checks") or [])]
+        try:
+            audit_check = _audit_check_from_names(requested)
+        except ValueError as exc:
+            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
+
+        result = await audit_model_and_report(
+            pbip_path,
+            dax_measures=dict(meta.measures),
+            checks=audit_check,
+        )
+        state["audit"] = result
+        return StepOutcome(
+            success=True,
+            error_message=None,
+            changed_files=[],
+            details={
+                "overall_score": result.overall_score,
+                "score_is_partial": result.score_is_partial,
+                "skipped_checks": result.skipped_checks,
+                "findings_count": len(result.findings),
+                "warnings": result.warnings,
+            },
+        )
+
+    @staticmethod
+    def _aggregate_score(step: PlanStep) -> StepOutcome:
+        """Report the aggregated audit score."""
+        state = plan_state(step)
+        result = state.get("audit")
+        if result is None:
+            return StepOutcome(
+                success=False,
+                error_message=("aggregate_score requires run_checks_parallel to have run first"),
+                changed_files=[],
+            )
+        details = {
+            "overall_score": result.overall_score,
+            "score_is_partial": result.score_is_partial,
+            "skipped_checks": result.skipped_checks,
+            "findings_count": len(result.findings),
+            "bpa_score": result.bpa_score,
+            "wcag_score": result.wcag_score,
+            "dax_lint_findings_count": result.dax_lint_findings_count,
+        }
+        # A partial score must not be presented as a clean bill of health.
+        if result.score_is_partial:
+            return StepOutcome(
+                success=False,
+                error_message=(
+                    "the audit score is partial: "
+                    f"{', '.join(result.skipped_checks)} did not run. "
+                    f"score over the checks that did run: {result.overall_score}"
+                ),
+                changed_files=[],
+                details=details,
+            )
+        return StepOutcome(success=True, error_message=None, changed_files=[], details=details)
+
+    @staticmethod
+    async def _validate_pbip(args: dict[str, Any]) -> StepOutcome:
+        """Validate the PBIP on disk and report what the validator found.
+
+        This is the closing step of the rename plan: it must be a real
+        validation of the files that were just written, not an
+        unconditional success.
+        """
+        from powerbi_orchestrator_mcp.engines.base import ConnectionHandle
+        from powerbi_orchestrator_mcp.engines.report_python import PythonReportEngine
+
+        pbip_path = str(args.get("pbip_path") or args.get("target_ref") or ".")
+        engine = PythonReportEngine()
+        conn = ConnectionHandle(
+            engine="python_report",
+            target_type="pbip_folder",
+            target_ref=pbip_path,
+            session_token="validate-token",
+        )
+        try:
+            result = await engine.validate_pbir(conn)
+        except Exception as exc:
+            return StepOutcome(
+                success=False,
+                error_message=(
+                    f"PBIP validation could not run for {pbip_path!r}: {type(exc).__name__}: {exc}"
+                ),
+                changed_files=[],
+            )
+        if result.valid:
+            return StepOutcome(success=True, error_message=None, changed_files=[])
+        errors = [f for f in result.findings if f.get("severity") == "error"]
+        detail = "; ".join(
+            f"{f.get('rule_id', 'error')}: {f.get('message', '')}" for f in errors[:5]
+        )
+        return StepOutcome(
+            success=False,
+            error_message=(
+                f"PBIP validation failed for {pbip_path!r} with {len(errors)} error(s): {detail}"
+            ),
+            changed_files=[],
+        )
+
+    @staticmethod
+    async def _snapshot(pbip_path: str, label: str) -> Any | None:
+        """Take a real snapshot and return its handle.
+
+        The snapshot file must really exist: the plan's rollback handle
+        points at it, and a handle to a file that was never written is
+        not a rollback.
+        """
+        from powerbi_orchestrator_mcp.engines.base import ConnectionHandle
+        from powerbi_orchestrator_mcp.engines.te_adapter import InMemoryModelingAdapter
+
+        conn = ConnectionHandle(
+            engine="python_modeling",
+            target_type="pbip_folder",
+            target_ref=pbip_path,
+            session_token="snapshot-token",
+        )
+        adapter = InMemoryModelingAdapter()
+        try:
+            return await adapter.snapshot(conn, label)
+        except Exception:
+            return None
 
 
 class ModelingStepExecutor:
@@ -262,7 +532,7 @@ class ModelingStepExecutor:
                     except TypeError:
                         await engine.restore_snapshot(handle)
                 return StepOutcome(success=True, changed_files=[])
-            return StepOutcome(success=True, changed_files=[])
+            return unsupported_action(self.engine_name, action)
         except Exception as exc:
             return StepOutcome(success=False, error_message=str(exc), changed_files=[])
         finally:
@@ -351,7 +621,7 @@ class ReportStepExecutor:
                 return StepOutcome(success=v.valid, changed_files=[])
             if action == "snapshot":
                 return StepOutcome(success=True, changed_files=[])
-            return StepOutcome(success=True, changed_files=[])
+            return unsupported_action(self.engine_name, action)
         except Exception as exc:
             return StepOutcome(success=False, error_message=str(exc), changed_files=[])
         finally:
@@ -360,10 +630,25 @@ class ReportStepExecutor:
 
 
 class CloudStepExecutor:
+    """Executes the cloud-engine steps of a plan.
+
+    No cloud action is implemented here: publishing to Fabric, binding a
+    gateway and scheduling a refresh are performed by the dedicated
+    ``deploy_to_workspace`` and ``run_refresh`` tools, which enforce the
+    pre-deploy gate and the safe-by-default ``dry_run`` contract.
+
+    Reporting success here would tell the caller that an artifact was
+    published to a production workspace when nothing was sent.
+    """
+
     engine_name = "cloud"
 
-    async def execute_step(self, _step: PlanStep) -> StepOutcome:
-        return StepOutcome(success=True, error_message=None, changed_files=[])
+    async def execute_step(self, step: PlanStep) -> StepOutcome:
+        return unsupported_action(
+            self.engine_name,
+            step.action,
+            hint="use the deploy_to_workspace and run_refresh tools for cloud operations",
+        )
 
 
 def register_default_executors(
@@ -374,6 +659,7 @@ def register_default_executors(
     reg.register(ValidationStepExecutor())
     reg.register(ModelingStepExecutor())
     reg.register(ReportStepExecutor())
+    reg.register(CloudStepExecutor())
 
 
 _default_registry = StepExecutorRegistry()
@@ -392,3 +678,4 @@ def reset_default_registry(load_defaults: bool = True) -> None:
         _default_registry.register(ValidationStepExecutor())
         _default_registry.register(ModelingStepExecutor())
         _default_registry.register(ReportStepExecutor())
+        _default_registry.register(CloudStepExecutor())

@@ -36,6 +36,36 @@ WRITE_SCOPES = (
     "https://analysis.windows.net/powerbi/api/Dataset.ReadWrite.All",
 )
 
+# Credential environment variables, most specific first. The orchestrator's
+# own ``PBI_*`` names win over the generic ``AZURE_*`` ones because they are
+# what this project's own documentation (DOCKER.md, docker-compose.yml)
+# tells an operator to set — reading only ``AZURE_*`` would silently
+# authenticate as a different identity than the one that was configured.
+ENV_TENANT_ID = ("PBI_TENANT_ID", "AZURE_TENANT_ID")
+ENV_CLIENT_ID = ("PBI_CLIENT_ID", "AZURE_CLIENT_ID")
+ENV_CLIENT_SECRET = ("PBI_CLIENT_SECRET", "AZURE_CLIENT_SECRET")
+ENV_AUTH_MODE = ("PBI_AUTH_MODE",)
+
+
+def _first_env(names: tuple[str, ...]) -> str | None:
+    """Return the first environment variable that is set and non-empty."""
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
+def resolve_auth_mode(mode: str | None = None) -> str:
+    """Resolve the auth mode from an argument, the environment, or the default.
+
+    ``PBI_AUTH_MODE`` is what the project's own deployment docs tell an
+    operator to set; it has to be honoured, otherwise the configured
+    service principal is ignored and the server authenticates as
+    something else.
+    """
+    return mode or _first_env(ENV_AUTH_MODE) or "interactive"
+
 
 class AuthModeError(ValueError):
     """Raised when an unsupported auth mode is requested."""
@@ -61,23 +91,29 @@ class AuthConfig:
     @classmethod
     def from_env_or_args(
         cls,
-        mode: str = "interactive",
+        mode: str | None = None,
         tenant_id: str | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
     ) -> AuthConfig:
         """Resolve auth config from explicit args, falling back to env vars.
 
-        Env vars (per spec):
-        - ``AZURE_TENANT_ID``
-        - ``AZURE_CLIENT_ID``
-        - ``AZURE_CLIENT_SECRET`` (or ``AZURE_CLIENT_CERTIFICATE_PATH``)
+        Precedence: explicit arguments, then the orchestrator's own
+        ``PBI_*`` variables, then the ``AZURE_*`` variables the
+        azure-identity SDK uses.
+
+        Environment variables:
+        - ``PBI_AUTH_MODE`` / ``AZURE_CLIENT_ID`` family:
+          ``PBI_AUTH_MODE``, ``PBI_TENANT_ID`` / ``AZURE_TENANT_ID``,
+          ``PBI_CLIENT_ID`` / ``AZURE_CLIENT_ID``,
+          ``PBI_CLIENT_SECRET`` / ``AZURE_CLIENT_SECRET``.
         """
+        resolved_mode = resolve_auth_mode(mode)
         return cls(
-            mode=mode,
-            tenant_id=tenant_id or os.environ.get("AZURE_TENANT_ID"),
-            client_id=client_id or os.environ.get("AZURE_CLIENT_ID"),
-            client_secret=client_secret or os.environ.get("AZURE_CLIENT_SECRET"),
+            mode=resolved_mode,
+            tenant_id=tenant_id or _first_env(ENV_TENANT_ID),
+            client_id=client_id or _first_env(ENV_CLIENT_ID),
+            client_secret=client_secret or _first_env(ENV_CLIENT_SECRET),
         )
 
     def validate(self) -> None:
@@ -177,9 +213,14 @@ class FabricCredential:
 
 
 __all__ = [
+    "ENV_AUTH_MODE",
+    "ENV_CLIENT_ID",
+    "ENV_CLIENT_SECRET",
+    "ENV_TENANT_ID",
     "AuthConfig",
     "AuthModeError",
     "FabricCredential",
     "READ_SCOPES",
     "WRITE_SCOPES",
+    "resolve_auth_mode",
 ]

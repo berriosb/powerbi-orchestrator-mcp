@@ -49,6 +49,14 @@ class AuditResult(BaseModel):
     auto_fixable_count: int = 0
     findings: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    score_is_partial: bool = False
+    """True when a requested check could not run.
+
+    The score is then computed over the checks that did run, so a high
+    score does not mean the model is clean — it means the checks that
+    ran found little. ``skipped_checks`` says which ones are missing.
+    """
+    skipped_checks: list[str] = Field(default_factory=list)
 
 
 async def audit_model_and_report(
@@ -69,6 +77,7 @@ async def audit_model_and_report(
     checks = checks or AuditCheck()
     findings: list[dict[str, Any]] = []
     warnings: list[str] = []
+    skipped_checks: list[str] = []
     bpa_score: float | None = None
     bpa_findings_count = 0
     dax_lint_findings_count = 0
@@ -117,8 +126,13 @@ async def audit_model_and_report(
                 )
         except EngineError as exc:
             warnings.append(f"Tabular Editor CLI (te2) not available; BPA skipped: {exc}")
+            skipped_checks.append("bpa")
             bpa_score = None
             bpa_findings_count = 0
+
+    if checks.dax_lint and not dax_measures:
+        skipped_checks.append("dax_lint")
+        warnings.append("dax_lint skipped: no DAX expressions were supplied to lint")
 
     if checks.dax_lint and dax_measures:
         linter = DaxLinter()
@@ -153,6 +167,9 @@ async def audit_model_and_report(
                     "source": "wcag",
                 }
             )
+    elif checks.accessibility:
+        skipped_checks.append("accessibility")
+        warnings.append(f"accessibility skipped: {pbip_path} is not a readable PBIP project")
 
     dax_score: float | None = None
     if checks.dax_lint and dax_measures:
@@ -183,4 +200,6 @@ async def audit_model_and_report(
         auto_fixable_count=auto_fixable_count,
         findings=findings,
         warnings=warnings,
+        score_is_partial=bool(skipped_checks),
+        skipped_checks=skipped_checks,
     )

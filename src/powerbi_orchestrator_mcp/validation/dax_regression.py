@@ -47,6 +47,12 @@ class QueryDiff(BaseModel):
     tolerance_pct: float
     diff_summary: str = ""
     sample_diff: list[dict[str, Any]] = Field(default_factory=list)
+    compared: bool = True
+    """False when the baseline records the query but no expected rows.
+
+    Such a query has nothing to compare against, so it is reported
+    separately instead of being counted as a pass or a failure.
+    """
 
 
 class RegressionResult(BaseModel):
@@ -59,6 +65,17 @@ class RegressionResult(BaseModel):
     executed: bool = True
     message: str | None = None
     diffs: list[QueryDiff] = Field(default_factory=list)
+    compared_queries: int = 0
+    """Queries that were actually compared against a recorded expectation."""
+
+
+class BaselineUnavailableError(RuntimeError):
+    """Raised when the baseline file is missing or cannot be parsed.
+
+    A regression run without a baseline compares nothing. Treating the
+    empty result as "passed" would report a green check that never ran,
+    so the run fails instead.
+    """
 
 
 class DaxRegressionRunner:
@@ -83,20 +100,49 @@ class DaxRegressionRunner:
 
     async def run(self, baseline_path: Path) -> RegressionResult:
         """Run all baseline queries and compare against expected rows."""
-        baseline = self._load_baseline(baseline_path)
+        try:
+            baseline = self._load_baseline(baseline_path)
+        except BaselineUnavailableError as exc:
+            # Nothing was compared, so nothing passed.
+            return RegressionResult(
+                passed=False,
+                total_queries=0,
+                passed_queries=0,
+                failed_queries=0,
+                executed=False,
+                message=str(exc),
+                diffs=[],
+            )
         diffs: list[QueryDiff] = []
         for q in baseline.queries:
             actual_rows = await self._run_query(q.query)
             diff = self._compare(q, actual_rows)
             diffs.append(diff)
-        passed = sum(1 for d in diffs if d.passed)
+        compared = [d for d in diffs if d.compared]
+        failed = sum(1 for d in compared if not d.passed)
+        passed = len(compared) - failed
         return RegressionResult(
-            passed=(passed == len(diffs)),
+            passed=(failed == 0),
             total_queries=len(diffs),
+            compared_queries=len(compared),
             passed_queries=passed,
-            failed_queries=len(diffs) - passed,
+            failed_queries=failed,
+            executed=True,
+            message=(
+                "one or more queries drifted"
+                if failed
+                else (
+                    "no query had a recorded expectation; nothing was compared"
+                    if not compared
+                    else None
+                )
+            ),
             diffs=diffs,
         )
+
+    async def execute(self, query: str) -> list[dict[str, Any]]:
+        """Run a single query through the configured executor."""
+        return await self._run_query(query)
 
     async def _run_query(self, query: str) -> list[dict[str, Any]]:
         # In production, calls modeling_engine.execute_dax(query).
@@ -108,16 +154,34 @@ class DaxRegressionRunner:
 
     @staticmethod
     def _load_baseline(path: Path) -> BaselineFile:
+        """Load the baseline file, failing loudly when it is unusable.
+
+        A missing or corrupt baseline is not an empty baseline: it means
+        there is nothing to compare against, so the run cannot pass.
+        """
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return BaselineFile(
-                created_at="",
-                queries=[],
-            )
-        except json.JSONDecodeError:
-            return BaselineFile(created_at="", queries=[])
-        return BaselineFile.model_validate(data)
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:
+            raise BaselineUnavailableError(
+                f"baseline file not found: {path}. "
+                "Create it with the run_dax_regression tool before running a regression."
+            ) from exc
+        except OSError as exc:
+            raise BaselineUnavailableError(
+                f"baseline file could not be read: {path} ({exc})"
+            ) from exc
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise BaselineUnavailableError(
+                f"baseline file is not valid JSON: {path} ({exc})"
+            ) from exc
+        try:
+            return BaselineFile.model_validate(data)
+        except Exception as exc:
+            raise BaselineUnavailableError(
+                f"baseline file does not match the expected schema: {path} ({exc})"
+            ) from exc
 
     @staticmethod
     def passed(diffs: list[QueryDiff]) -> bool:
@@ -127,6 +191,24 @@ class DaxRegressionRunner:
     def _compare(self, query: BaselineQuery, actual_rows: list[dict[str, Any]]) -> QueryDiff:
         """Compare actual vs expected with tolerance."""
         expected = query.expected_rows
+        if not expected:
+            # The baseline records the query but no expected rows. There
+            # is nothing to compare against, so this is reported as "not
+            # compared" rather than as a row-count mismatch against an
+            # expectation that was never recorded.
+            return QueryDiff(
+                name=query.name,
+                query=query.query,
+                passed=True,
+                expected_row_count=0,
+                actual_row_count=len(actual_rows),
+                tolerance_pct=self._tolerance,
+                diff_summary=(
+                    "no expected rows recorded in the baseline; the result was not compared"
+                ),
+                sample_diff=[],
+                compared=False,
+            )
         if len(expected) != len(actual_rows):
             return QueryDiff(
                 name=query.name,
