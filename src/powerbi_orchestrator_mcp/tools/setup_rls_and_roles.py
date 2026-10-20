@@ -31,6 +31,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
 
+# A TMDL identifier that can be written bare.
+_PLAIN_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 # ---------------------------------------------------------------------------
 # Spec
 # ---------------------------------------------------------------------------
@@ -72,6 +75,13 @@ class RoleSpec(BaseModel):
     members: list[RoleMember] = Field(default_factory=list)
     test_queries: list[RlsTestQuery] = Field(default_factory=list)
     description: str | None = None
+
+    @field_validator("role_name", "table")
+    @classmethod
+    def _check_identifier(cls, value: str) -> str:
+        """Refuse identifiers that could inject another TMDL block."""
+        _render_identifier(value, "identifier")
+        return value
 
 
 class SetupRlsAndRoles(BaseModel):
@@ -178,14 +188,37 @@ def _extract_table_ref(filter_expression: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _render_identifier(name: str, field: str) -> str:
+    """Render a TMDL identifier, refusing anything that could inject.
+
+    The role and table names are written into the TMDL as bare
+    identifiers. A name carrying a line break would close the current
+    role block and open a new one, so anything that is not a plain
+    identifier is either quoted or refused.
+    """
+    if not name or not name.strip():
+        raise ValueError(f"{field} cannot be empty")
+    if "\n" in name or "\r" in name:
+        raise ValueError(f"{field} cannot contain a line break: {name!r}")
+    if '"' in name:
+        raise ValueError(f"{field} cannot contain a double quote: {name!r}")
+    if "{" in name or "}" in name:
+        raise ValueError(f"{field} cannot contain a brace: {name!r}")
+    if _PLAIN_IDENTIFIER.match(name):
+        return name
+    return '"' + name + '"'
+
+
 def render_tmdl_role(role: RoleSpec) -> str:
     """Render a single role block in TMDL form."""
     members = "\n".join(f"        member: {json.dumps(m.value)}" for m in role.members)
     desc = f"    description: {json.dumps(role.description)}\n" if role.description else ""
+    role_name = _render_identifier(role.role_name, "role_name")
+    table = _render_identifier(role.table, "table")
     return (
-        f"role {role.role_name}\n"
+        f"role {role_name}\n"
         f"{desc}"
-        f"    tablePermission {role.table}\n"
+        f"    tablePermission {table}\n"
         f"        filterExpression: {json.dumps(role.filter_expression)}\n"
         + (members + "\n" if members else "")
     )

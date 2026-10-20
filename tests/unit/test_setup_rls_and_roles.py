@@ -140,8 +140,8 @@ class TestAtomicWriteAndExecution:
         res = setup_rls_and_roles(target=str(pbip), spec_yaml=VALID_YAML, dry_run=False)
         assert res.dry_run is False
         text = (pbip / "demo.Dataset" / "definition.tmdl").read_text()
-        assert "role Region-West" in text
-        assert "role Region-East" in text
+        assert 'role "Region-West"' in text
+        assert 'role "Region-East"' in text
 
     def test_risk_score_increases_with_complexity(self, tmp_path: Path) -> None:
         # Many roles + many members → higher risk.
@@ -214,7 +214,7 @@ class TestAtomicWriteAndExecution:
         assert res.rollback_performed is False
         assert res.failed_test is not None
         text = (pbip / "demo.Dataset" / "definition.tmdl").read_text()
-        assert "role Region-West" in text
+        assert 'role "Region-West"' in text
 
     def test_missing_pbip_returns_warning(self, tmp_path: Path) -> None:
         res = setup_rls_and_roles(
@@ -227,7 +227,7 @@ class TestAtomicWriteAndExecution:
         tmdl.write_text("table Foo\n")
         res = setup_rls_and_roles(target=str(tmdl), spec_yaml=VALID_YAML, dry_run=False)
         text = tmdl.read_text()
-        assert "role Region-West" in text
+        assert 'role "Region-West"' in text
         assert res.dry_run is False
 
     def test_atomic_write_no_partial_files(self, tmp_path: Path) -> None:

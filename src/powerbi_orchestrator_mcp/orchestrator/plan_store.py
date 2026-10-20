@@ -183,10 +183,25 @@ class PlanStore:
         finally:
             conn.close()
 
-    def delete(self, plan_id: str) -> bool:
+    def delete(self, plan_id: str, owner: str | None = None) -> bool:
+        """Delete a plan only when the caller owns it.
+
+        Scoped like :meth:`get` and :meth:`list_all`: without an
+        authenticated identity the caller is the local process, so only
+        its own plans can be deleted.
+        """
+        from powerbi_orchestrator_mcp.orchestrator.authorization import (
+            LOCAL_IDENTITY,
+            current_identity,
+        )
+
+        wanted = owner or current_identity() or LOCAL_IDENTITY
         conn = self._conn()
         try:
-            cursor = conn.execute("DELETE FROM plans WHERE plan_id = ?", (plan_id,))
+            cursor = conn.execute(
+                "DELETE FROM plans WHERE plan_id = ? AND owner = ?",
+                (plan_id, wanted),
+            )
             conn.commit()
             return cursor.rowcount > 0
         finally:

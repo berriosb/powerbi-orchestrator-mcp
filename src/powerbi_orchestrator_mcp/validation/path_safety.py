@@ -89,16 +89,17 @@ def _resolve_guarded(path_str: str) -> Path:
     return resolved
 
 
-def _enforce_contained(resolved: Path, ws_path: Path) -> None:
+def _enforce_contained(resolved: Path, ws_path: Path, *, hint: str = "") -> None:
     resolved_str = str(resolved).replace("\\", "/")
     try:
         contained = resolved.is_relative_to(ws_path)
     except AttributeError:
         contained = str(resolved).startswith(str(ws_path))
     if not contained:
-        raise ValueError(
-            f"path {resolved_str!r} is outside allowed workspace root {str(ws_path)!r}"
-        )
+        message = f"path {resolved_str!r} is outside allowed workspace root {str(ws_path)!r}"
+        if hint:
+            message = f"{message}. {hint}"
+        raise ValueError(message)
 
 
 def validate_write_path(
@@ -121,6 +122,30 @@ def validate_write_path(
     return resolved
 
 
+def resolve_read_root(root: str | Path | None = None) -> Path | None:
+    """Return the directory that bounds every read, or None to allow any.
+
+    Uses ``PBI_WORKSPACE_ROOT`` when the operator set it, otherwise falls
+    back to the process working directory — the same default the write
+    path uses.
+
+    An operator who genuinely needs to read a project outside that root
+    sets ``PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1``. The allowance is
+    explicit on purpose: reading is how content reaches the model
+    context, so an unbounded read path should never be the default.
+    """
+    configured = root or os.environ.get("PBI_WORKSPACE_ROOT")
+    if configured:
+        return Path(configured).resolve()
+    if os.environ.get("PBI_ALLOW_OUTSIDE_WORKSPACE_READ", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return None
+    return Path.cwd().resolve()
+
+
 def validate_safe_pbip_path(
     path_str: str,
     *,
@@ -128,13 +153,29 @@ def validate_safe_pbip_path(
     must_be_dir: bool = True,
     workspace_root: str | Path | None = None,
 ) -> Path:
+    """Validate a path a tool is about to read.
+
+    Containment is enforced by default, against ``PBI_WORKSPACE_ROOT``
+    when it is set and against the process working directory otherwise —
+    the same rule the write path follows. An operator who needs to read
+    outside that root sets ``PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1``.
+
+    The system and credential directories are refused either way.
+    """
     if not path_str or not str(path_str).strip():
         raise ValueError("pbip_path cannot be empty")
     resolved = _resolve_guarded(path_str)
 
-    effective_ws = workspace_root or os.environ.get("PBI_WORKSPACE_ROOT")
-    if effective_ws:
-        _enforce_contained(resolved, Path(effective_ws).resolve())
+    effective_ws = resolve_read_root(workspace_root)
+    if effective_ws is not None:
+        _enforce_contained(
+            resolved,
+            effective_ws,
+            hint=(
+                "Point PBI_WORKSPACE_ROOT at the directory that holds it, or set "
+                "PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1 to read outside the root"
+            ),
+        )
 
     resolved_str = str(resolved).replace("\\", "/")
     if must_exist and not resolved.exists():
