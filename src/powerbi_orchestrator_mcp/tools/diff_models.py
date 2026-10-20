@@ -10,19 +10,25 @@ from powerbi_orchestrator_mcp.validation.model_diff import (
     ModelDiffer,
     ModelDiffResult,
 )
+from powerbi_orchestrator_mcp.validation.model_metadata import (
+    MetadataError,
+    pbip_inspector,
+)
 
 
 class DiffModels(BaseModel):
-    """Input schema for ``diff_models`` tool (SPEC §6.1 #9).
-
-    Both targets may be:
-    - A PBIP folder path (inspected via the modeling engine).
-    - A snapshot file (JSON written by the modeling engine).
-    """
+    """Input schema for ``diff_models`` tool (SPEC §6.1 #9)."""
 
     before: str
     after: str
-    inspector: Any = None  # injected; in production comes from modeling engine
+
+
+class ModelDiffUnavailableError(RuntimeError):
+    """Raised when one of the two models could not be inspected.
+
+    Reporting "0 changes" for a model that could not be read is a
+    false green: it reads as "these two models are identical".
+    """
 
 
 def diff_models(
@@ -33,21 +39,30 @@ def diff_models(
 ) -> ModelDiffResult:
     """Diff two semantic models (PBIP folders or snapshots).
 
+    Without an explicit ``inspector`` the PBIP folders are read from
+    disk, which is the only path an MCP client can take: a callable
+    cannot be passed over the wire.
+
     Returns ModelDiffResult with breaking/non-breaking/added/removed
     counts plus the full diff list.
+
+    Raises:
+        ModelDiffUnavailableError: one of the two models could not be
+            inspected.
     """
     if inspector is None:
-        # Without an inspector, return an empty diff. Tests inject
-        # the inspector to provide real model data.
-        return ModelDiffResult(
-            before_path=before,
-            after_path=after,
-            total_changes=0,
-            breaking_changes=0,
-            non_breaking_changes=0,
-            added_objects=0,
-            removed_objects=0,
-        )
+        inspector = _pbip_inspector
 
     differ = ModelDiffer(inspector)
     return differ.diff(before, after)
+
+
+def _pbip_inspector(target_ref: str) -> dict[str, Any]:
+    """Inspect a PBIP folder, turning a read failure into a clear error."""
+    try:
+        return pbip_inspector(target_ref)
+    except MetadataError as exc:
+        raise ModelDiffUnavailableError(str(exc)) from exc
+
+
+__all__ = ["DiffModels", "ModelDiffUnavailableError", "diff_models"]

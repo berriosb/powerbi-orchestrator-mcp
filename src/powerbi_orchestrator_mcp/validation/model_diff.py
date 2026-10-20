@@ -59,8 +59,9 @@ class ModelDiffer:
     The actual model introspection is delegated to the injected
     ``inspector`` callable (in production, wraps ``ModelingEngine``).
     For MVP, the inspector returns:
-    ``{"tables": [...], "columns": {table: [...]}, "measures": [...],
+    ``{"tables": [...], "columns": [...], "measures": [...],
         "relationships": [...]}``
+    where each entry is a dict with a ``name`` key.
     """
 
     # Properties whose change is breaking (per spec §2.4 table).
@@ -87,6 +88,7 @@ class ModelDiffer:
         after = self._inspector(after_ref)
         diffs: list[ObjectDiff] = []
         diffs.extend(self._diff_lists(before, after, "tables"))
+        diffs.extend(self._diff_lists(before, after, "columns"))
         diffs.extend(self._diff_measures(before, after))
         diffs.extend(self._diff_relationships(before, after))
         breaking = sum(1 for d in diffs if d.severity == DiffSeverity.BREAKING)
@@ -116,8 +118,15 @@ class ModelDiffer:
     ) -> list[ObjectDiff]:
         """Generic diff for lists of dicts keyed by ``name``."""
         diffs: list[ObjectDiff] = []
-        b = {x["name"]: x for x in before.get(key, [])}
-        a = {x["name"]: x for x in after.get(key, [])}
+        b_items = before.get(key)
+        a_items = after.get(key)
+        # Some inspectors describe columns as a mapping of table -> list
+        # rather than a flat list; that shape cannot be diffed by name
+        # and is skipped rather than crashing the whole diff.
+        if not isinstance(b_items, list) or not isinstance(a_items, list):
+            return diffs
+        b = {x["name"]: x for x in b_items if isinstance(x, dict) and "name" in x}
+        a = {x["name"]: x for x in a_items if isinstance(x, dict) and "name" in x}
         for name in b.keys() - a.keys():
             diffs.append(
                 ObjectDiff(
