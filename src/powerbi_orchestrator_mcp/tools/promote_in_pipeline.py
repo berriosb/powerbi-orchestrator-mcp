@@ -148,10 +148,13 @@ def _run_pre_deploy_check(
 
     findings = findings or []
     result = pre_deploy_check(findings, profile=gate.profile or "standard")
+    detail = f"profile={gate.profile or 'standard'} evaluated={result.evaluated}"
+    if not result.passed and result.failed_checks:
+        detail = f"{detail} blocked={'; '.join(result.failed_checks)}"
     return GateExecuted(
         type="pre_deploy_check",
         passed=result.passed,
-        detail=f"profile={gate.profile or 'standard'}",
+        detail=detail,
     )
 
 

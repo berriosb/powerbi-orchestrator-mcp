@@ -51,6 +51,18 @@ class GateResult(BaseModel):
     warning_count: int = 0
     info_count: int = 0
     failed_checks: list[str] = Field(default_factory=list)
+    evaluated: int = 0
+    """Findings the gate actually looked at.
+
+    Zero means the gate had no evidence to decide on, which is reported
+    as a failure rather than as a pass.
+    """
+    unknown_severities: list[str] = Field(default_factory=list)
+    """Severity values the profile does not know about.
+
+    They are blocking: a severity the gate cannot interpret is a
+    severity it cannot dismiss.
+    """
 
 
 # Built-in profiles (spec §4).
@@ -110,15 +122,24 @@ class PreDeployGate:
 
         ``findings`` may be ``BpaFinding`` instances (with .severity) or
         dicts with a ``"severity"`` key.
+
+        The gate fails closed on anything it cannot interpret:
+
+        - A severity it does not know ("critical", "Error", a missing
+          severity) blocks, whatever the profile tolerates.
+        - No findings at all is not a pass: the gate had no evidence to
+          decide on, and reporting "passed" would read as "everything
+          was checked and nothing was found".
         """
         counts = {"error": 0, "warning": 0, "info": 0}
+        unknown: list[str] = []
         for f in findings:
-            if isinstance(f, dict):
-                sev = f.get("severity", "info")
-            else:
-                sev = getattr(f, "severity", "info")
+            raw = f.get("severity") if isinstance(f, dict) else getattr(f, "severity", None)
+            sev = str(raw).strip().lower() if raw is not None else ""
             if sev in counts:
                 counts[sev] += 1
+            else:
+                unknown.append(sev or "(missing severity)")
 
         failed: list[str] = []
         for severity_name, threshold in [
@@ -135,6 +156,20 @@ class PreDeployGate:
             if is_blocking and count > threshold.max_findings:
                 failed.append(f"{severity_name}: {count} findings (max {threshold.max_findings})")
 
+        if unknown:
+            summary = ", ".join(sorted(set(unknown)))
+            failed.append(
+                f"unknown severity: {summary} — the gate cannot interpret "
+                "these findings, so they block"
+            )
+
+        evaluated = len(findings)
+        if evaluated == 0:
+            failed.append(
+                "no findings were evaluated: the gate had no evidence to "
+                "decide on, so it did not pass"
+            )
+
         return GateResult(
             passed=not failed,
             profile_name=self._profile.name,
@@ -142,6 +177,8 @@ class PreDeployGate:
             warning_count=counts["warning"],
             info_count=counts["info"],
             failed_checks=failed,
+            evaluated=evaluated,
+            unknown_severities=sorted(set(unknown)),
         )
 
 
