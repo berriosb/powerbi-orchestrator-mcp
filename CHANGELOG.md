@@ -8,6 +8,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.19.0] — 2026-10-20
+
+### ⚠️ Breaking
+- **HTTP sessions are bound to the credential that opened them.** The
+  middleware published the Entra claims under `scope["entra_claims"]`, a key
+  the MCP SDK never reads, so both sides of the SDK's session-ownership
+  comparison were `None` and the comparison never rejected. Any
+  authenticated principal could join another principal's session and inherit
+  its scopes — verified: a `Tools.Read` token joined a `Tools.Write` session
+  and ran a tool as the session owner. The same call now gets 404.
+- **A plan step with no executor fails** instead of reporting success. The
+  actions that had a real implementation behind them now have one: PBIP
+  validation, the audit chain, and a real snapshot. Cloud actions point at
+  `deploy_to_workspace` / `run_refresh`.
+- **`run_dax_regression` fails when the baseline is missing or corrupt**,
+  instead of comparing against nothing and reporting `passed=True`. The
+  `promote_in_pipeline` gate read a `max_drift_pct` attribute the result does
+  not have, so it always passed; it now gates on the regression's own verdict.
+- **`diff_models` compares real PBIP folders** through the new
+  `validation.model_metadata` module, instead of requiring an injected
+  callable that no MCP client can supply — every real call used to report
+  "0 changes". The differ also compares columns and reports a changed column
+  data type as breaking. The `inspector` parameter is gone from the schema.
+- **`apply_plan` reports the rollback that happened**: `rolled_back`,
+  `rollback_partial` or `rollback_incomplete`, with a real status per entry,
+  instead of always claiming `rolled_back` with every entry marked `ok`.
+
+### Security
+- Audit log payloads are redacted **by key**: a value stored under a key that
+  names a secret is replaced whole, so a short password or a bare API key is
+  no longer persisted in clear. URL- and connection-string-shaped secrets
+  (`access_token=`, `pwd=`, `AccountKey=`, `sig=`) are covered too.
+- Fabric REST path identifiers are validated, so an identifier can no longer
+  redirect the orchestrator's own token to another endpoint.
+- The credential variables the deployment docs tell operators to set
+  (`PBI_AUTH_MODE`, `PBI_TENANT_ID`, `PBI_CLIENT_ID`, `PBI_CLIENT_SECRET`)
+  are now read, and take precedence over the `AZURE_*` names. A container
+  configured that way used to authenticate as a different, broader identity.
+- The HTTP transport's Host allowlist follows the bind address (DNS-rebinding
+  protection stays on); `--http-allowed-host` / `PBI_HTTP_ALLOWED_HOSTS`
+  narrow it.
+
+### Changed
+- `auth_mode` is optional on the tools that accept it: `PBI_AUTH_MODE` is
+  used when it is not passed, falling back to `interactive`.
+- `AuditResult` gains `score_is_partial` and `skipped_checks`, so a score
+  computed over a subset of checks says so and names the missing ones.
+- `RegressionResult` gains `compared_queries`; `QueryDiff` gains `compared`.
+- `StepOutcome` gains `details`, which `apply_plan` returns per step.
+- `SECURITY.md` documents the controls that do not exist: the audit log is
+  fail-open, and the HMAC key sits next to the database unless
+  `PBI_ORCHESTRATOR_AUDIT_SECRET` is set.
+
+### Verification
+1231 tests passing (from 1200), 31 new. `ruff check`, `ruff format --check`
+and `mypy --strict` clean; coverage 88 %.
+
 ## [1.18.0] — 2026-10-16
 
 ### ⚠️ Breaking

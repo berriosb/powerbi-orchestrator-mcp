@@ -16,10 +16,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: powerbi-orchestrator-mcp:1.8.0
+    image: powerbi-orchestrator-mcp:1.19.0
     container_name: powerbi-orchestrator-mcp
     environment:
       # Set auth mode + credentials via .env or environment override.
+      # These names take precedence over the AZURE_* equivalents.
       - PBI_AUTH_MODE=${PBI_AUTH_MODE:-interactive}
       - PBI_TENANT_ID=${PBI_TENANT_ID:-}
       - PBI_CLIENT_ID=${PBI_CLIENT_ID:-}

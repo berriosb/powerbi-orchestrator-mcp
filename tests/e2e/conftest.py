@@ -45,25 +45,29 @@ def temp_pbip(fixture_pbip_source: Path, tmp_path: Path) -> Path:
 def engine_te_path() -> Path:
     """Path to the `te` (Tabular Editor) CLI binary.
 
-    Looked up in well-known locations; the GH Actions workflow
-    downloads it pinned to the SHA256 listed in
-    `specs/qa/e2e-testing-strategy.md` §3.3.
+    Looked up in well-known locations and in the ``TE_PATH`` environment
+    variable, which is where the GitHub Actions workflow puts the
+    binary it downloads pinned to the upstream SHA256. Tabular Editor 2
+    ships a Windows binary, so this only resolves on Windows runners.
     """
+    import os
+
     candidates = [
+        Path(os.environ["TE_PATH"]) if os.environ.get("TE_PATH") else None,
         Path("/usr/local/bin/te"),
         Path("/usr/bin/te"),
         Path.home() / ".dotnet" / "tools" / "te",
         Path("C:/Program Files/Tabular Editor/te.exe"),
     ]
     for c in candidates:
-        if c.exists():
+        if c is not None and c.exists():
             return c
     pytest.skip(
-        "`te` binary not found. Install via `dotnet tool install --global "
-        "TabularEditor` or download from "
-        "https://github.com/TabularEditor/TabularEditor/releases. "
-        "CI workflow downloads it pinned to the SHA256 in "
-        "specs/qa/e2e-testing-strategy.md §3.3."
+        "`te` binary not found. Tabular Editor 2 ships a Windows binary; "
+        "install it via `dotnet tool install --global TabularEditor` or "
+        "download from https://github.com/TabularEditor/TabularEditor/releases. "
+        "The CI workflow downloads it pinned to the upstream SHA256 on the "
+        "Windows runner — see specs/qa/e2e-testing-strategy.md §3.3."
     )
 
 
