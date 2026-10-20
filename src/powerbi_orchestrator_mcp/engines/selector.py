@@ -39,10 +39,11 @@ _E = TypeVar("_E", bound=Any)
 # Each entry: (preferred_engine_name, [fallback_engine_names]).
 DEFAULT_MODELING_CHAIN: tuple[str, tuple[str, ...]] = (
     # Order matters: first available in the chain wins.
-    # Sprint 14A: te CLI is the documented fallback when
-    # powerbi-modeling-mcp is not installed.
+    # The chain ends with the built-in adapter, which always works on
+    # the files on disk — so a plan is never left without an engine,
+    # and the caller is told when the built-in one served it.
     "powerbi-modeling-mcp",
-    ("te",),
+    ("python_modeling",),
 )
 
 # Report chain: python_report first (cross-platform, always available),

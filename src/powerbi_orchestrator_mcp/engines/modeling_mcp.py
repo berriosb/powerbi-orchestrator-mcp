@@ -47,6 +47,10 @@ from powerbi_orchestrator_mcp.orchestrator.context import (
 
 DEFAULT_PINNED_VERSION = "1.0.0"
 
+# The executable the package installs. Its presence on PATH is what
+# tells the orchestrator the engine is installed.
+_PACKAGE_BIN = "powerbi-modeling-mcp"
+
 _RPC_TO_MCP_TOOL: dict[str, str] = {
     "database_operations/list_tables": "table_operations",
     "column_operations/list": "column_operations",
@@ -108,6 +112,21 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
         self._version = version
         self._mock_responses = mock_responses or {}
         self.dispatch_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def is_available(self) -> bool:
+        """True when the engine is installed and can be launched.
+
+        The adapter launches the package through ``npx -y``, which
+        downloads it when it is missing. The orchestrator does not
+        install engines by itself — see ``engine_detector`` — so the
+        package has to be installed before this engine is selected.
+        """
+        import os
+        import shutil
+
+        if not (shutil.which(self._binary) or os.path.exists(self._binary)):
+            return False
+        return shutil.which(_PACKAGE_BIN) is not None
 
     # ------------------------------------------------------------------
     # ModelingEngine Protocol

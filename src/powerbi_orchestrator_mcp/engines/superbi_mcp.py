@@ -45,6 +45,10 @@ from powerbi_orchestrator_mcp.orchestrator.context import EngineStatus
 # Pinned version per spec 05 §10 (versions.py in engines/).
 DEFAULT_PINNED_VERSION = "1.5.0"
 
+# The executable the package installs. Its presence on PATH is what
+# tells the orchestrator the engine is installed.
+_PACKAGE_BIN = "superbi-mcp"
+
 
 class SuperBiMcpEngine(JsonRpcSubprocessEngine):
     """Adapter for the ``superbi-mcp`` MCP server.
@@ -90,7 +94,13 @@ class SuperBiMcpEngine(JsonRpcSubprocessEngine):
             return False
         import shutil
 
-        return bool(shutil.which(self._binary) or os.path.exists(self._binary))
+        if not (shutil.which(self._binary) or os.path.exists(self._binary)):
+            return False
+        # The adapter launches the package through `npx -y`, which
+        # downloads it when it is missing. The orchestrator does not
+        # install engines by itself — see `engine_detector` — so the
+        # package has to be installed before this engine is selected.
+        return shutil.which(_PACKAGE_BIN) is not None
 
     # ------------------------------------------------------------------
     # ReportEngine Protocol
