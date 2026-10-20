@@ -74,6 +74,7 @@ from powerbi_orchestrator_mcp.orchestrator.planner import PlanBuilder
 from powerbi_orchestrator_mcp.orchestrator.rollback import (
     NoRollbackAvailableError,
     RollbackEngine,
+    RollbackResult,
     StepExecutor,
 )
 from powerbi_orchestrator_mcp.orchestrator.step_executor import (
@@ -700,10 +701,12 @@ async def _rollback_plan(
     plan: Plan,
     executed_steps: list[dict[str, Any]],
     failed_step: dict[str, Any],
-) -> list[str]:
+) -> RollbackResult:
     """Run rollback for the executed steps after a failure.
 
-    Returns the list of rollback step ids that ran (success + failure).
+    Returns the full ``RollbackResult``: the caller needs the status,
+    because "everything was reverted" and "some of it could not be
+    reverted" call for different answers.
     Uses the in-memory plan to reconstruct PlanStep objects. Passes a
     dispatcher to RollbackEngine so cross-engine rollback (e.g. safe_rename's
     modeling + report) routes each step to its correct engine.
@@ -717,7 +720,7 @@ async def _rollback_plan(
 
     failed_plan_step = step_by_id.get(failed_step["id"])
     if failed_plan_step is None:
-        return []
+        return RollbackResult(status="no_rollback", rolled_back_steps=[], failed_rollbacks=[])
 
     # Cross-engine dispatcher: routes each rollback step to its engine.
     registry = get_default_registry()
@@ -726,15 +729,10 @@ async def _rollback_plan(
         return registry.get(step.engine)
 
     rollback_engine = RollbackEngine(_dispatcher)
-    result = await rollback_engine.execute_plan(
+    return await rollback_engine.execute_plan(
         executed_steps=executed_plan_steps,
         failed_step=failed_plan_step,
     )
-    # We don't re-raise here — the caller's ApplyResult will reflect the
-    # outcome via ``result_status``. Paths are surfaced separately.
-    return list(result.rolled_back_steps) + [
-        f"FAILED: {f.step_id}" for f in result.failed_rollbacks
-    ]
 
 
 @mcp.tool()
@@ -812,18 +810,53 @@ async def apply_plan(
                 artifacts_changed=[],
             )
         try:
-            rollback_log = await _rollback_plan(plan, executed, failed_step)
+            rollback_result = await _rollback_plan(plan, executed, failed_step)
             rollback_handle = new_rollback_handle()
+            # Report the rollback status that actually happened. A partial
+            # rollback leaves the workspace in a mixed state and has to be
+            # distinguishable from a clean one.
+            if rollback_result.status == "rolled_back":
+                plan_status = "rolled_back"
+                plan_state = PlanExecutionState.ROLLED_BACK
+            elif rollback_result.status == "partial":
+                plan_status = "rollback_partial"
+                plan_state = PlanExecutionState.PARTIAL
+            else:
+                # The rollback steps themselves failed. The workspace may
+                # not be in the state it was in before the plan ran.
+                plan_status = "rollback_incomplete"
+                plan_state = PlanExecutionState.PARTIAL
             PlanExecutionStore().complete(
                 execution.execution_id,
-                result_status="rolled_back",
-                state=PlanExecutionState.ROLLED_BACK,
+                result_status=plan_status,
+                state=plan_state,
+            )
+            rollback_entries = (
+                [{"id": step_id, "status": "ok"} for step_id in rollback_result.rolled_back_steps]
+                + [
+                    {
+                        "id": f.step_id,
+                        "status": "failed",
+                        "error_message": f.error_message,
+                        "paths_affected": f.paths_affected,
+                    }
+                    for f in rollback_result.failed_rollbacks
+                ]
+                + [
+                    {
+                        "id": step_id,
+                        "status": "not_revertible",
+                        "error_message": "step has no rollback step; its changes are still in place",
+                        "paths_affected": [],
+                    }
+                    for step_id in rollback_result.non_revertible_steps
+                ]
             )
             return ApplyResult(
-                result="rolled_back",
+                result=plan_status,
                 executed_steps=executed,
                 failed_step=failed_step,
-                rollback_steps_executed=[{"id": r, "status": "ok"} for r in rollback_log],
+                rollback_steps_executed=rollback_entries,
                 artifacts_changed=[],
                 rollback_handle=rollback_handle,
             )

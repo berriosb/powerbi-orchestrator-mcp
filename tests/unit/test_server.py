@@ -585,6 +585,73 @@ class TestApplyPlanRollback:
         # The modeling step's rollback ran successfully.
         assert any("ok" in r.get("status", "") for r in result.rollback_steps_executed)
 
+    @pytest.mark.asyncio
+    async def test_failed_rollback_is_not_reported_as_rolled_back(self) -> None:
+        """A rollback that fails must not be reported as a clean revert.
+
+        The safe_rename plan reverts the failed modeling step with a
+        second `column.update`. When that revert fails too, the
+        workspace may not be in its original state, and the result has
+        to say so instead of claiming "rolled_back".
+        """
+        # s2 (forward) fails, then the revert of s2 fails as well.
+        modeling = ScriptedEngineExecutor([False, False])
+        modeling.engine_name = "modeling"
+        report = ScriptedEngineExecutor([True])
+        report.engine_name = "report"
+        validation = ScriptedEngineExecutor([True, True])
+        validation.engine_name = "validation"
+        get_default_registry().register(modeling)
+        get_default_registry().register(report)
+        get_default_registry().register(validation)
+
+        plan_res = await plan_change(
+            intent="safe_rename",
+            options={"old_path": "T[A]", "new_path": "T[B]"},
+        )
+        result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+
+        assert result.result != "rolled_back"
+        assert result.result == "rollback_incomplete"
+        # The failed rollback is reported as failed, not as "ok".
+        failed_entries = [r for r in result.rollback_steps_executed if r.get("status") == "failed"]
+        assert failed_entries, (
+            f"expected a failed rollback entry, got {result.rollback_steps_executed}"
+        )
+        assert failed_entries[0].get("error_message")
+
+    @pytest.mark.asyncio
+    async def test_partial_rollback_is_reported_as_partial(self) -> None:
+        """When only some rollback steps succeed, the result says partial.
+
+        s2 (modeling) succeeds, s3 (report) fails. The rollback then
+        reverts s3 first and s2 second: the first revert succeeds, the
+        second one fails, so the workspace is only partly back to where
+        it started.
+        """
+        # modeling: s2 forward succeeds, then its revert fails.
+        modeling = ScriptedEngineExecutor([True, False])
+        modeling.engine_name = "modeling"
+        # report: s3 forward fails, then its revert succeeds.
+        report = ScriptedEngineExecutor([False, True])
+        report.engine_name = "report"
+        validation = ScriptedEngineExecutor([True, True])
+        validation.engine_name = "validation"
+        get_default_registry().register(modeling)
+        get_default_registry().register(report)
+        get_default_registry().register(validation)
+
+        plan_res = await plan_change(
+            intent="safe_rename",
+            options={"old_path": "T[A]", "new_path": "T[B]"},
+        )
+        result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+
+        assert result.result == "rollback_partial"
+        statuses = {r.get("status") for r in result.rollback_steps_executed}
+        assert "failed" in statuses
+        assert "ok" in statuses
+
 
 # ---------------------------------------------------------------------------
 # State machine integration
