@@ -28,7 +28,7 @@ def _clear_identity() -> Iterator[None]:
 
 class TestScopeMapping:
     def test_write_tools_are_mapped(self) -> None:
-        for tool in ("deploy_to_workspace", "run_refresh", "apply_plan", "promote_in_pipeline"):
+        for tool in ("deploy_to_workspace", "run_refresh", "apply_plan"):
             assert TOOL_REQUIRED_SCOPE[tool] == SCOPE_WRITE
 
     def test_read_tools_are_not_in_the_write_map(self) -> None:
@@ -38,8 +38,10 @@ class TestScopeMapping:
     def test_unknown_tool_defaults_to_read(self) -> None:
         assert required_scope_for_tool("totally_unknown") == SCOPE_READ
 
-    def test_admin_map_is_empty_until_an_admin_tool_exists(self) -> None:
-        assert SCOPE_ADMIN not in set(TOOL_REQUIRED_SCOPE.values())
+    def test_the_admin_tier_is_used_by_the_governance_tools(self) -> None:
+        """Releasing between stages and labelling data are admin work."""
+        for tool in ("promote_in_pipeline", "set_sensitivity_labels"):
+            assert TOOL_REQUIRED_SCOPE[tool] == SCOPE_ADMIN
 
     def test_every_write_scope_entry_is_a_real_server_tool(self) -> None:
         import inspect
@@ -54,9 +56,20 @@ class TestScopeMapping:
 
         assert set(TOOL_REQUIRED_SCOPE) <= server_tools
 
-    def test_write_scope_set_matches_declared_write_tools(self) -> None:
-        assert len(TOOL_REQUIRED_SCOPE) == 16
-        assert all(scope == SCOPE_WRITE for scope in TOOL_REQUIRED_SCOPE.values())
+    def test_every_server_tool_has_a_scope(self) -> None:
+        """No tool may be left out of the scope check.
+
+        A tool with no scope check would run for anyone the transport
+        let through, whatever the caller holds.
+        """
+        from powerbi_orchestrator_mcp.orchestrator import server as server_mod
+
+        manager = server_mod.mcp._tool_manager  # noqa: SLF001
+        unscoped = [
+            tool.name for tool in manager.list_tools() if not hasattr(tool.fn, "__requires_scope__")
+        ]
+
+        assert unscoped == [], f"tools without a scope check: {unscoped}"
 
 
 class TestAuthorizeTool:

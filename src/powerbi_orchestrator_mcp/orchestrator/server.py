@@ -375,6 +375,7 @@ def _detect_engine_warnings(engines: dict[str, EngineStatus]) -> list[str]:
 
 
 @mcp.tool()
+@requires_scope("connect_target")
 @audited("connect_target")
 async def connect_target(
     target_type: str,
@@ -525,6 +526,7 @@ def _build_plan_from_intent(
 
 
 @mcp.tool()
+@requires_scope("plan_change")
 async def plan_change(
     intent: str,
     options: dict[str, Any] | None = None,
@@ -955,6 +957,7 @@ async def apply_plan(
 
 
 @mcp.tool()
+@requires_scope("audit_model_and_report")
 async def audit_model_and_report(
     pbip_path: str,
     bpa_ruleset: str = "default",
@@ -1257,6 +1260,7 @@ def _cap_dax_rows(payload: Any, max_rows: int) -> tuple[dict[str, Any], bool]:
 
 
 @mcp.tool()
+@requires_scope("execute_dax_query")
 @audited("execute_dax_query", target_arg="dataset_id")
 async def execute_dax_query(
     workspace_id: str,
@@ -1326,6 +1330,7 @@ async def execute_dax_query(
 
 
 @mcp.tool()
+@requires_scope("diff_models")
 async def diff_models(
     before: str,
     after: str,
@@ -1348,6 +1353,7 @@ async def diff_models(
 
 
 @mcp.tool()
+@requires_scope("pre_deploy_check")
 async def pre_deploy_check(
     findings_json: Any = "[]",
     profile: str = "standard",
@@ -1373,6 +1379,7 @@ async def pre_deploy_check(
 
 
 @mcp.tool()
+@requires_scope("generate_data_dictionary")
 @audited("generate_data_dictionary")
 async def generate_data_dictionary(
     pbip_path: str,
@@ -1639,6 +1646,7 @@ async def refactor_to_calculation_groups(
 
 
 @mcp.tool()
+@requires_scope("select_visuals_for_kpis")
 async def select_visuals_for_kpis(
     kpis_json: Any,
     audience: str = "executive",
@@ -1715,6 +1723,7 @@ async def design_report_page_from_requirements(
 
 
 @mcp.tool()
+@requires_scope("optimize_report_performance")
 async def optimize_report_performance(
     pbip_path: str,
     target_load_ms: int = 5000,
@@ -1740,6 +1749,7 @@ async def optimize_report_performance(
 
 
 @mcp.tool()
+@requires_scope("audit_report_ux_and_storytelling")
 async def audit_report_ux_and_storytelling(
     pbip_path: str,
     page_name: str | None = None,
@@ -1771,6 +1781,7 @@ async def audit_report_ux_and_storytelling(
 
 
 @mcp.tool()
+@requires_scope("screenshot_report_pages")
 @audited("screenshot_report_pages")
 async def screenshot_report_pages(
     pbip_path: str,
@@ -2056,6 +2067,7 @@ async def set_sensitivity_labels(
 
 
 @mcp.tool()
+@requires_scope("powerbi_health")
 async def powerbi_health(
     include_engine_details: bool = True,
 ) -> dict[str, Any]:
