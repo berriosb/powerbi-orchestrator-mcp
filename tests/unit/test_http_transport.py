@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from jwt import PyJWKClient
+from starlette.types import Message, Receive, Scope, Send
 
 from powerbi_orchestrator_mcp.orchestrator.transport import (
     AuthError,
@@ -421,7 +422,7 @@ class TestAuthMiddlewareFactory:
 class TestEntraAuthMiddleware:
     @pytest.mark.asyncio
     async def test_middleware_blocks_unauthenticated_http(self) -> None:
-        async def inner_app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        async def inner_app(scope: Scope, receive: Receive, send: Send) -> None:
             await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b"OK"})
 
@@ -430,15 +431,15 @@ class TestEntraAuthMiddleware:
 
         middleware = EntraAuthMiddleware(inner_app, validate_fn)
 
-        messages: list[dict[str, Any]] = []
+        messages: list[Message] = []
 
-        async def fake_receive() -> dict[str, Any]:
+        async def fake_receive() -> Message:
             return {"type": "http.request"}
 
-        async def fake_send(message: dict[str, Any]) -> None:
+        async def fake_send(message: Message) -> None:
             messages.append(message)
 
-        scope = {
+        scope: Scope = {
             "type": "http",
             "method": "POST",
             "path": "/mcp",
@@ -456,7 +457,7 @@ class TestEntraAuthMiddleware:
     async def test_middleware_passes_authenticated_http(self) -> None:
         called = False
 
-        async def inner_app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        async def inner_app(scope: Scope, receive: Receive, send: Send) -> None:
             nonlocal called
             called = True
             await send({"type": "http.response.start", "status": 200, "headers": []})
@@ -467,15 +468,15 @@ class TestEntraAuthMiddleware:
 
         middleware = EntraAuthMiddleware(inner_app, validate_fn)
 
-        messages: list[dict[str, Any]] = []
+        messages: list[Message] = []
 
-        async def fake_receive() -> dict[str, Any]:
+        async def fake_receive() -> Message:
             return {"type": "http.request"}
 
-        async def fake_send(message: dict[str, Any]) -> None:
+        async def fake_send(message: Message) -> None:
             messages.append(message)
 
-        scope: dict[str, Any] = {
+        scope: Scope = {
             "type": "http",
             "method": "POST",
             "path": "/mcp",

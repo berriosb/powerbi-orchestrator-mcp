@@ -276,18 +276,18 @@ def get_active_session_id() -> str | None:
     session_id = _active_session_var.get()
     if session_id is not None:
         return session_id
-    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+    from powerbi_orchestrator_mcp.orchestrator.transport import current_caller_claims
 
-    if get_current_user() is not None or os.environ.get("PBI_TRANSPORT") == "http":
+    if current_caller_claims() is not None or os.environ.get("PBI_TRANSPORT") == "http":
         return None
     return _session_state["active_id"]
 
 
 def set_active_session_id(session_id: str | None) -> None:
     _active_session_var.set(session_id)
-    from powerbi_orchestrator_mcp.orchestrator.transport import get_current_user
+    from powerbi_orchestrator_mcp.orchestrator.transport import current_caller_claims
 
-    if get_current_user() is None and os.environ.get("PBI_TRANSPORT") != "http":
+    if current_caller_claims() is None and os.environ.get("PBI_TRANSPORT") != "http":
         _session_state["active_id"] = session_id
 
 
