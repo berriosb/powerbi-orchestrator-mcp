@@ -8,6 +8,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.20.0] — 2026-10-20
+
+### ⚠️ Breaking
+- **A quality gate no longer passes without evidence.** The pre-deploy
+  gate decided an artifact was safe to publish without looking at
+  anything: with no findings every counter was zero and it passed, and a
+  severity the profile did not know — `critical` — was dropped. A
+  deploy to a production workspace could therefore clear its quality
+  gate without a single check running. The gate now fails closed on
+  both, normalizes severity case and whitespace, and reports how many
+  findings it evaluated and which severities it did not recognise. A
+  blocked deploy still lists the operations it would have performed.
+- **`plan_change(intent="deploy")` works again.** It failed for two
+  reasons: `_build_plan_from_intent` injected a `target` argument into
+  every template, including the two that do not accept it, and the
+  deploy plan is refused by default because its risk score is above the
+  default impact threshold. The refusal is correct — publishing and
+  triggering a refresh is high impact — but the message now says which
+  option to raise and by how much, and it surfaces as a structured plan
+  error.
+- **`Tools.Admin` is required for real.** The tier was documented but
+  never demanded. Releasing artifacts between deployment pipeline
+  stages and applying sensitivity labels are governance operations, so
+  they now need the administrative tier instead of plain write access.
+  `Tools.Admin` still grants every lower tier.
+- **Twelve tools had no scope check at all** — `connect_target`,
+  `plan_change`, `audit_model_and_report`, `execute_dax_query`,
+  `diff_models`, `pre_deploy_check`, `generate_data_dictionary`,
+  `select_visuals_for_kpis`, `optimize_report_performance`,
+  `audit_report_ux_and_storytelling`, `screenshot_report_pages` and
+  `powerbi_health`. Every tool now declares the scope it needs, and a
+  test fails if one is left out.
+- **The read path is contained by default.** It had no containment
+  unless `PBI_WORKSPACE_ROOT` was set, so any directory outside the
+  denylist could be read — and reading is how content reaches the model
+  context. It now follows the same rule as the write path.
+  `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1` is the explicit opt-out.
+
+### Security
+- **TMDL injection through the role and table names.** A name carrying
+  a line break closed the current role block and opened a new one, so a
+  caller could write a role the spec never asked for. Identifiers are
+  validated and quoted when they are not bare TMDL identifiers, which
+  also fixes names like `Region-West` that were written as invalid
+  TMDL.
+- **Deleting a plan is scoped to its owner**, like reading it.
+- **The audit chain detects what it should.** The hashed fields were
+  concatenated, so moving a character between two of them produced a row
+  that verified clean; they are now encoded as a canonical JSON array.
+  The chain anchor was an unsigned JSON file, so truncating the database
+  and rewriting the anchor went unnoticed; it is now signed with the
+  chain key. The generated key lives in the orchestrator home rather
+  than next to the database it protects.
+
+### Changed
+- **The real engines are registered.** The adapters for the modeling MCP
+  server, Tabular Editor and superbi-mcp were defined but never
+  instantiated, so the selector was always empty and every plan
+  degraded silently. They are now built when installed, the chain ends
+  with the built-in adapter, and every step reports which engine served
+  it.
+- **The engines report what they did.** The modeling adapter hardcoded
+  `success=True` on all four writes; superbi defaulted a validation
+  without a verdict to *valid*; and its fallback to the built-in engine
+  caught every exception, hiding crashes and timeouts behind a
+  successful write.
+- **The DAX linter rules fire where they mean to.** `BP_SUMMARIZE_FOR_AGG`
+  matched any `AVERAGE(` in the expression, `BP_DIVIDE_VS_SLASH` was
+  anchored to the end of the line, and `BP_FILTER_ISFILTERED` never
+  looked for `ISFILTERED`.
+- **The column rename updates the references a real PBIR holds**, which
+  are structured objects rather than the text `Table[Column]`, and
+  reports how many references were rewritten.
+- **The alt text is read where PBIR puts it** (`properties.expr`).
+- **A visual regression that cannot be measured is "unknown"**, not
+  "unchanged".
+- **Page names are validated** before being used as a directory.
+- **The BPA runner maps its exit codes**, and its timeout now comes
+  from the engine configuration, so the variable its error points at
+  has an effect.
+- **A live execution is no longer marked as orphaned**: the cutoff was
+  shorter than the longest legitimate step.
+- **The snapshot label satisfies the project's own identifier
+  contract.** Whether it did depended on the random suffix, which made
+  the failure intermittent.
+- **The health check says which engines the orchestrator dispatches
+  to**, so it no longer suggests an install that enables no feature.
+
+### Verification
+1350 tests passing (from 1240), 110 new. `ruff check`,
+`ruff format --check` and `mypy --strict` clean; coverage 88 %.
+
 ## [1.19.0] — 2026-10-20
 
 ### ⚠️ Breaking

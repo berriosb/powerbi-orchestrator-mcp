@@ -176,16 +176,33 @@ class WcagAuditor:
 
     @staticmethod
     def _extract_alt_text(container: dict[str, Any]) -> str | None:
-        """Best-effort alt text extraction from the visual.objects tree."""
+        """Best-effort alt text extraction from the visual.objects tree.
+
+        PBIR nests the value under ``properties``: a property entry is
+        ``{"properties": {"expr": {"Literal": {"Value": "..."}}}}``. Some
+        producers write the expression one level higher, so both shapes
+        are read — reading only the flat one meant the alt text written
+        by Power BI Desktop was invisible, and every visual was
+        reported as having none.
+        """
         visual = container.get("visual") or {}
         objects = visual.get("objects") or {}
         for key in ("altText", "title", "subtitle"):
-            v = objects.get(key)
-            if isinstance(v, list) and v:
-                first = v[0]
-                if isinstance(first, dict):
-                    expr = first.get("expr") or {}
-                    return expr.get("Literal", {}).get("Value")  # type: ignore[no-any-return]
+            entries = objects.get(key)
+            if not isinstance(entries, list) or not entries:
+                continue
+            first = entries[0]
+            if not isinstance(first, dict):
+                continue
+            properties = first.get("properties")
+            expr = properties.get("expr") if isinstance(properties, dict) else None
+            if expr is None:
+                expr = first.get("expr")
+            if not isinstance(expr, dict):
+                continue
+            literal = expr.get("Literal")
+            if isinstance(literal, dict) and literal.get("Value") is not None:
+                return str(literal["Value"])
         return None
 
     @staticmethod

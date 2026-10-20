@@ -32,7 +32,11 @@ from powerbi_orchestrator_mcp.orchestrator.identifiers import (
     new_execution_id,
 )
 
-ORPHAN_HEARTBEAT_CUTOFF_S: int = 60
+# A step that is still running refreshes its heartbeat, so a cutoff
+# only has to be longer than the longest plausible step. 60 seconds was
+# shorter than a publish or a DAX query, so a live execution was
+# reported as abandoned and marked orphaned.
+ORPHAN_HEARTBEAT_CUTOFF_S: int = 1800
 
 
 def _resolve_exec_dir() -> Path:

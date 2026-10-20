@@ -72,6 +72,12 @@ class ApplyModelSpecResult(BaseModel):
     tmdl_body: str | None = None  # echoed back for verification
     error_message: str | None = None
     engine: str = "te"
+    simulated: bool = False
+    """True when the result was produced without touching the files.
+
+    The skeleton mode reports the path it would have written; the
+    caller has to be able to tell that from a real write.
+    """
 
 
 class RefactorCalcGroupsResult(BaseModel):
@@ -83,6 +89,8 @@ class RefactorCalcGroupsResult(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     error_message: str | None = None
     engine: str = "te"
+    simulated: bool = False
+    """True when the result was produced without touching the files."""
 
 
 class CalcGroupSpec(BaseModel):
@@ -796,10 +804,12 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
     deployments, the JSON-RPC envelope would be a thin wrapper over
     TE's scripting host (e.g. via ``ScriptMode.Info``).
 
-    Set ``mode='skeleton'`` (the default) for environments without a
-    real TE installation: the adapter returns the destination file
-    path without spawning a subprocess. Production deployments with
-    TE installed should pass ``mode='subprocess'`` to enable real RPC.
+    The default mode is ``subprocess``: the adapter really talks to
+    Tabular Editor and fails with a clear message when the binary is
+    missing. ``mode='skeleton'`` is opt-in and exists for tests: it
+    returns the destination path without spawning a subprocess, and the
+    result is flagged as ``simulated`` so the caller can tell it from
+    a real write.
 
     For environments without TE we recommend using
     ``InMemoryModelingAdapter`` directly via dependency injection;
@@ -815,7 +825,7 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
         *,
         env: dict[str, str] | None = None,
         script_path: str | None = None,
-        mode: str = "skeleton",
+        mode: str = "subprocess",
     ) -> None:
         if mode not in self._VALID_MODES:
             raise ValueError(f"invalid mode {mode!r}; expected one of {self._VALID_MODES}")
@@ -842,7 +852,18 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
 
     def is_available(self) -> bool:
         if self._mode == "skeleton":
-            return True
+            # The skeleton does not do the work; it only reports what
+            # it would do.
+            return False
+        return self._binary_present()
+
+    def _binary_present(self) -> bool:
+        """True when the Tabular Editor binary can be found.
+
+        One criterion for the availability check and for the
+        operations: they used to disagree, so an engine could be
+        reported as available and then fail to start.
+        """
         import shutil
 
         return bool(shutil.which(self._binary) or os.path.exists(self._binary))
@@ -871,9 +892,10 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
                 success=True,
                 changed_files=[f"{pbip_path}/{model_name}.Dataset/definition.tmdl"],
                 tmdl_body=tmdl_body,
+                simulated=True,
             )
         # mode == 'subprocess'
-        if not os.path.exists(self._binary):
+        if not self._binary_present():
             return ApplyModelSpecResult(
                 success=False,
                 changed_files=[],
@@ -907,9 +929,10 @@ class TabularEditorAdapter(JsonRpcSubprocessEngine):
             return RefactorCalcGroupsResult(
                 success=True,
                 groups_created=[f"TimeIntelligence_{cg.skeleton.replace(' ', '_')}" for cg in spec],
+                simulated=True,
             )
         # mode == 'subprocess'
-        if not os.path.exists(self._binary):
+        if not self._binary_present():
             return RefactorCalcGroupsResult(
                 success=False,
                 groups_created=[],

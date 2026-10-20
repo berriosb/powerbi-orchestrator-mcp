@@ -336,12 +336,24 @@ class TestDefaultChain:
         # If the chain config changes, update tests + ADR.
         assert DEFAULT_MODELING_CHAIN[0] == "powerbi-modeling-mcp"
 
-    def test_default_chain_falls_back_to_te(self) -> None:
-        # As of Sprint 14A, Tabular Editor is the documented fallback
-        # for powerbi-modeling-mcp.
+    def test_default_chain_falls_back_to_the_builtin_engine(self) -> None:
+        """The chain ends with the built-in adapter, which always works.
+
+        Tabular Editor is deliberately not in the chain: its adapter
+        implements the specification operations, not the ModelingEngine
+        protocol, so it cannot serve a plan's modeling steps. Putting
+        it there would pick it and then fail on the first call.
+        """
         preferred, fallbacks = DEFAULT_MODELING_CHAIN
         assert preferred == "powerbi-modeling-mcp"
-        assert "te" in fallbacks
+        assert fallbacks == ("python_modeling",)
+
+    def test_the_builtin_engine_is_always_registered(self) -> None:
+        from powerbi_orchestrator_mcp.engines.registry import build_modeling_engines
+
+        engines = build_modeling_engines()
+        assert "python_modeling" in engines
+        assert engines["python_modeling"].name == "in-memory-modeling"
 
     def test_default_report_chain_prefers_python_report(self) -> None:
         assert DEFAULT_REPORT_CHAIN[0] == "python_report"
@@ -359,9 +371,12 @@ class TestFallbackChain:
             "powerbi-modeling-mcp",
             _FakeModelingEngine("powerbi-modeling-mcp", available=False),
         )
-        sel.register_modeling("te", _FakeModelingEngine("te", available=True))
+        sel.register_modeling(
+            "python_modeling",
+            _FakeModelingEngine("python_modeling", available=True),
+        )
         engine = sel.select_modeling_engine("update_column", target)
-        assert engine.name == "te"
+        assert engine.name == "python_modeling"
 
     def test_raises_last_not_found_when_all_engines_unavailable(self, target: Target) -> None:
         sel = EngineSelector()
@@ -370,9 +385,9 @@ class TestFallbackChain:
             _FakeModelingEngine("powerbi-modeling-mcp", available=False),
         )
         sel.register_modeling(
-            "te",
-            _FakeModelingEngine("te", available=False),
+            "python_modeling",
+            _FakeModelingEngine("python_modeling", available=False),
         )
         with pytest.raises(EngineNotFoundError) as exc_info:
             sel.select_modeling_engine("update_column", target)
-        assert "engine 'te' is not available" in str(exc_info.value)
+        assert "engine 'python_modeling' is not available" in str(exc_info.value)

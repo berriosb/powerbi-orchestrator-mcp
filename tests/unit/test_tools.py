@@ -514,7 +514,7 @@ class TestDeployToWorkspace:
         result = await deploy_to_workspace(
             pbip_path=str(pbip),
             workspace_id="ws-abc",
-            findings=[],
+            findings=[{"severity": "info", "message": "clean"}],
             gate_profile="standard",
             dry_run=False,
             mock=True,
@@ -546,7 +546,7 @@ class TestDeployToWorkspace:
         result = await dt_module.deploy_to_workspace(
             pbip_path=str(pbip),
             workspace_id="ws-abc",
-            findings=[],
+            findings=[{"severity": "info", "message": "clean"}],
         )
 
         assert result.dry_run is True
@@ -603,7 +603,7 @@ class TestDeployToWorkspace:
             pbip_path=str(pbip),
             workspace_id="ws-real",
             refresh_daily_hour=7,
-            findings=[],
+            findings=[{"severity": "info", "message": "clean"}],
             gate_profile="standard",
             mock=False,
             dry_run=False,
@@ -656,7 +656,7 @@ class TestDeployToWorkspace:
         result = await deploy_to_workspace(
             pbip_path=str(pbip),
             workspace_id="ws-real",
-            findings=[],
+            findings=[{"severity": "info", "message": "clean"}],
             gate_profile="standard",
             mock=False,
             dry_run=False,
@@ -720,7 +720,7 @@ class TestDeployToWorkspace:
         result = await deploy_to_workspace(
             pbip_path=str(pbip),
             workspace_id="ws-real",
-            findings=[],
+            findings=[{"severity": "info", "message": "clean"}],
             mock=False,
             dry_run=False,
         )

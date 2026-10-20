@@ -9,13 +9,14 @@ below. NL-to-plan decomposition is out of scope (per spec §2.2 step 4).
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
 
 from powerbi_orchestrator_mcp import __version__
-from powerbi_orchestrator_mcp.orchestrator.identifiers import new_plan_id
+from powerbi_orchestrator_mcp.orchestrator.identifiers import make_snapshot_label, new_plan_id
 from powerbi_orchestrator_mcp.orchestrator.plan_models import (
     EstimatedChanges,
     Plan,
@@ -123,7 +124,12 @@ class PlanBuilder:
 
         plan_id = new_plan_id()
 
-        snapshot_args: dict[str, Any] = {"label": f"pre-rename-{plan_id}"}
+        # The label goes to the filesystem and into a rollback handle,
+        # so it has to satisfy the project's own identifier contract.
+        # The nanoid may contain hyphens, so runs of them are collapsed
+        # and the edges are trimmed.
+        raw_label = re.sub(r"-+", "-", f"pre-rename-{plan_id}".lower().replace("_", "-"))
+        snapshot_args: dict[str, Any] = {"label": make_snapshot_label(raw_label.strip("-"))}
         if target:
             snapshot_args["pbip_path"] = target
 
@@ -428,8 +434,14 @@ class PlanBuilder:
     def _enforce_risk_threshold(plan: Plan, opts: PlanOptions) -> None:
         threshold = opts.max_impact_threshold / 100.0
         if plan.risk_score > threshold:
+            required = int(plan.risk_score * 100 + 0.999)
             raise RiskThresholdExceededError(
-                f"plan {plan.id} risk_score {plan.risk_score:.2f} exceeds threshold {threshold:.2f}"
+                f"plan {plan.id} has risk_score {plan.risk_score:.2f}, above the "
+                f"max_impact_threshold of {threshold:.0%}. Some templates are "
+                f"inherently high impact and are refused by default. To build "
+                f"this one, pass "
+                f'options={{"max_impact_threshold": {required}}} — at least '
+                f"{required} — after the user has approved the change."
             )
 
     def _serialize(self, plan: Plan) -> str:

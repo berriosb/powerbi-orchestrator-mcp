@@ -109,6 +109,45 @@ def _resolve_report_dir(pbip_root: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _validate_page_name(page_name: str) -> str:
+    """Validate a page name before it becomes a directory.
+
+    The name is used as a directory under ``pages/``. An empty name
+    produces a page outside the expected layout, and a name carrying a
+    separator would write outside the report directory.
+    """
+    name = str(page_name or "").strip()
+    if not name:
+        raise EngineValidationError(
+            "page name cannot be empty",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a name such as 'Overview'",
+        )
+    if "/" in name or "\\" in name:
+        raise EngineValidationError(
+            f"page name cannot contain a path separator: {page_name!r}",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a single directory name, such as 'Overview'",
+        )
+    if name in (".", ".."):
+        raise EngineValidationError(
+            f"page name cannot be {name!r}",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a name such as 'Overview'",
+        )
+    if name.startswith("."):
+        raise EngineValidationError(
+            f"page name cannot start with a dot: {page_name!r}",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a name such as 'Overview'",
+        )
+    return name
+
+
 class PythonReportEngine:
     """Cross-platform ``ReportEngine`` implementation using direct file I/O.
 
@@ -180,6 +219,7 @@ class PythonReportEngine:
         pbip_root = _resolve_pbip_root(conn)
         report_dir = _resolve_report_dir(pbip_root)
 
+        page_name = _validate_page_name(page_name)
         page_dir = report_dir / "pages" / page_name
         page_json = page_dir / "page.json"
 
@@ -314,6 +354,28 @@ class PythonReportEngine:
         pbip_root = _resolve_pbip_root(conn)
         report_dir = _resolve_report_dir(pbip_root)
         changed: list[str] = []
+        references_renamed = 0
+
+        old_table, old_column = _split_path(old_path)
+        new_table, new_column = _split_path(new_path)
+
+        def _rewrite(data: dict[str, Any]) -> tuple[dict[str, Any], int]:
+            # The structured references first: they are what a real
+            # PBIR holds.
+            structured, count = _rename_references(
+                data, old_table, old_column, new_table, new_column
+            )
+            # Then the textual forms, which is what a DAX expression
+            # uses: ``Table[Column]`` and the dotted ``Table.Column``
+            # of a queryRef.
+            replaced = _replace_in_obj(structured, old_path, new_path)
+            if old_table and old_column:
+                replaced = _replace_in_obj(
+                    replaced, f"{old_table}.{old_column}", f"{new_table}.{new_column}"
+                )
+            if not old_table and old_column:
+                replaced = _replace_in_obj(replaced, f"[{old_column}]", f"[{new_column}]")
+            return replaced, count
 
         # Walk all JSON files under pages/.
         for json_path in (report_dir / "pages").rglob("*.json"):
@@ -322,10 +384,11 @@ class PythonReportEngine:
             except EngineError:
                 continue  # skip malformed files; they're not our concern here
 
-            new_data = _replace_in_obj(data, old_path, new_path)
+            new_data, count = _rewrite(data)
             if new_data != data:
                 _write_json(json_path, new_data)
                 changed.append(str(json_path.relative_to(pbip_root)))
+                references_renamed += count
 
         # Also rewrite the top-level report.json / definition.pbir.
         for top_level in ("report.json", "definition.pbir"):
@@ -335,12 +398,17 @@ class PythonReportEngine:
                     data = _read_json(top_path)
                 except EngineError:
                     continue
-                new_data = _replace_in_obj(data, old_path, new_path)
+                new_data, count = _rewrite(data)
                 if new_data != data:
                     _write_json(top_path, new_data)
                     changed.append(str(top_path.relative_to(pbip_root)))
+                    references_renamed += count
 
-        return OperationResult(success=True, changed_files=changed)
+        return OperationResult(
+            success=True,
+            changed_files=changed,
+            references_renamed=references_renamed,
+        )
 
     # ------------------------------------------------------------------
     # Validation
@@ -414,6 +482,103 @@ class PythonReportEngine:
 # ---------------------------------------------------------------------------
 # String substitution (used by propagate_rename)
 # ---------------------------------------------------------------------------
+
+
+def _split_path(path: str) -> tuple[str, str]:
+    """Split a reference into ``(table, column)``.
+
+    Accepts the forms Power BI uses: ``Table[Column]``, ``Table.Column``
+    and a bare ``Column``.
+    """
+    text = str(path or "").strip()
+    if "[" in text and text.endswith("]"):
+        table, _, column = text.partition("[")
+        return table.strip(), column[:-1].strip()
+    if "." in text:
+        table, _, column = text.rpartition(".")
+        return table.strip(), column.strip()
+    return "", text
+
+
+def _rename_one_reference(
+    ref: dict[str, Any],
+    old_table: str,
+    old_column: str,
+    new_table: str,
+    new_column: str,
+) -> bool:
+    """Rename one structured reference, if it is the one being renamed.
+
+    A PBIR reference looks like::
+
+        {"Column": {"Expression": {"SourceRef": {"Entity": "FactSales"}},
+                     "Property": "TotalAmount"}}
+    """
+    expression = ref.get("Expression")
+    if not isinstance(expression, dict):
+        return False
+    source_ref = expression.get("SourceRef")
+    if not isinstance(source_ref, dict):
+        return False
+    if source_ref.get("Entity") != old_table:
+        return False
+    if ref.get("Property") != old_column:
+        return False
+    source_ref["Entity"] = new_table
+    ref["Property"] = new_column
+    return True
+
+
+def _rename_references(
+    node: Any,
+    old_table: str,
+    old_column: str,
+    new_table: str,
+    new_column: str,
+) -> tuple[Any, int]:
+    """Rewrite the references to a column in a PBIR tree.
+
+    PBIR stores a column reference as a structured object, not as the
+    text ``Table[Column]``. A literal text replacement therefore finds
+    nothing, and the rename was reported as applied while not a single
+    reference had changed.
+
+    The tree is rebuilt rather than edited in place: a caller that
+    compares the result with the original has to be able to see that
+    something changed.
+
+    Returns the rewritten tree and the number of references renamed.
+    """
+    if isinstance(node, dict):
+        count = 0
+        rewritten: dict[str, Any] = {}
+        for key, value in node.items():
+            if key in ("Column", "Measure") and isinstance(value, dict):
+                ref = dict(value)
+                if _rename_one_reference(ref, old_table, old_column, new_table, new_column):
+                    count += 1
+                rewritten[key] = ref
+                continue
+            child, child_count = _rename_references(
+                value, old_table, old_column, new_table, new_column
+            )
+            rewritten[key] = child
+            count += child_count
+        # A reference can also sit directly in the node.
+        if _rename_one_reference(rewritten, old_table, old_column, new_table, new_column):
+            count += 1
+        return rewritten, count
+    if isinstance(node, list):
+        count = 0
+        rewritten_list = []
+        for item in node:
+            child, child_count = _rename_references(
+                item, old_table, old_column, new_table, new_column
+            )
+            rewritten_list.append(child)
+            count += child_count
+        return rewritten_list, count
+    return node, 0
 
 
 def _replace_in_obj(obj: Any, old: str, new: str) -> Any:

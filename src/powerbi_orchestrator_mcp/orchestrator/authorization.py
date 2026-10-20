@@ -62,7 +62,16 @@ _WRITE_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-_ADMIN_TOOLS: frozenset[str] = frozenset()
+_ADMIN_TOOLS: frozenset[str] = frozenset(
+    {
+        # Releasing artifacts between deployment pipeline stages and
+        # applying sensitivity labels are governance operations: they
+        # change what a workspace publishes and how it is classified,
+        # so they need the administrative tier rather than write access.
+        "promote_in_pipeline",
+        "set_sensitivity_labels",
+    }
+)
 
 TOOL_REQUIRED_SCOPE: dict[str, str] = {
     **dict.fromkeys(_WRITE_TOOLS, SCOPE_WRITE),
@@ -125,6 +134,9 @@ def requires_scope(tool_name: str) -> Callable[[Callable[..., Any]], Callable[..
             authorize_tool(tool_name)
             return await func(*args, **kwargs)
 
+        # Marks the tool as explicitly scoped, so a tool that was left
+        # out of the mapping can be found.
+        wrapper.__requires_scope__ = tool_name  # type: ignore[attr-defined]
         return wrapper
 
     return decorator

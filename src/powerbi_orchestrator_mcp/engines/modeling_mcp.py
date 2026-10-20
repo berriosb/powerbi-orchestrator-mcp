@@ -47,6 +47,10 @@ from powerbi_orchestrator_mcp.orchestrator.context import (
 
 DEFAULT_PINNED_VERSION = "1.0.0"
 
+# The executable the package installs. Its presence on PATH is what
+# tells the orchestrator the engine is installed.
+_PACKAGE_BIN = "powerbi-modeling-mcp"
+
 _RPC_TO_MCP_TOOL: dict[str, str] = {
     "database_operations/list_tables": "table_operations",
     "column_operations/list": "column_operations",
@@ -60,6 +64,35 @@ _RPC_TO_MCP_TOOL: dict[str, str] = {
     "database_operations/export_tmdl": "database_operations",
     "database_operations/import_tmdl": "database_operations",
 }
+
+
+def _write_outcome(result: dict[str, Any], operation: str) -> OperationResult:
+    """Build the result of a write from what the engine answered.
+
+    The adapter used to say ``success=True`` whatever the engine
+    replied, so a write the engine had refused was reported as done.
+    When the engine states the outcome, the adapter states it too. A
+    payload without a verdict means the engine accepted the call
+    without raising, which is the success signal the MCP contract
+    gives.
+    """
+    payload = result if isinstance(result, dict) else {}
+    if payload.get("success") is False:
+        message = (
+            payload.get("error")
+            or payload.get("message")
+            or payload.get("error_message")
+            or f"{operation} failed"
+        )
+        return OperationResult(
+            success=False,
+            error_message=str(message),
+            changed_files=[],
+        )
+    return OperationResult(
+        success=True,
+        changed_files=list(payload.get("changed_files") or []),
+    )
 
 
 class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
@@ -108,6 +141,21 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
         self._version = version
         self._mock_responses = mock_responses or {}
         self.dispatch_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def is_available(self) -> bool:
+        """True when the engine is installed and can be launched.
+
+        The adapter launches the package through ``npx -y``, which
+        downloads it when it is missing. The orchestrator does not
+        install engines by itself — see ``engine_detector`` — so the
+        package has to be installed before this engine is selected.
+        """
+        import os
+        import shutil
+
+        if not (shutil.which(self._binary) or os.path.exists(self._binary)):
+            return False
+        return shutil.which(_PACKAGE_BIN) is not None
 
     # ------------------------------------------------------------------
     # ModelingEngine Protocol
@@ -222,10 +270,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "column": column, "changes": changes},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "column update")
 
     async def create_measure(
         self, conn: ConnectionHandle, table: str, measure: Measure
@@ -236,10 +281,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "measure": measure.model_dump(mode="json")},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "measure create")
 
     async def update_measure(
         self,
@@ -254,10 +296,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "measure": measure, "changes": changes},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "measure update")
 
     async def delete_measure(
         self, conn: ConnectionHandle, table: str, measure: str
@@ -268,10 +307,7 @@ class PowerBiModelingMcpEngine(JsonRpcSubprocessEngine):
             conn,
             extra={"table": table, "measure": measure},
         )
-        return OperationResult(
-            success=True,
-            changed_files=result.get("changed_files", []),
-        )
+        return _write_outcome(result, "measure delete")
 
     # ------------------------------------------------------------------
     # DAX execution

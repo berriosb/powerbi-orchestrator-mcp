@@ -366,9 +366,8 @@ class TestTabularEditorAdapterSkeleton:
         assert a.version == "stub-0.1.0"
 
     def test_apply_model_spec_without_subprocess(self, tmp_path) -> None:
-        # Without a real TE binary the stub path returns the
-        # would-be-written file path.
-        a = TabularEditorAdapter()
+        # The skeleton mode is opt-in and says it did not write anything.
+        a = TabularEditorAdapter(mode="skeleton")
         result = asyncio.run(
             a.apply_model_spec(
                 pbip_path=str(tmp_path / "demo.pbip"),
@@ -377,7 +376,34 @@ class TestTabularEditorAdapterSkeleton:
             )
         )
         assert result.success is True
+        assert result.simulated is True
         assert any("definition.tmdl" in f for f in result.changed_files)
+
+    def test_the_default_mode_is_subprocess(self, tmp_path) -> None:
+        """The default really talks to Tabular Editor.
+
+        The skeleton used to be the default, so an adapter reported a
+        write that was never performed.
+        """
+        a = TabularEditorAdapter(binary="/nonexistent/TabularEditor.exe")
+        assert a.mode == "subprocess"
+        assert a.is_available() is False
+
+        result = asyncio.run(
+            a.apply_model_spec(
+                pbip_path=str(tmp_path / "demo.pbip"),
+                tmdl_body="table T\n",
+                model_name="m",
+            )
+        )
+        assert result.success is False
+        assert result.simulated is False
+        assert result.error_message and "not found" in result.error_message
+
+    def test_the_skeleton_is_not_available_as_a_real_engine(self) -> None:
+        """The skeleton cannot do the work, so it does not claim to."""
+        a = TabularEditorAdapter(mode="skeleton")
+        assert a.is_available() is False
 
     def test_apply_model_spec_missing_binary(self) -> None:
         # Missing binary → reported failure (not raised) so callers can

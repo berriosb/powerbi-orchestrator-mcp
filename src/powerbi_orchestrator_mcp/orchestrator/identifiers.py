@@ -51,8 +51,10 @@ SNAPSHOT_LABEL_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+){0,31}$")
 # Constants
 # ---------------------------------------------------------------------------
 
-# Nanoid alphabet per spec: [A-Za-z0-9_-]. Avoids chars that look alike
-# in logs (no 0/O, no 1/l/I). Same alphabet as the spec example.
+# Nanoid alphabet per spec: [A-Za-z0-9_-]. Same alphabet as the spec
+# example. It does contain characters that can be confused with each
+# other when read by hand (0/O, 1/l/I); the spec pins the alphabet, so
+# the ids are compared as opaque strings rather than read.
 _NANOID_ALPHABET = string.ascii_letters + string.digits + "_-"
 _NANOID_SIZE = 8  # spec example uses 8 chars (range 6-12)
 

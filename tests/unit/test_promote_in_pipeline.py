@@ -132,7 +132,7 @@ class TestPromoteInPipeline:
         r = promote_in_pipeline(
             "p",
             quality_gates=gates,
-            pre_deploy_findings=[],
+            pre_deploy_findings=[{"severity": "info", "message": "clean"}],
             dry_run=True,
         )
         assert r.gates_executed[0].passed is True
@@ -261,7 +261,7 @@ class TestPromoteInPipeline:
         r = promote_in_pipeline(
             "p",
             quality_gates=gates,
-            pre_deploy_findings=[],
+            pre_deploy_findings=[{"severity": "info", "message": "clean"}],
             items=["x"],
             dry_run=True,
         )

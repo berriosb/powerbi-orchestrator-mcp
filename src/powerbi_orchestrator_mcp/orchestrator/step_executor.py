@@ -37,6 +37,22 @@ class StepExecutor(Protocol):
     async def execute_step(self, step: PlanStep) -> StepOutcome: ...
 
 
+def _outcome(engine_name: str | None, **kwargs: Any) -> StepOutcome:
+    """Build a step outcome that says which engine served the step.
+
+    A step served by the orchestrator's built-in adapter is a degraded
+    path: it works on the files on disk, but it is not the real engine.
+    The caller is told, rather than being left to assume.
+    """
+    from powerbi_orchestrator_mcp.engines.registry import is_builtin_engine
+
+    details = dict(kwargs.pop("details", None) or {})
+    if engine_name:
+        details["engine"] = engine_name
+        details["builtin_engine"] = is_builtin_engine(engine_name)
+    return StepOutcome(details=details, **kwargs)
+
+
 def unsupported_action(engine_name: str, action: str, *, hint: str = "") -> StepOutcome:
     """Build the failure returned when an executor cannot run an action.
 
@@ -414,17 +430,12 @@ class ModelingStepExecutor:
     def _get_engine(self, target: Any, operation: str = "column.update") -> Any:
         if self._engine is not None:
             return self._engine
-        from powerbi_orchestrator_mcp.engines.errors import EngineNotFoundError
-        from powerbi_orchestrator_mcp.engines.selector import EngineSelector
+        from powerbi_orchestrator_mcp.engines.registry import build_default_selector
 
-        try:
-            return EngineSelector().select_modeling_engine(operation, target)
-        except EngineNotFoundError:
-            from powerbi_orchestrator_mcp.engines.te_adapter import (
-                InMemoryModelingAdapter,
-            )
-
-            return InMemoryModelingAdapter()
+        # The selector is populated with the adapters that are actually
+        # installed, so a real engine is used when there is one. The
+        # chain ends with the built-in adapter, which always works.
+        return build_default_selector().select_modeling_engine(operation, target)
 
     async def execute_step(self, step: PlanStep) -> StepOutcome:
         action = step.action
@@ -451,11 +462,12 @@ class ModelingStepExecutor:
             auth_mode="interactive",
         )
         engine = self._get_engine(target, action)
+        engine_name = getattr(engine, "name", None) or type(engine).__name__
 
         try:
             conn = await engine.connect(target)
         except Exception as exc:
-            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
+            return _outcome(engine_name, success=False, error_message=str(exc), changed_files=[])
 
         try:
             if action in ("column.update", "table.update", "update_table", "update_column"):
@@ -477,7 +489,8 @@ class ModelingStepExecutor:
                 if new_name is not None:
                     changes["new_name"] = str(new_name)
                 res = await engine.update_column(conn, table=table, column=column, changes=changes)
-                return StepOutcome(
+                return _outcome(
+                    engine_name,
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
                     changed_files=res.changed_files,
@@ -490,7 +503,8 @@ class ModelingStepExecutor:
 
                 meas = Measure(name=name, table=table, expression=expression)
                 res = await engine.create_measure(conn, table=table, measure=meas)
-                return StepOutcome(
+                return _outcome(
+                    engine_name,
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
                     changed_files=res.changed_files,
@@ -500,7 +514,8 @@ class ModelingStepExecutor:
                 name = str(args.get("name") or args.get("measure", ""))
                 changes = dict(args.get("changes", {}))
                 res = await engine.update_measure(conn, table=table, measure=name, changes=changes)
-                return StepOutcome(
+                return _outcome(
+                    engine_name,
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
                     changed_files=res.changed_files,
@@ -509,14 +524,15 @@ class ModelingStepExecutor:
                 table = str(args.get("table", ""))
                 name = str(args.get("name") or args.get("measure", ""))
                 res = await engine.delete_measure(conn, table=table, measure=name)
-                return StepOutcome(
+                return _outcome(
+                    engine_name,
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
                     changed_files=res.changed_files,
                 )
             if action == "snapshot":
                 handle = await engine.snapshot(conn, str(args.get("label", "snapshot")))
-                return StepOutcome(success=True, changed_files=[str(handle.path)])
+                return _outcome(engine_name, success=True, changed_files=[str(handle.path)])
             if action == "restore_snapshot":
                 if hasattr(engine, "restore_snapshot"):
                     from powerbi_orchestrator_mcp.engines.base import (
@@ -531,10 +547,10 @@ class ModelingStepExecutor:
                         await engine.restore_snapshot(conn, handle)
                     except TypeError:
                         await engine.restore_snapshot(handle)
-                return StepOutcome(success=True, changed_files=[])
+                return _outcome(engine_name, success=True, changed_files=[])
             return unsupported_action(self.engine_name, action)
         except Exception as exc:
-            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
+            return _outcome(engine_name, success=False, error_message=str(exc), changed_files=[])
         finally:
             if hasattr(engine, "disconnect"):
                 with contextlib.suppress(Exception):
@@ -547,14 +563,18 @@ class ReportStepExecutor:
     def __init__(self, engine: Any = None) -> None:
         self._engine = engine
 
-    def _get_engine(self) -> Any:
+    def _get_engine(self, pbip_path: str) -> Any:
         if self._engine is not None:
             return self._engine
-        from powerbi_orchestrator_mcp.engines.report_python import (
-            PythonReportEngine,
-        )
+        from powerbi_orchestrator_mcp.engines.registry import build_default_selector
+        from powerbi_orchestrator_mcp.orchestrator.context import Target
 
-        return PythonReportEngine()
+        target = Target(
+            target_type="pbip_folder",
+            target_ref=str(pbip_path),
+            auth_mode="interactive",
+        )
+        return build_default_selector().select_report_engine("report.update", target)
 
     async def execute_step(self, step: PlanStep) -> StepOutcome:
         action = step.action
@@ -573,7 +593,8 @@ class ReportStepExecutor:
                     pbip_path = ctx.target.target_ref
         pbip_path = pbip_path or "."
 
-        engine = self._get_engine()
+        engine = self._get_engine(str(pbip_path))
+        engine_name = getattr(engine, "name", None) or type(engine).__name__
         from powerbi_orchestrator_mcp.engines.base import (
             ConnectionHandle,
             PageLayout,
@@ -595,7 +616,8 @@ class ReportStepExecutor:
                     str(args.get("new_path", "")),
                     str(args.get("scope", "report_bindings")),
                 )
-                return StepOutcome(
+                return _outcome(
+                    engine_name,
                     success=res.success,
                     error_message=res.error_message if not res.success else None,
                     changed_files=res.changed_files,
@@ -603,11 +625,11 @@ class ReportStepExecutor:
             if action == "add_page":
                 layout = PageLayout(**args.get("layout", {})) if "layout" in args else None
                 res = await engine.add_page(conn, str(args.get("page_name", "")), layout)
-                return StepOutcome(success=res.success, changed_files=res.changed_files)
+                return _outcome(engine_name, success=res.success, changed_files=res.changed_files)
             if action == "add_visual":
                 spec = VisualSpec(**args.get("spec", args))
                 res = await engine.add_visual(conn, str(args.get("page", "")), spec)
-                return StepOutcome(success=res.success, changed_files=res.changed_files)
+                return _outcome(engine_name, success=res.success, changed_files=res.changed_files)
             if action == "update_visual":
                 res = await engine.update_visual(
                     conn,
@@ -615,15 +637,15 @@ class ReportStepExecutor:
                     str(args.get("visual_id", "")),
                     args.get("changes", {}),
                 )
-                return StepOutcome(success=res.success, changed_files=res.changed_files)
+                return _outcome(engine_name, success=res.success, changed_files=res.changed_files)
             if action == "validate_pbir":
                 v = await engine.validate_pbir(conn)
-                return StepOutcome(success=v.valid, changed_files=[])
+                return _outcome(engine_name, success=v.valid, changed_files=[])
             if action == "snapshot":
-                return StepOutcome(success=True, changed_files=[])
+                return _outcome(engine_name, success=True, changed_files=[])
             return unsupported_action(self.engine_name, action)
         except Exception as exc:
-            return StepOutcome(success=False, error_message=str(exc), changed_files=[])
+            return _outcome(engine_name, success=False, error_message=str(exc), changed_files=[])
         finally:
             with contextlib.suppress(Exception):
                 await engine.disconnect(conn)

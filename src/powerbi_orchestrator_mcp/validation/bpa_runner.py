@@ -80,9 +80,9 @@ class BpaRunner:
 
     def __init__(
         self,
-        binary: str = "te2",
+        binary: str = "te",
         *,
-        timeout_s: int = DEFAULT_TIMEOUT_S,
+        timeout_s: int | None = None,
         mock_findings: list[BpaFinding] | None = None,
         mock_score: float | None = None,
     ) -> None:
@@ -123,6 +123,13 @@ class BpaRunner:
             )
 
         # Real binary path.
+        # The timeout comes from the engine configuration, so the
+        # PBI_ENGINE_TIMEOUT_TE_S variable the error message points at
+        # actually has an effect.
+        from powerbi_orchestrator_mcp.engines.timeouts import resolve_timeout
+
+        effective_timeout_s = resolve_timeout("te", requested_s=self._timeout_s)
+
         args = self._build_args(target, ruleset_name, custom_ruleset)
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -143,30 +150,44 @@ class BpaRunner:
             ) from exc
 
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout_s)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout_s)
         except TimeoutError as exc:
             proc.kill()
             await proc.wait()
             from powerbi_orchestrator_mcp.engines.errors import EngineTimeoutError
 
             raise EngineTimeoutError(
-                f"te bpa timed out after {self._timeout_s}s",
+                f"te bpa timed out after {effective_timeout_s}s",
                 engine="te",
                 code="engine_timeout",
-                remediation_hint="Increase PBI_ENGINE_TIMEOUT_TE_S",
-                timeout_s=self._timeout_s,
+                remediation_hint=(
+                    "Increase PBI_ENGINE_TIMEOUT_TE_S (the Tabular Editor "
+                    "analysis can take minutes on a large model)"
+                ),
+                timeout_s=effective_timeout_s,
             ) from exc
 
-        if proc.returncode != 0:
-            from powerbi_orchestrator_mcp.engines.errors import EngineCrashedError
-
-            raise EngineCrashedError(
-                f"te bpa failed (exit {proc.returncode}): "
-                f"{stderr.decode('utf-8', errors='replace')[:500]}",
-                engine="te",
-                code="engine_crashed",
-                remediation_hint="Inspect te installation / model file",
+        exit_code = proc.returncode or 0
+        if exit_code != 0:
+            # The exit code says what happened: a validation failure, a
+            # missing model or a crash are different problems, and the
+            # mapped error says which.
+            from powerbi_orchestrator_mcp.engines.exit_codes import (
+                map_exit_code_to_error,
             )
+
+            stderr_text = stderr.decode("utf-8", errors="replace")
+            err = map_exit_code_to_error("te", exit_code, stderr_text)
+            if err is None:
+                from powerbi_orchestrator_mcp.engines.errors import EngineCrashedError
+
+                err = EngineCrashedError(
+                    f"te bpa failed (exit {exit_code}): {stderr_text[:500]}",
+                    engine="te",
+                    code="engine_crashed",
+                    remediation_hint="Inspect te installation / model file",
+                )
+            raise err
 
         return self._parse_output(stdout.decode("utf-8"), ruleset_name)
 

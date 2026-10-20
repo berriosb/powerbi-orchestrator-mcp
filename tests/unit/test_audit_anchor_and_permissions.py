@@ -132,11 +132,21 @@ class TestFilePermissions:
         assert stat.S_IMODE(anchor.stat().st_mode) == 0o600
 
     def test_hmac_key_is_owner_only(self, audit_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The generated chain key is owner-only.
+
+        It lives in the orchestrator home rather than next to the
+        database, so that an audit directory that gets shared or backed
+        up does not carry the key that protects it.
+        """
+        from powerbi_orchestrator_mcp.orchestrator.audit import _fallback_key_path
+
         monkeypatch.delenv("PBI_ORCHESTRATOR_AUDIT_SECRET", raising=False)
 
         audit_mod._get_hmac_key()
 
-        assert stat.S_IMODE((audit_db.parent / ".audit_key").stat().st_mode) == 0o600
+        key_path = _fallback_key_path()
+        assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+        assert key_path.parent != audit_db.parent
 
     def test_plan_db_is_owner_only(self, tmp_path: Path) -> None:
         from powerbi_orchestrator_mcp.orchestrator import plan_store as plan_mod

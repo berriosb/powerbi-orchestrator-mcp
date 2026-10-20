@@ -124,24 +124,32 @@ async def deploy_to_workspace(
     findings = findings or []
     result = DeployResult()
 
-    gate = PreDeployGate(profile=gate_profile)
-    gate_result = gate.evaluate(findings)
-    result.gate_result = gate_result
-    if not gate_result.passed:
-        result.errors.extend([f"gate_blocked: {c}" for c in gate_result.failed_checks])
-        return result
-
+    # The planned actions are computed before the gate runs so a blocked
+    # deploy still reports what it *would* have done. A dry run that
+    # returns nothing but an error is not informative.
     planned_dataset_id = Path(pbip_path).stem
     planned_actions = [
         f"create PowerBIDataset '{planned_dataset_id}' in workspace {workspace_id}",
         f"set daily refresh schedule at {max(0, min(23, int(refresh_daily_hour))):02d}:00 UTC",
         f"trigger full refresh on dataset '{planned_dataset_id}'",
     ]
+    result.planned_actions = planned_actions
+
+    gate = PreDeployGate(profile=gate_profile)
+    gate_result = gate.evaluate(findings)
+    result.gate_result = gate_result
+    if not gate_result.passed:
+        result.errors.extend([f"gate_blocked: {c}" for c in gate_result.failed_checks])
+        result.errors.append(
+            "the gate found no evidence to clear this deploy: run "
+            "audit_model_and_report and pass its findings, or lower the "
+            "gate profile if the findings are acceptable"
+        )
+        return result
 
     if dry_run:
         result.dry_run = True
         result.dataset_id = planned_dataset_id
-        result.planned_actions = planned_actions
         result.errors.append(
             "dry_run: no cloud call was made; pass dry_run=False to deploy for real"
         )

@@ -109,6 +109,13 @@ class OperationResult(BaseModel):
     success: bool
     changed_files: list[str] = Field(default_factory=list)
     error_message: str | None = None
+    references_renamed: int = 0
+    """How many references the operation actually rewrote.
+
+    A rename that changed no file and no reference is a different
+    outcome from one that updated every binding, and the caller has to
+    be able to tell them apart.
+    """
 
 
 class DaxResult(BaseModel):
@@ -518,10 +525,25 @@ class JsonRpcSubprocessEngine:
 
         if "error" in response:
             err = response["error"]
+            rpc_code = err.get("code")
+            if rpc_code == -32601:
+                # The engine is healthy but does not offer the method.
+                from powerbi_orchestrator_mcp.engines.errors import (
+                    EngineMethodNotFoundError,
+                )
+
+                raise EngineMethodNotFoundError(
+                    f"{self._engine_name} does not implement {method}()",
+                    engine=self._engine_name,
+                    code="engine_method_not_found",
+                    remediation_hint=(
+                        f"Use a built-in engine for {method}, or an engine that implements it"
+                    ),
+                )
             raise EngineCrashedError(
                 f"{self._engine_name} RPC {method} error: {err.get('message', err)}",
                 engine=self._engine_name,
-                code=f"rpc_error_{err.get('code', 'unknown')}",
+                code=f"rpc_error_{rpc_code or 'unknown'}",
                 remediation_hint=(
                     f"Inspect {self._engine_name} stderr in audit log; may be a contract drift"
                 ),

@@ -120,11 +120,38 @@ class TestValidateWritePath:
             validate_write_path(str(tmp_path / "nope"), must_exist=True)
 
 
-class TestReadPathUnchanged:
-    def test_read_path_root_stays_optional(
+class TestReadPathContainment:
+    """The read path is contained by default, like the write path.
+
+    Reading is how content reaches the model context, so an unbounded
+    read path should not be the default. An operator who needs it sets
+    PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1, and the error says so.
+    """
+
+    def test_read_path_is_contained_by_default(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.delenv("PBI_WORKSPACE_ROOT", raising=False)
+        monkeypatch.delenv("PBI_ALLOW_OUTSIDE_WORKSPACE_READ", raising=False)
+        outside = tmp_path / "readable"
+
+        with pytest.raises(ValueError, match="outside allowed workspace root"):
+            validate_safe_pbip_path(str(outside), must_exist=False)
+
+    def test_the_error_says_how_to_allow_it(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.delenv("PBI_WORKSPACE_ROOT", raising=False)
+        monkeypatch.delenv("PBI_ALLOW_OUTSIDE_WORKSPACE_READ", raising=False)
+
+        with pytest.raises(ValueError, match="PBI_ALLOW_OUTSIDE_WORKSPACE_READ"):
+            validate_safe_pbip_path(str(tmp_path / "readable"), must_exist=False)
+
+    def test_the_allowance_flag_restores_the_unbounded_read(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.delenv("PBI_WORKSPACE_ROOT", raising=False)
+        monkeypatch.setenv("PBI_ALLOW_OUTSIDE_WORKSPACE_READ", "1")
         outside = tmp_path / "readable"
 
         assert validate_safe_pbip_path(str(outside), must_exist=False) == outside.resolve()

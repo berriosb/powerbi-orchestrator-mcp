@@ -1,6 +1,6 @@
 name: e2e-nightly
 
-# Nightly E2E tests against real engine binaries (`te`, `dscmd`).
+# Nightly E2E tests against the real engine binaries (`te`).
 # See specs/qa/e2e-testing-strategy.md for the design: binaries pinned
 # by SHA256, matrix on 3 OS, schedule daily + on-PR when engine adapter
 # or fixtures change.
@@ -56,7 +56,7 @@ jobs:
           - os: macos-latest
             engines: ''
           - os: windows-latest
-            engines: 'te,dscmd'
+            engines: 'te'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -85,29 +85,10 @@ jobs:
           rm -f te.zip
           rm -rf te-dist
 
-      - name: Download DAX Studio CLI (`dscmd`) — Windows only
-        if: contains(matrix.engines, 'dscmd')
-        env:
-          DSCMD_VERSION: '3.0.0'
-          # Replace with real SHA256 from the upstream release asset.
-          DSCMD_SHA256: 'PLACEHOLDER_DSCMD_SHA256_REPLACE_ME'
-        shell: pwsh
-        run: |
-          if ($env:DSCMD_SHA256.StartsWith('PLACEHOLDER_')) {
-            Write-Warning "DSCMD_SHA256 is a placeholder. Skipping dscmd download until real SHA256 is set in .github/workflows/e2e-nightly.yml. See specs/qa/e2e-testing-strategy.md §3.3."
-            exit 0
-          }
-          Invoke-WebRequest -Uri "https://github.com/DaxStudio/DAXStudio/releases/download/v${DSCMD_VERSION}/dscmd-win-x64.zip" -OutFile dscmd.zip
-          Expand-Archive -Path dscmd.zip -DestinationPath .
-          $actual = (Get-FileHash -Path .\dscmd.exe -Algorithm SHA256).Hash.ToLower()
-          if ($actual -ne $DSCMD_SHA256) { throw "SHA256 mismatch: expected $DSCMD_SHA256, got $actual" }
-          Move-Item -Path .\dscmd.exe -Destination "$env:GITHUB_WORKSPACE\dscmd.exe"
-
       - name: Report engine availability
         run: |
           echo "te on PATH: $(command -v te || echo 'no')"
           echo "te path: ${TE_PATH:-<none>}"
-          echo "dscmd on PATH: $(command -v dscmd || echo 'no')"
 
   # -------------------------------------------------------------------------
   # Run E2E tests. Depends on `engines` having downloaded the binaries.

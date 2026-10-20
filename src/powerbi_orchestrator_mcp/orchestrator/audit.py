@@ -8,6 +8,7 @@ Public API:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -15,6 +16,7 @@ import logging
 import os
 import secrets
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -73,32 +75,82 @@ class AuditVerifyResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _fallback_key_path() -> Path:
+    """Where the generated chain key is stored when no secret is set.
+
+    The key is kept out of the audit directory on purpose: the audit
+    directory is the thing that gets shared, backed up and shipped
+    around, and a key next to the database it protects is no
+    protection at all against whoever can write there.
+    """
+    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
+
+    return get_orchestrator_home() / ".audit_key"
+
+
 def _get_hmac_key() -> bytes:
     """Get the HMAC secret key from the environment or generate one.
 
     Only ``PBI_ORCHESTRATOR_AUDIT_SECRET`` is recognised. A misspelled
     variant used to be accepted silently, which made a misconfigured
     deployment look configured.
+
+    Without that variable the key is generated once and stored outside
+    the audit directory. That protects the chain against an attacker who
+    can write to the audit directory alone, but not against one who can
+    read the whole orchestrator home — for that, set the variable.
     """
     secret = os.environ.get(_HMAC_KEY_ENV)
     if secret:
         return secret.encode("utf-8")
-    key_path = AUDIT_DIR / ".audit_key"
+    key_path = _fallback_key_path()
     if key_path.exists():
         return key_path.read_bytes()
-    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    key_path.parent.mkdir(parents=True, exist_ok=True)
     new_key = secrets.token_bytes(32)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     fd = os.open(str(key_path), flags, 0o600)
     with open(fd, "wb") as f:
         f.write(new_key)
+    log.warning(
+        "audit.key_generated: %s is not set, so the chain key was generated "
+        "and stored at %s. Set %s to a secret held outside this machine to "
+        "protect the audit log against an attacker who can read the "
+        "orchestrator home.",
+        _HMAC_KEY_ENV,
+        key_path,
+        _HMAC_KEY_ENV,
+    )
     return new_key
 
 
-def _compute_row_hash(key: bytes, prev_hash: str, row_id: int, timestamp: str, rest: str) -> str:
-    """Compute HMAC-SHA256 row hash."""
-    message = f"{prev_hash}{row_id}{timestamp}{rest}".encode()
+def _compute_row_hash(
+    key: bytes,
+    prev_hash: str,
+    row_id: int,
+    timestamp: str,
+    fields: Sequence[str],
+) -> str:
+    """Compute the HMAC-SHA256 row hash.
+
+    The fields are encoded as a canonical JSON array rather than
+    concatenated. Without a delimiter the boundary between two fields is
+    ambiguous: moving a character from the end of one field to the
+    start of the next produced a row that verified clean.
+    """
+    message = json.dumps([prev_hash, row_id, timestamp, *fields], separators=(",", ":")).encode()
     return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def _row_fields(
+    tool_name: str,
+    args_hash: str,
+    target_id: str | None,
+    result_status: str,
+    payload_json: str,
+) -> list[str]:
+    """The hashed fields of a row, in a fixed order."""
+    return [tool_name, args_hash, target_id or "", result_status, payload_json]
 
 
 def _ensure_audit_dir() -> Path:
@@ -121,14 +173,35 @@ def _read_anchor() -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def _write_anchor(last_id: int, last_hash: str, count: int) -> None:
+def _anchor_mac(key: bytes, last_id: int, last_hash: str, count: int) -> str:
+    """MAC of the anchor's contents.
+
+    Without it, an attacker who can rewrite the audit database can also
+    rewrite the anchor that says where the chain should end, and the
+    truncation is no longer detected.
+    """
+    message = json.dumps([last_id, last_hash, count], separators=(",", ":")).encode()
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def _write_anchor(last_id: int, last_hash: str, count: int, key: bytes) -> None:
     """Persist the expected chain tail outside the audit database.
 
     ``verify()`` recomputes the chain from genesis, so deleting the newest
     rows leaves a self-consistent prefix that still verifies. Comparing the
     database tail against this sidecar is what makes removal detectable.
+    The anchor is signed with the chain key, so rewriting it needs the key
+    too.
     """
-    payload = json.dumps({"last_id": last_id, "last_hash": last_hash, "count": count, "version": 1})
+    payload = json.dumps(
+        {
+            "last_id": last_id,
+            "last_hash": last_hash,
+            "count": count,
+            "version": 1,
+            "mac": _anchor_mac(key, last_id, last_hash, count),
+        }
+    )
     try:
         atomic_write_private(_anchor_file(), payload)
     except OSError:
@@ -224,14 +297,19 @@ class AuditLog:
 
         key = _get_hmac_key()
         conn = self._connect()
+        # The id is derived from MAX(id) + 1, so two processes writing at
+        # the same time could pick the same one. The write lock makes the
+        # read and the insert atomic with respect to other writers.
+        conn.isolation_level = None
         try:
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute("SELECT MAX(id) FROM audit_log")
             max_id = cursor.fetchone()[0] or 0
             new_id = max_id + 1
 
             prev_hash = self._get_last_hash(conn)
-            rest = f"{tool_name}{args_hash}{target_id or ''}{result_status}{payload_json}"
-            row_hash = _compute_row_hash(key, prev_hash, new_id, ts, rest)
+            fields = _row_fields(tool_name, args_hash, target_id, result_status, payload_json)
+            row_hash = _compute_row_hash(key, prev_hash, new_id, ts, fields)
 
             conn.execute(
                 """
@@ -251,23 +329,43 @@ class AuditLog:
                     payload_json,
                 ),
             )
-            conn.commit()
-
-            _write_anchor(new_id, row_hash, new_id)
-
-            return AuditEntry(
-                id=new_id,
-                timestamp=ts,
-                tool_name=tool_name,
-                tool_args_hash=args_hash,
-                target_id=target_id,
-                result_status=result_status,
-                prev_hash=prev_hash,
-                row_hash=row_hash,
-                payload_json=payload_json,
-            )
-        finally:
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
             conn.close()
+            # Another writer took the id between the read and the insert.
+            # The lock makes this unlikely, but a lost audit row is not
+            # acceptable, so it is retried once.
+            return self.insert(
+                tool_name=tool_name,
+                tool_args=tool_args,
+                result_status=result_status,
+                target_id=target_id,
+                payload=payload,
+                timestamp=ts,
+            )
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            with contextlib.suppress(sqlite3.Error):
+                conn.close()
+
+        _write_anchor(new_id, row_hash, new_id, key)
+
+        return AuditEntry(
+            id=new_id,
+            timestamp=ts,
+            tool_name=tool_name,
+            tool_args_hash=args_hash,
+            target_id=target_id,
+            result_status=result_status,
+            prev_hash=prev_hash,
+            row_hash=row_hash,
+            payload_json=payload_json,
+        )
 
     def verify(self) -> AuditVerifyResult:
         """Verify the entire HMAC chain.
@@ -320,8 +418,13 @@ class AuditLog:
                     )
 
                 # Recompute row_hash
-                rest = f"{tool_name}{args_hash}{target_id or ''}{result_status}{payload}"
-                expected_hash = _compute_row_hash(key, prev_hash, row_id, ts, rest)
+                expected_hash = _compute_row_hash(
+                    key,
+                    prev_hash,
+                    row_id,
+                    ts,
+                    _row_fields(tool_name, args_hash, target_id, result_status, payload),
+                )
 
                 if not hmac.compare_digest(stored_hash, expected_hash):
                     return AuditVerifyResult(
@@ -339,6 +442,20 @@ class AuditLog:
                 anchor_id: Any = anchor.get("last_id")
                 anchor_hash: Any = anchor.get("last_hash")
                 anchor_count: Any = anchor.get("count")
+                # The anchor is signed with the chain key: rewriting it
+                # to match a truncated database needs the key.
+                anchor_mac = anchor.get("mac")
+                if anchor_mac is not None:
+                    expected_mac = _anchor_mac(
+                        key, int(anchor_id or 0), str(anchor_hash or ""), int(anchor_count or 0)
+                    )
+                    if not hmac.compare_digest(str(anchor_mac), expected_mac):
+                        return AuditVerifyResult(
+                            valid=False,
+                            total_rows=len(rows),
+                            error_message="anchor signature mismatch: the anchor was "
+                            "rewritten to match a modified audit log",
+                        )
                 if anchor_count is not None and int(anchor_count) != len(rows):
                     return AuditVerifyResult(
                         valid=False,

@@ -152,7 +152,47 @@ class TestStoryVarianceContentDiff:
         assert len(unchanged) == 1
 
     def test_low_diff_below_threshold_unchanged(self, tmp_path: Path) -> None:
-        # Directly write two PNGs that differ only in 1 pixel.
+        # Two renderings of the same page with one visual of a different
+        # colour: a small, decodable difference.
+        from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
+            _PageBundle,
+            _render_png,
+        )
+
+        def _bundle(colour: int) -> bytes:
+            return _render_png(
+                _PageBundle(
+                    page_name="Overview",
+                    width=10,
+                    height=10,
+                    visuals=[{"id": "v1", "type": "card", "colour": colour}],
+                ),
+                (10, 10),
+            )
+
+        baseline_dir = tmp_path / "b"
+        current_dir = tmp_path / "c"
+        baseline_dir.mkdir()
+        current_dir.mkdir()
+        (baseline_dir / "Overview.png").write_bytes(_bundle(1))
+        (current_dir / "Overview.png").write_bytes(_bundle(2))
+
+        result = compute_story_variance(
+            baseline_dir,
+            current_dir,
+            change_threshold_pct=50.0,
+        )
+        assert result.pages_compared == 1
+        assert result.pages_unchanged == 1
+        assert result.pages_changed == 0
+        assert result.pages_unknown == 0
+
+    def test_an_undecodable_image_is_unknown_not_unchanged(self, tmp_path: Path) -> None:
+        """A difference that cannot be measured is not "no difference".
+
+        The images differ but the comparison could not decode them, so
+        reporting "unchanged" would hide a real visual regression.
+        """
         from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
             _PageBundle,
             _render_png,
@@ -168,14 +208,11 @@ class TestStoryVarianceContentDiff:
         current_dir.mkdir()
         (baseline_dir / "Overview.png").write_bytes(baseline_bytes)
 
-        # Mutate a single pixel byte (overwrite one byte, but keep
-        # general area readable — for true test, simply check that
-        # any small diff is detectable and reported as changed when
-        # threshold is 0).
+        # Corrupt the compressed stream: the hashes differ, the pixels
+        # cannot be compared.
         mutated = bytearray(baseline_bytes)
         idx = len(baseline_bytes) - len(baseline_bytes) // 4
         mutated[idx] = (mutated[idx] + 1) % 256
-        # Validate this won't break PNG structure too much.
         (current_dir / "Overview.png").write_bytes(bytes(mutated))
 
         result = compute_story_variance(
@@ -183,8 +220,10 @@ class TestStoryVarianceContentDiff:
             current_dir,
             change_threshold_pct=50.0,
         )
-        # Threshold is 50%; small diff should be "unchanged".
-        assert any(f.status == "unchanged" for f in result.findings)
+
+        assert result.pages_unknown == 1
+        assert result.pages_unchanged == 0
+        assert any(f.status == "unknown" for f in result.findings)
 
 
 class TestStoryVarianceHelpers:

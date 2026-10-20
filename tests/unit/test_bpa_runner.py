@@ -13,11 +13,12 @@ from pathlib import Path
 import pytest
 
 from powerbi_orchestrator_mcp.engines.errors import (
-    EngineCrashedError,
+    EngineAuthError,
     EngineError,
     EngineNotFoundError,
     EngineOutputParseError,
     EngineTimeoutError,
+    EngineValidationError,
 )
 from powerbi_orchestrator_mcp.validation.bpa_runner import (
     SUPPORTED_RULESETS,
@@ -122,9 +123,15 @@ class TestRunSubprocess:
             await runner.run(target)
         assert "/nonexistent/te-binary" in str(ei.value)
 
-    async def test_binary_exit_nonzero_raises_crashed(
+    async def test_binary_exit_nonzero_is_mapped_to_its_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """The exit code says what happened.
+
+        Exit code 2 is an authentication failure, not a crash, and the
+        error the caller sees has to say so.
+        """
+
         async def fake_communicate():
             return (b"", b"some te error message")
 
@@ -147,8 +154,61 @@ class TestRunSubprocess:
         runner = BpaRunner(binary="te2")
         target = tmp_path / "model.bim"
         target.write_text("")
-        with pytest.raises(EngineCrashedError):
+        with pytest.raises(EngineAuthError):
             await runner.run(target)
+
+    @pytest.mark.parametrize(
+        ("exit_code", "expected"),
+        [
+            (1, EngineValidationError),
+            (2, EngineAuthError),
+            (3, EngineTimeoutError),
+            (127, EngineNotFoundError),
+        ],
+    )
+    async def test_every_exit_code_maps_to_its_own_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        exit_code: int,
+        expected: type[Exception],
+    ) -> None:
+        class FakeProc:
+            returncode = exit_code
+
+            async def communicate(self) -> tuple[bytes, bytes]:
+                return (b"", b"te said no")
+
+            async def wait(self) -> None:
+                return None
+
+            def kill(self) -> None:
+                pass
+
+        async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
+            return FakeProc()
+
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+        runner = BpaRunner(binary="te")
+        target = tmp_path / "model.bim"
+        target.write_text("")
+
+        with pytest.raises(expected):
+            await runner.run(target)
+
+    async def test_the_timeout_env_var_has_an_effect(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The hint the error gives points at a variable that does work."""
+        from powerbi_orchestrator_mcp.validation.bpa_runner import BpaRunner
+
+        monkeypatch.setenv("PBI_ENGINE_TIMEOUT_TE_S", "120")
+        runner = BpaRunner(binary="te")
+        assert runner._timeout_s is None  # noqa: SLF001
+        # The resolved timeout is the configured one, not the hardcoded 60.
+        from powerbi_orchestrator_mcp.engines.timeouts import resolve_timeout
+
+        assert resolve_timeout("te", requested_s=runner._timeout_s) == 120  # noqa: SLF001
 
     async def test_timeout_raises_engine_timeout(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
