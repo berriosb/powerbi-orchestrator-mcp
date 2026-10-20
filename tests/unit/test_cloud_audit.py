@@ -13,9 +13,13 @@ from powerbi_orchestrator_mcp.cloud.audit_cloud import (
 class TestRedactPayload:
     def test_redact_bearer_token(self) -> None:
         text = "Authorization: Bearer eyJabc.def-ghi_123"
-        out = redact_payload({"auth": text})
-        assert "Bearer [REDACTED]" in out["auth"]
-        assert "eyJabc.def-ghi_123" not in out["auth"]
+        out = redact_payload({"header": text})
+        assert "Bearer [REDACTED]" in out["header"]
+        assert "eyJabc.def-ghi_123" not in out["header"]
+
+    def test_an_authorization_header_is_redacted_whole(self) -> None:
+        out = redact_payload({"auth": "Bearer eyJabc.def-ghi_123"})
+        assert out["auth"] == "[REDACTED]"
 
     def test_redact_oauth_code(self) -> None:
         text = "https://login.example/?code=abc123def456ghi789jkl012"
@@ -31,9 +35,33 @@ class TestRedactPayload:
 
     def test_redact_standalone_jwt(self) -> None:
         text = "Token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"
-        out = redact_payload({"token": text})
-        assert "[JWT_REDACTED]" in out["token"]
-        assert "eyJhbGciOiJI" not in out["token"]
+        out = redact_payload({"header": text})
+        assert "[JWT_REDACTED]" in out["header"]
+        assert "eyJhbGciOiJI" not in out["header"]
+
+    def test_a_value_under_a_secret_key_is_redacted_whole(self) -> None:
+        """A short secret has no pattern to match, so the key decides."""
+        out = redact_payload({"password": "hunter2"})
+        assert out["password"] == "[REDACTED]"
+        assert "hunter2" not in out["password"]
+
+    def test_secret_keys_are_matched_case_insensitively(self) -> None:
+        for key in ("Client_Secret", "apiKey", "API_KEY", "client_secret", "pwd"):
+            out = redact_payload({key: "s3cr3t-value"})
+            assert out[key] == "[REDACTED]", f"{key} was not redacted"
+
+    def test_non_secret_keys_are_left_alone(self) -> None:
+        out = redact_payload({"workspace_id": "ws-1", "score": 100, "name": "alice"})
+        assert out == {"workspace_id": "ws-1", "score": 100, "name": "alice"}
+
+    def test_token_bearing_query_params_are_redacted(self) -> None:
+        out = redact_payload({"url": "https://api.example/x?access_token=abcdef123456"})
+        assert "abcdef123456" not in out["url"]
+        assert "[REDACTED]" in out["url"]
+
+    def test_account_key_in_a_connection_string_is_redacted(self) -> None:
+        out = redact_payload({"conn": "AccountKey=abc123==;Server=x"})
+        assert "abc123" not in out["conn"]
 
     def test_redact_email_in_effective_identity(self) -> None:
         text = "alice@acme.example.com"
@@ -58,7 +86,8 @@ class TestRedactPayload:
         }
         out = redact_payload(payload)
         assert "alice@" not in out["user"]["id"]
-        assert out["user"]["token"] == "Bearer [REDACTED]"
+        # The value under a secret key is redacted whole.
+        assert out["user"]["token"] == "[REDACTED]"
         assert "[REDACTED]" in out["user"]["nested"]["code"]
 
     def test_redact_list(self) -> None:
@@ -109,7 +138,8 @@ class TestCloudAuditLog:
 
         loaded = _json.loads(entry.payload_json)
         assert "<email_hash:" in loaded["effective_identity"]
-        assert "Bearer [REDACTED]" in loaded["auth_header"]
+        # `auth_header` names a secret, so the whole value is replaced.
+        assert loaded["auth_header"] == "[REDACTED]"
 
     def test_record_includes_retention_days(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from pathlib import Path

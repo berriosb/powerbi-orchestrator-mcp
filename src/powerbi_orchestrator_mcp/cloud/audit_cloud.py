@@ -40,6 +40,17 @@ REDACTION_PATTERNS = [
     (re.compile(r"(?i)(Server|Data Source)=[^;]+"), r"\1=[REDACTED]"),
     # Password= in connection strings
     (re.compile(r"(?i)Password=[^;]+"), "Password=[REDACTED]"),
+    # Token-bearing query params in URLs
+    (
+        re.compile(r"(?i)\b(access_token|refresh_token|id_token|api_key|apikey)=[^&\s;]+"),
+        r"\1=[REDACTED]",
+    ),
+    # Connection-string style secrets that are not Server=/Password=
+    (re.compile(r"(?i)\b(pwd|pwduid|accountkey)=\s*[^;\s]+"), r"\1=[REDACTED]"),
+    # Shared access signature
+    (re.compile(r"(?i)\bsig=[^&\s;]+"), "sig=[REDACTED]"),
+    # "token=..." style assignments in free text
+    (re.compile(r"(?i)\btoken=[A-Za-z0-9._\-]+"), "token=[REDACTED]"),
     # Standalone JWT (3 base64url segments separated by dots)
     (
         re.compile(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"),
@@ -49,6 +60,73 @@ REDACTION_PATTERNS = [
 
 EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 
+# Payload keys whose value is a secret whatever it looks like. A pattern
+# match on the value is not enough: a short password or a bare API key
+# contains no pattern to match, and it was being persisted in clear.
+_SECRET_KEY_WORDS = frozenset(
+    {
+        "pass",
+        "password",
+        "passwd",
+        "pwd",
+        "passphrase",
+        "secret",
+        "token",
+        "credential",
+        "credentials",
+        "authorization",
+        "auth",
+        "signature",
+    }
+)
+
+# Keys that only read as a secret once the parts are joined, e.g.
+# "apiKey" or "private_key".
+_SECRET_KEY_JOINED = frozenset(
+    {
+        "apikey",
+        "accesskey",
+        "secretkey",
+        "privatekey",
+        "clientsecret",
+        "sastoken",
+        "accesstoken",
+        "refreshtoken",
+        "idtoken",
+        "bearertoken",
+    }
+)
+
+REDACTED = "[REDACTED]"
+
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_CAMEL_ACRONYM = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
+_NON_WORD = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _key_words(key: str) -> list[str]:
+    """Split a payload key into lowercase words.
+
+    Handles camelCase, snake_case, kebab-case and acronyms, so that
+    "API_KEY", "apiKey" and "api-key" all yield the same words.
+    """
+    spaced = _CAMEL_ACRONYM.sub("_", _CAMEL_BOUNDARY.sub("_", key))
+    return [word.lower() for word in _NON_WORD.split(spaced) if word]
+
+
+def _is_secret_key(key: str) -> bool:
+    """True when a payload key names a secret."""
+    words = _key_words(key)
+    if not words:
+        return False
+    if any(word in _SECRET_KEY_WORDS for word in words):
+        return True
+    if "".join(words) in _SECRET_KEY_JOINED:
+        return True
+    # "x-api-key" and friends: the "api" and "key" parts only read as a
+    # secret together.
+    return bool("api" in words and "key" in words)
+
 
 def redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Apply redaction patterns to all string values in the payload dict.
@@ -57,12 +135,18 @@ def redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     Email addresses are replaced with a sha256[:8] hash (per spec —
     EffectiveIdentity emails must be redactable but distinguishable).
 
+    A value stored under a key that names a secret is replaced whole,
+    whatever it looks like: a short password has no pattern to match.
+
     Lists are recursed; nested dicts too. Non-string values pass through.
     """
     if isinstance(payload, str):
         return _redact_string(payload)
     if isinstance(payload, dict):
-        return {k: redact_payload(v) for k, v in payload.items()}
+        return {
+            k: (REDACTED if _is_secret_key(str(k)) else redact_payload(v))
+            for k, v in payload.items()
+        }
     if isinstance(payload, list):
         return [redact_payload(item) for item in payload]
     return payload
@@ -152,6 +236,7 @@ class CloudAuditLog:
 
 __all__ = [
     "EMAIL_PATTERN",
+    "REDACTED",
     "CloudAuditLog",
     "REDACTION_PATTERNS",
     "redact_payload",

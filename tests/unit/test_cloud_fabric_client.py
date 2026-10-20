@@ -79,6 +79,71 @@ class TestTokenBucket:
         assert result is False
 
 
+class TestFabricIdValidation:
+    """Identifiers interpolated into a REST path must not change the path."""
+
+    @staticmethod
+    def _client() -> FabricClient:
+        cfg = AuthConfig(mode="interactive")
+        cred = FabricCredential(cfg)
+        return FabricClient(cred, rpm=10_000, burst=10_000)
+
+    @pytest.mark.parametrize(
+        "workspace_id",
+        [
+            "../../v1.0/myorg/admin/users",
+            "..%2F..%2Fadmin",
+            "ws/../../admin",
+            "ws id",
+            "",
+        ],
+    )
+    async def test_a_traversing_workspace_id_is_rejected(self, workspace_id: str) -> None:
+        from powerbi_orchestrator_mcp.cloud.fabric_client import FabricIdError
+
+        client = self._client()
+
+        async def fake_request(method, path, **kwargs):
+            raise AssertionError("the request must not be sent")
+
+        client._request = fake_request  # type: ignore[method-assign]  # noqa: SLF001
+        try:
+            with pytest.raises(FabricIdError):
+                await client.list_datasets(workspace_id)
+        finally:
+            await client.aclose()
+
+    async def test_a_traversing_dataset_id_is_rejected(self) -> None:
+        from powerbi_orchestrator_mcp.cloud.fabric_client import FabricIdError
+
+        client = self._client()
+
+        async def fake_request(method, path, **kwargs):
+            raise AssertionError("the request must not be sent")
+
+        client._request = fake_request  # type: ignore[method-assign]  # noqa: SLF001
+        try:
+            with pytest.raises(FabricIdError):
+                await client.get_dataset("ws-abc", "../../admin/users")
+        finally:
+            await client.aclose()
+
+    async def test_a_valid_guid_is_accepted(self) -> None:
+        client = self._client()
+        captured: dict = {}
+
+        async def fake_request(method, path, *, service="fabric", **kwargs):
+            captured["path"] = path
+            return {"value": []}
+
+        client._request = fake_request  # type: ignore[method-assign]  # noqa: SLF001
+        try:
+            await client.list_datasets("0f6d1234-5678-4abc-9def-0123456789ab")
+            assert captured["path"] == "/groups/0f6d1234-5678-4abc-9def-0123456789ab/datasets"
+        finally:
+            await client.aclose()
+
+
 class TestFabricClient:
     async def test_list_workspaces_returns_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Stub the credential so we don't make real Azure calls.
