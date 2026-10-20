@@ -74,6 +74,20 @@ _ENGINE_PROBES: tuple[EngineProbe, ...] = (
     ),
 )
 
+# The engines an orchestrator tool can actually dispatch to.
+#
+# The others are still detected, so the health check can say what is
+# installed on the machine, but no tool reaches them: installing them
+# changes nothing. Saying so is better than suggesting an install that
+# enables no feature.
+INTEGRATED_ENGINES: frozenset[str] = frozenset(
+    {
+        "powerbi-modeling-mcp",
+        "te",
+        "superbi-mcp",
+    }
+)
+
 
 def _resolve_binary(binary_names: tuple[str, ...]) -> str | None:
     """Find the first binary name present in PATH."""

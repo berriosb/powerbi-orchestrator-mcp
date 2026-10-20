@@ -20,14 +20,24 @@ The orchestrator dispatches operations to subprocess engines via the
 **per-adapter**: a missing engine means the corresponding operation
 falls back or elicits a remediation hint — it doesn't crash the server.
 
-| Engine | Layer | OS | Source | Protocol | MVP |
-|--------|-------|----|----|----------|-----|
+| Engine | Layer | OS | Source | Protocol | Dispatched to |
+|--------|-------|----|----|----------|----------------|
 | `python_report` (built-in) | Report | Win/Mac/Linux | (built into orchestrator) | Direct file I/O | ✅ always available |
-| `powerbi-modeling-mcp` | Modeling | Win/Mac/Linux | `npx @microsoft/powerbi-modeling-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ Recommended |
-| `superbi-mcp` | Report | Windows primarily | `npx superbi-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ wired (mock-tested) |
-| `te` (Tabular Editor CLI) | Modeling + BPA | Win/Mac/Linux | [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases) | CLI subprocess (no MCP) | ⏳ Week 2 |
-| `dscmd` (DAX Studio CLI) | DAX trace | Windows only | [DAX Studio releases](https://daxstudio.org/) | CLI subprocess (no MCP) | ⏳ Week 2 |
-| `pbip-validator` | Validation | Win/Mac/Linux | `pip install pbip-validator` (when published) | Python subprocess (no MCP) | ⏳ Week 2 |
+| `python_modeling` (built-in) | Modeling | Win/Mac/Linux | (built into orchestrator) | Direct file I/O | ✅ always available |
+| `powerbi-modeling-mcp` | Modeling | Win/Mac/Linux | `npx @microsoft/powerbi-modeling-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ recommended |
+| `superbi-mcp` | Report | Windows primarily | `npx superbi-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ wired |
+| `te` (Tabular Editor CLI) | BPA | Win/Mac/Linux | [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases) | CLI subprocess (no MCP) | ✅ for the BPA check |
+| `dscmd` (DAX Studio CLI) | — | Windows only | [DAX Studio releases](https://daxstudio.org/) | CLI subprocess (no MCP) | ❌ detected only |
+| `pbip-validator` | — | Win/Mac/Linux | *not published on PyPI* | Python subprocess (no MCP) | ❌ detected only |
+
+**`dscmd` and `pbip-validator` are detected but not dispatched to.**
+No orchestrator tool reaches either of them: there is no adapter that
+uses them, and `pbip-validator` is not a package on PyPI. The health
+check reports them as *detected but not integrated* rather than
+suggesting an install that would enable no feature. The PBIP
+validation the orchestrator actually performs is its own structural
+validator (`PythonReportEngine.validate_pbir`), which needs no external
+binary.
 
 **Protocol notes:**
 

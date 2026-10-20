@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from powerbi_orchestrator_mcp import __version__
 from powerbi_orchestrator_mcp.orchestrator.audit import AUDIT_DB, count_entries
 from powerbi_orchestrator_mcp.orchestrator.engine_detector import (
+    INTEGRATED_ENGINES,
     detect_all_engines,
 )
 from powerbi_orchestrator_mcp.orchestrator.plan_executions import EXEC_DB
@@ -87,18 +88,33 @@ async def powerbi_health(
     engine_dict: dict[str, dict[str, Any]] = {}
     for name, status in engines.items():
         ok = status.available
+        integrated = name in INTEGRATED_ENGINES
+        detail = status.reason_unavailable
+        if not integrated:
+            # The engine is present on the machine but no tool
+            # dispatches to it. Saying "unavailable" would be wrong —
+            # it is available, it is just not reachable.
+            detail = "detected but not integrated: no orchestrator tool dispatches to it"
+            if status.reason_unavailable:
+                detail = f"{detail} ({status.reason_unavailable})"
         checks.append(
             HealthCheck(
                 name=f"engine.{name}",
                 ok=ok,
-                detail=None if ok else (status.reason_unavailable or "unknown"),
+                detail=None if ok and integrated else detail,
             )
         )
         engine_dict[name] = {
             "available": ok,
             "version": status.version,
+            "integrated": integrated,
             "reason_unavailable": status.reason_unavailable,
+            "note": None
+            if integrated
+            else ("detected but not integrated: no orchestrator tool dispatches to it"),
         }
+        if not integrated:
+            continue
         if not ok:
             warnings.append(f"engine {name!r} unavailable")
             if name == "powerbi-modeling-mcp":
@@ -110,8 +126,8 @@ async def powerbi_health(
                     "Install Tabular Editor: "
                     "https://github.com/TabularEditor/TabularEditor/releases"
                 )
-            elif name == "dscmd":
-                remediation.append("Install DAX Studio CLI (Windows-only): https://daxstudio.org/")
+            elif name == "superbi-mcp":
+                remediation.append("Install superbi-mcp: `npx -y superbi-mcp` (Windows-only, FSL)")
 
     # Plan store.
     plan_store = PlanStore()
