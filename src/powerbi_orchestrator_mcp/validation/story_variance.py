@@ -24,7 +24,7 @@ import hashlib
 import os
 import struct
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +119,7 @@ class StoryVarianceFinding:
     """One variance finding per page."""
 
     page_name: str
-    status: str  # "unchanged" | "changed" | "added" | "removed"
+    status: str  # "unchanged" | "changed" | "added" | "removed" | "unknown"
     pixel_diff_pct: float  # 0.0-100.0
     sha256_baseline: str
     sha256_current: str
@@ -138,8 +138,9 @@ class StoryVarianceResult:
     pages_changed: int
     pages_added: int
     pages_removed: int
-    overall_variance_pct: float
-    warnings: list[str]
+    pages_unknown: int = 0
+    overall_variance_pct: float = 0.0
+    warnings: list[str] = field(default_factory=list)
 
 
 def _sha256_png(data: bytes) -> str:
@@ -296,7 +297,13 @@ def compute_story_variance(
                 differing_lines = len(rows_with_diff)
                 total_lines = height
 
-        status = "changed" if pixel_diff_pct > change_threshold_pct else "unchanged"
+        if decoded_base is None or decoded_cur is None:
+            # The images differ but could not be decoded, so the
+            # difference could not be measured. Reporting "unchanged"
+            # would hide a real visual regression.
+            status = "unknown"
+        else:
+            status = "changed" if pixel_diff_pct > change_threshold_pct else "unchanged"
         findings.append(
             StoryVarianceFinding(
                 page_name=name,
@@ -311,6 +318,7 @@ def compute_story_variance(
 
     pages_compared = len(findings)
     pages_unchanged = sum(1 for f in findings if f.status == "unchanged")
+    pages_unknown = sum(1 for f in findings if f.status == "unknown")
     pages_changed = sum(1 for f in findings if f.status == "changed")
     pages_added = sum(1 for f in findings if f.status == "added")
     pages_removed = sum(1 for f in findings if f.status == "removed")
@@ -323,6 +331,7 @@ def compute_story_variance(
         pages_changed=pages_changed,
         pages_added=pages_added,
         pages_removed=pages_removed,
+        pages_unknown=pages_unknown,
         overall_variance_pct=round(overall, 3),
         warnings=warnings,
     )
@@ -341,6 +350,7 @@ def variance_to_dict(result: StoryVarianceResult) -> dict[str, Any]:
         "pages_changed": result.pages_changed,
         "pages_added": result.pages_added,
         "pages_removed": result.pages_removed,
+        "pages_unknown": result.pages_unknown,
         "overall_variance_pct": result.overall_variance_pct,
         "findings": [
             {

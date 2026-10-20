@@ -109,6 +109,45 @@ def _resolve_report_dir(pbip_root: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _validate_page_name(page_name: str) -> str:
+    """Validate a page name before it becomes a directory.
+
+    The name is used as a directory under ``pages/``. An empty name
+    produces a page outside the expected layout, and a name carrying a
+    separator would write outside the report directory.
+    """
+    name = str(page_name or "").strip()
+    if not name:
+        raise EngineValidationError(
+            "page name cannot be empty",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a name such as 'Overview'",
+        )
+    if "/" in name or "\\" in name:
+        raise EngineValidationError(
+            f"page name cannot contain a path separator: {page_name!r}",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a single directory name, such as 'Overview'",
+        )
+    if name in (".", ".."):
+        raise EngineValidationError(
+            f"page name cannot be {name!r}",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a name such as 'Overview'",
+        )
+    if name.startswith("."):
+        raise EngineValidationError(
+            f"page name cannot start with a dot: {page_name!r}",
+            engine="python_report",
+            code="engine_validation_failed",
+            remediation_hint="Pass a name such as 'Overview'",
+        )
+    return name
+
+
 class PythonReportEngine:
     """Cross-platform ``ReportEngine`` implementation using direct file I/O.
 
@@ -180,6 +219,7 @@ class PythonReportEngine:
         pbip_root = _resolve_pbip_root(conn)
         report_dir = _resolve_report_dir(pbip_root)
 
+        page_name = _validate_page_name(page_name)
         page_dir = report_dir / "pages" / page_name
         page_json = page_dir / "page.json"
 
