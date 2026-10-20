@@ -174,6 +174,14 @@ class HttpConfig:
     entra_audience: str = ""
     entra_required_scope: str = "Tools.Read"
     mount_path: str = "/mcp"
+    allowed_hosts: tuple[str, ...] = ()
+    """Extra Host header values the server answers to.
+
+    The SDK's DNS-rebinding protection only allows loopback hosts by
+    default, so a server bound to a container address would answer 421
+    to every client. These values are added to the allowlist; the
+    protection itself stays enabled.
+    """
 
 
 class AuthError(Exception):
@@ -347,6 +355,18 @@ def parse_transport_args(
         default=None,
         help="URL path for the MCP endpoint (default /mcp).",
     )
+    parser.add_argument(
+        "--http-allowed-host",
+        action="append",
+        default=None,
+        dest="http_allowed_host",
+        help=(
+            "Extra Host header value the server answers to. Repeatable. "
+            "Needed when the server is bound to a non-loopback address: "
+            "the SDK's DNS-rebinding protection otherwise rejects every "
+            "request with 421."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.transport == "stdio":
@@ -375,9 +395,20 @@ def parse_transport_args(
         entra_required_scope=args.http_entra_required_scope
         or os.environ.get("PBI_ENTRA_REQUIRED_SCOPE", "Tools.Read"),
         mount_path=args.http_mount_path or os.environ.get("PBI_HTTP_MOUNT_PATH", "/mcp"),
+        allowed_hosts=_allowed_hosts(args.http_allowed_host),
     )
 
     return "http", cfg
+
+
+def _allowed_hosts(explicit: list[str] | None) -> tuple[str, ...]:
+    """Resolve the extra Host header values the server answers to."""
+    hosts: list[str] = []
+    if explicit:
+        hosts.extend(h.strip() for h in explicit if h.strip())
+    env_value = os.environ.get("PBI_HTTP_ALLOWED_HOSTS", "")
+    hosts.extend(h.strip() for h in env_value.split(",") if h.strip())
+    return tuple(dict.fromkeys(hosts))
 
 
 def auth_middleware_factory(

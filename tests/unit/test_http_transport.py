@@ -303,6 +303,89 @@ class TestValidateEntraToken:
 # ---------------------------------------------------------------------------
 
 
+class TestAllowedHosts:
+    """The Host allowlist has to cover the address the server binds."""
+
+    def test_http_allowed_host_flag_is_parsed(self) -> None:
+        transport, cfg = parse_transport_args(
+            [
+                "--transport",
+                "http",
+                "--http-entra-tenant-id",
+                "abc-123",
+                "--http-entra-audience",
+                "api://test",
+                "--http-allowed-host",
+                "pbi.internal:8000",
+                "--http-allowed-host",
+                "10.0.0.5",
+            ]
+        )
+        assert transport == "http"
+        assert cfg is not None
+        assert cfg.allowed_hosts == ("pbi.internal:8000", "10.0.0.5")
+
+    def test_allowed_hosts_can_come_from_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PBI_HTTP_ALLOWED_HOSTS", "a.example, b.example")
+        _, cfg = parse_transport_args(
+            [
+                "--transport",
+                "http",
+                "--http-entra-tenant-id",
+                "abc-123",
+                "--http-entra-audience",
+                "api://test",
+            ]
+        )
+        assert cfg is not None
+        assert cfg.allowed_hosts == ("a.example", "b.example")
+
+    def test_binding_a_container_address_widens_the_allowlist(self) -> None:
+        """A server bound to 0.0.0.0 must not answer 421 to its clients."""
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            _apply_transport_security,
+        )
+        from powerbi_orchestrator_mcp.orchestrator.server import mcp as _mcp
+
+        cfg = HttpConfig(
+            host="0.0.0.0",
+            port=8000,
+            entra_tenant_id="abc-123",
+            entra_audience="api://test",
+        )
+        _apply_transport_security(cfg)
+
+        security = _mcp.settings.transport_security
+        assert security is not None
+        # The protection stays on.
+        assert security.enable_dns_rebinding_protection is True
+        # The bound address is accepted, and the loopback entries stay.
+        assert "0.0.0.0:*" in security.allowed_hosts
+        assert "127.0.0.1:*" in security.allowed_hosts
+        assert "http://0.0.0.0:*" in security.allowed_origins
+
+    def test_explicit_allowed_host_is_added(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.server import (
+            _apply_transport_security,
+        )
+        from powerbi_orchestrator_mcp.orchestrator.server import mcp as _mcp
+
+        cfg = HttpConfig(
+            host="127.0.0.1",
+            port=8000,
+            entra_tenant_id="abc-123",
+            entra_audience="api://test",
+            allowed_hosts=("pbi.internal:8000",),
+        )
+        _apply_transport_security(cfg)
+
+        security = _mcp.settings.transport_security
+        assert security is not None
+        assert "pbi.internal:8000" in security.allowed_hosts
+
+
 class TestParseTransportArgs:
     def test_default_is_stdio(self) -> None:
         transport, cfg = parse_transport_args([])

@@ -37,7 +37,7 @@ class DeployToWorkspace(BaseModel):
         description="Findings to evaluate against the pre-deploy gate.",
     )
     gate_profile: str = "standard"
-    auth_mode: str = "interactive"
+    auth_mode: str | None = None
     tenant_id: str | None = None
     client_id: str | None = None
     dry_run: bool = True
@@ -97,7 +97,7 @@ async def deploy_to_workspace(
     refresh_daily_hour: int = 6,
     findings: list[dict[str, Any]] | None = None,
     gate_profile: str = "standard",
-    auth_mode: str = "interactive",
+    auth_mode: str | None = None,
     tenant_id: str | None = None,
     client_id: str | None = None,
     dry_run: bool = True,

@@ -19,7 +19,7 @@ class RunRefresh(BaseModel):
     tables: list[str] | None = None
     wait: bool = True
     timeout_s: int = 1800
-    auth_mode: str = "interactive"
+    auth_mode: str | None = None
     tenant_id: str | None = None
     client_id: str | None = None
     dry_run: bool = True
@@ -34,7 +34,7 @@ async def run_refresh(
     tables: list[str] | None = None,
     wait: bool = True,
     timeout_s: int = 1800,
-    auth_mode: str = "interactive",
+    auth_mode: str | None = None,
     tenant_id: str | None = None,
     client_id: str | None = None,
     dry_run: bool = True,
