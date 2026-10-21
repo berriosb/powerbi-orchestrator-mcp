@@ -17,7 +17,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: powerbi-orchestrator-mcp:1.21.1
+    image: powerbi-orchestrator-mcp:1.22.0
     container_name: powerbi-orchestrator-mcp
     environment:
       # Set auth mode + credentials via .env or environment override.

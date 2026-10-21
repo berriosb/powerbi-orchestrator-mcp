@@ -2,19 +2,20 @@
 
 > **Un servidor MCP orquestrador** que unifica modelado semántico, autoría
 > de reportes, nube Fabric, validación y visualización/UX para Power BI /
-> Fabric en **28 herramientas de alto nivel** (no 500 primitivas).
+> Fabric en **31 herramientas de alto nivel** (no 500 primitivas).
 >
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-[![Tests](https://img.shields.io/badge/tests-1350%20passing-brightgreen)](./tests/)
-[![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-1568%20passing-brightgreen)](./tests/)
+[![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen)](./tests/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](./pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.21.0 — Beta. 31 tools, 89% cobertura, enterprise hardening
-(per-tool scopes, write-path containment, plan ownership, full audit trail).
+**Status:** v1.22.0 — Beta. 31 tools, 89% cobertura, enterprise hardening
+(per-tool scopes, read- and write-path containment, plan ownership, full
+audit trail).
 Every state-changing tool is safe by default: `dry_run=True` on
 `deploy_to_workspace` and `run_refresh`, per-step confirmation on
 `apply_plan`, and `Tools.Write` required for mutating tools over HTTP.
@@ -22,7 +23,7 @@ Every tool also **reports what it actually did**: a check that could not
 run says so instead of returning a green result, a rollback that only
 partly succeeded is reported as partial, and a step says which engine
 served it.
-See [release notes](./RELEASE-NOTES-v1.20.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./RELEASE-NOTES-v1.22.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
@@ -439,7 +440,7 @@ pasada es la que dice si el arreglo funcionó.
 
 → [`examples/03-audit-then-fix/`](./examples/03-audit-then-fix/README.md)
 
-## Estado actual (v1.20.0)
+## Estado actual (v1.22.0)
 
 - ✅ 31 tools implementadas (modelado, refactoring, reportes, nube, auditoría, UX, DAX)
 - ✅ Cross-engine rollback
@@ -448,7 +449,7 @@ pasada es la que dice si el arreglo funcionó.
 - ✅ Motores registrados: `python_report` y `python_modeling` (built-in),
   `powerbi-modeling-mcp`, `superbi-mcp`, `te` (Tabular Editor, para BPA).
   Cada paso dice **qué motor lo sirvió**
-- ✅ Scopes por tool (las 28 declaran el suyo) y `Tools.Admin` para las
+- ✅ Scopes por tool (las 31 declaran el suyo) y `Tools.Admin` para las
   operaciones de gobernanza
 - ✅ Lecturas y escrituras acotadas al workspace (`PBI_WORKSPACE_ROOT`)
 - ✅ Planes con dueño: conocer el `plan_id` no alcanza para leerlos ni
@@ -467,7 +468,8 @@ pasada es la que dice si el arreglo funcionó.
   detiene la mutación, se reporta como aviso en el resultado. Con
   `PBI_AUDIT_FAIL_CLOSED=1` deja de serlo.
 
-Ver [`RELEASE-NOTES-v1.20.0.md`](./RELEASE-NOTES-v1.20.0.md) para detalles completos.
+Ver [`RELEASE-NOTES-v1.20.0.md`](./RELEASE-NOTES-v1.20.0.md) para el detalle de
+la línea 1.2x y [`CHANGELOG.md`](./CHANGELOG.md) para los cambios de la 1.22.0.
 
 ## Licencia
 

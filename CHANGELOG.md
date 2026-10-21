@@ -8,6 +8,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.22.0] — 2026-10-21
+
+### Security
+- **Four tools read a caller-supplied path without bounding it, and two
+  of them publish what they read.** `optimize_report_performance` and
+  `audit_report_ux_and_storytelling` are read-scoped: the page names and
+  visual ids they read off the disk come back in the result, so a caller
+  holding `Tools.Read` could pull a report from anywhere on the host into
+  the model context. `deploy_to_workspace` and `sync_git_to_workspace`
+  read a PBIP folder or a Git repository and publish its contents to a
+  Fabric workspace — `deploy_to_workspace` base64-encodes every file it
+  finds under the target and sends it to the API. All four now validate
+  the path. The two publishing tools validate it as a **write**, so the
+  read opt-out cannot widen what leaves the process.
+
+  It was verified, not assumed. With the workspace root pointed at one
+  directory, a report planted outside it was read by the two read tools
+  and the directory name came back in the result as `page_name`; the
+  same four requests now come back as refusals over the real MCP
+  protocol.
+
+  This corrects the 1.21.1 note that "the containment now sits at that
+  single choke point, so every tool that reads a model is covered by one
+  check". The choke point covers four tools, not every tool that reads a
+  model.
+
+### Fixed
+- **Two tools could not do their job over MCP.**
+  `add_measure_with_validation` wants a `measure_writer` and
+  `refactor_to_calculation_groups` wants an `inspector` and a
+  `measure_writer`. Those are Python callables and an MCP client cannot
+  inject one, so over the protocol they were always `None`: the first
+  answered "no measure_writer available; measure was NOT persisted" and
+  the second "no inspector provided — cannot enumerate measures". Both
+  failed honestly, which is what the fix for the old silent-success bug
+  was for, but neither could do its work. The server now builds both
+  from the engine the orchestrator has, through the same selection the
+  plan path uses. A measure created over MCP now lands on disk with its
+  format string, description and hidden flag, and the refactor tool
+  enumerates the model before it decides anything.
+- **`asyncio.run` inside the refactor tool could not have worked.**
+  The MCP server runs every tool inside an event loop, where
+  `asyncio.run()` raises "asyncio.run() cannot be called from a running
+  event loop" — it turned every real refactor into a warning. The
+  coroutine now runs on a worker thread with its own loop.
+- **A measure was written without its format string, description or
+  hidden flag.** The built-in modeling adapter persisted the name, table
+  and expression and dropped the rest, while the tool reported success.
+  It now writes the optional attributes too, so the tool reports what
+  it persisted.
+- **The nightly E2E job went green without running the engine tests.**
+  The `te` binary was downloaded in a separate job, which wrote it into
+  its own runner's temp directory and ended — the binary never reached
+  the tests, the nine `te` tests skipped themselves, and the guard only
+  failed when *every* test was skipped, so the job passed having proved
+  nothing. The download now happens in the job that runs the tests, and
+  the guard fails when the `te` tests skipped on the runner that has the
+  binary. The "report engine availability" step was also missing
+  `shell: bash`, so on Windows it ran under PowerShell and printed
+  empty, making a working download look like a failed one.
+
+### Documentation
+- The README claimed v1.20.0 and 28 tools; `SECURITY.md` listed 1.19.x as
+  the newest supported version; `docs/pilot-validation.md` said 1158
+  tests. All corrected.
+
 ## [1.21.1] — 2026-10-20
 
 ### Security
