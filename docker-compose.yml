@@ -27,6 +27,9 @@ services:
       - PBI_CLIENT_ID=${PBI_CLIENT_ID:-}
       - PBI_CLIENT_SECRET=${PBI_CLIENT_SECRET:-}
       - PBI_LOG_LEVEL=${PBI_LOG_LEVEL:-INFO}
+      # The workspace root bounds the reads and the writes. The
+      # examples are mounted under /workspace, so that is the root.
+      - PBI_WORKSPACE_ROOT=${PBI_WORKSPACE_ROOT:-/workspace}
     volumes:
       # Persistent state (audit log, plan DB, execution DB).
       - orchestrator-state:/home/orchestrator/.powerbi-orchestrator-mcp

@@ -40,6 +40,7 @@ from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
     audit_model_and_report,
 )
 from powerbi_orchestrator_mcp.tools.powerbi_health import powerbi_health
+from powerbi_orchestrator_mcp.validation.model_metadata import MetadataError
 
 
 def _print_json(obj: Any) -> None:
@@ -370,9 +371,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     func = args.func
-    if asyncio.iscoroutinefunction(func):
-        return int(asyncio.run(func(args)))
-    result = func(args)
+    try:
+        if asyncio.iscoroutinefunction(func):
+            return int(asyncio.run(func(args)))
+        result = func(args)
+    except ValueError as exc:
+        # A path the workspace boundary refuses, an unknown profile, a
+        # malformed argument: the operator gave the command something
+        # it cannot work with. That is a message, not a traceback.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except MetadataError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     return int(result) if result is not None else 0
 
 
