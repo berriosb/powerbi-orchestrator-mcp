@@ -154,6 +154,9 @@ from powerbi_orchestrator_mcp.tools.set_sensitivity_labels import (
 from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
     setup_rls_and_roles as _setup_rls,
 )
+from powerbi_orchestrator_mcp.tools.simplify_dax_measure import (
+    simplify_dax_measure as _simplify_dax,
+)
 from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (
     sync_git_to_workspace as _sync_git,
 )
@@ -1523,6 +1526,52 @@ async def add_measure_with_validation(
         measure_writer=measure_writer,
     )
     return result
+
+
+@mcp.tool()
+@requires_scope("simplify_dax_measure")
+async def simplify_dax_measure(
+    expression: str | None = None,
+    pbip_path: str | None = None,
+    measure: str | None = None,
+    all_measures: bool = False,
+    apply_lint: bool = True,
+) -> dict[str, Any]:
+    """Rewrite a DAX expression in its shorter, equivalent form.
+
+    Use this tool when the user asks to:
+    - Simplify, tidy or shorten a DAX measure.
+    - Find the measures in a model that are written the long way.
+    - Replace a hand-rolled blank check, error check or IF chain with
+      the function that already does it.
+
+    Args:
+        expression: The DAX expression to simplify. Mutually exclusive
+            with pbip_path.
+        pbip_path: A PBIP project to read the measures from.
+        measure: The measure to simplify. Requires pbip_path.
+        all_measures: Simplify every measure in the project and report
+            which ones could be written shorter. Requires pbip_path.
+        apply_lint: Include the linter verdict before and after, so a
+            rewrite that silences a finding — or creates one — is visible.
+
+    Returns:
+        Dict with the simplified expression and the rewrites that
+        produced it. The equivalence is *structural*: the expression is
+        never evaluated against data, so the rewrite changes the shape
+        and not the meaning, and a reader can check it. An expression
+        that could not be parsed comes back unchanged, with the reason.
+
+        This tool writes nothing. To apply the result, pass the
+        simplified expression to add_measure_with_validation.
+    """
+    return _simplify_dax(
+        expression=expression,
+        pbip_path=pbip_path,
+        measure=measure,
+        all_measures=all_measures,
+        apply_lint=apply_lint,
+    )
 
 
 @mcp.tool()
