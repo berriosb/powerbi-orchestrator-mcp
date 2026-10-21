@@ -30,6 +30,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   precedence is now stated where it matters: a configured root is the
   boundary, and the opt-out removes the boundary only when there is
   none.
+- **The read was not bounded in eight tools.** `gather_pbip_metadata`
+  never called the path validator, so the PBIP path reached the disk as
+  it arrived. A caller with `Tools.Read` could read any project on the
+  host and get the content back in the response. The containment now
+  sits at that single choke point, so every tool that reads a model is
+  covered by one check.
+- **The engines wrote wherever the plan pointed.** A plan is built by
+  the caller, so a plan with a target outside the workspace wrote
+  there. The step executor bounds the path before handing it to an
+  engine.
+- **Every plan dumped the whole model into `/tmp`.** The snapshot was
+  written to the system temporary directory with the default mode, so
+  every account on the host could read the model, outside the audit
+  trail, and it was never removed. It now goes to the orchestrator
+  home, owner-only, written atomically — a fixed name in a
+  world-writable directory could be pre-created as a symlink and
+  redirect the write anywhere.
+- **A DAX query could be run as another user with the read scope.**
+  The query travels with the orchestrator's own credential, so
+  impersonating a user reads the rows that user's row-level security
+  is there to hide. Impersonation now requires write access.
+- **`PBI_TRANSPORT` was documented and not read.** The transport was
+  chosen from `argv` alone, so a container started in stdio and
+  published no port. The variable works now, and the flag still wins
+  over it.
 - **`/run` and `~/.config` were missing from the denylist.** `/run`
   holds the runtime state of a container and, with it, the secrets of
   a pod; it was kept out only by the workspace boundary, so a
@@ -47,6 +72,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docker inspect`, and the compose file points it at the mount.
 - **The audit refusal message repeated its own prefix**
   ("audit_log_write_failed: audit_log_write_failed:").
+- **The identifiers in the refresh paths are validated** like the rest
+  of the Fabric REST paths.
+- **Three claims in the documentation were not true** and are
+  corrected: the rate limiter and the circuit breaker are per client
+  instance and not per tenant, the elicitation only guards the
+  per-step confirmation of `apply_plan`, and the audit log does not
+  record who acted.
 
 ## [1.21.0] — 2026-10-20
 
