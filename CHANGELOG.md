@@ -37,12 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The BPA invocation matched no real Tabular Editor.** The runner
   called `te bpa <model> --ruleset <name> --format json` and parsed a
   `{"score", "findings": [{"RuleId"}]}` schema. Neither is the CLI of
-  either product: Tabular Editor 2 uses `<model> -A <rules.json> -G
-  <report.sarif>`, and the newer Tabular Editor CLI uses a different
-  command shape entirely. The runner now speaks Tabular Editor 2 — the
-  product the project pins and downloads — and parses the SARIF report
-  it writes. The score is derived from the findings, because Tabular
+  either product. The runner now speaks Tabular Editor 2 — the product
+  the project pins and downloads — with `<model> -A <rules.json> -V`,
+  and reads the findings out of the VSTS annotations Tabular Editor
+  writes. The score is derived from the findings, because Tabular
   Editor does not produce one.
+- **A BPA violation was going to be reported as a failed run.**
+  Tabular Editor returns exit code 1 when it produced any *Error*-level
+  output, and a severity-3 BPA violation *is* an Error-level output. The
+  exit code alone would have thrown away the findings the run had just
+  produced. The output tells the two apart, not the code.
 - **BPA without rules reported a clean score that meant nothing.**
   Tabular Editor runs the rules of the machine it runs on, and a server
   has none, so the run would have returned "100, no findings". The

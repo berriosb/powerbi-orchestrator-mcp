@@ -120,10 +120,23 @@ El runner ahora habla el CLI de Tabular Editor 2, que es el producto
 que este proyecto puede obtener de verdad:
 
 ```
-TabularEditor.exe <modelo.bim> -A <rules.json> -G <report.sarif>
+TabularEditor.exe <modelo.bim> -A <rules.json> -V
 ```
 
-y parsea el SARIF, que es un formato estable y documentado.
+Tabular Editor 2 no tiene salida estructurada: los hallazgos se leen
+de la consola. `-V` los reformatea como anotaciones VSTS, que sí
+traen la severidad de cada uno.
+
+### El exit code no es un veredicto
+
+Tabular Editor devuelve 1 cuando produjo algún output de nivel
+*Error*, y **una violación de BPA de severidad 3 *es* un output de
+nivel Error**. O sea: exit 1 con las violaciones en la salida quiere
+decir "el modelo tiene problemas", no "la herramienta falló".
+
+Si se hubiera tratado el exit 1 como un fallo, se habrían tirado los
+hallazgos que la corrida acababa de producir. Los dos casos se
+distinguen por la salida, no por el código.
 
 ### Sin reglas, no hay corrida
 
@@ -153,6 +166,13 @@ El archivo de reglas del smoke test
 (`tests/fixtures/bpa_rules.json`) contiene una regla que casa con
 toda medida, así que un finding demuestra que todo el recorrido
 funcionó.
+
+La primera vez que corrió, encontró dos cosas que ningún test podía
+haber visto: el `.bim` del fixture estaba escrito con `tables` (el
+nombre que usa un `.pbism`) cuando un `.bim` los llama `entities`, y
+Tabular Editor responde a un modelo que no puede cargar abriendo un
+diálogo — que en un runner sin interfaz es un proceso que espera
+para siempre.
 
 ---
 

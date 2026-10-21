@@ -6,17 +6,25 @@ Implements ``specs/03-validation.md`` §2.1.
 the same CLI:
 
 - **Tabular Editor 2** (``TabularEditor.exe``) — the free Windows
-  desktop app. Its CLI runs BPA with ``-A <rules.json>`` and can write
-  the results as SARIF with ``-G <file.sarif>``. This is the product
-  the project pins and downloads.
+  desktop app. Its CLI runs BPA with ``-A <rules.json>``. It has **no
+  structured output**: the findings are console text, and ``-V``/``-G``
+  reformat that text as VSTS or GitHub Actions annotations. It is a
+  WinForms app, so a headless runner can hit a prompt. This is the
+  product the project pins and downloads.
 - **Tabular Editor CLI** (``te``) — a newer, cross-platform product
-  that is in Limited Public Preview. It speaks a different command
-  shape (``te bpa run --model ... --output-format json``), it requires
-  a Tabular Editor account to download, and the vendor states that the
-  preview stops working after 2026-10-31. It is not a dependency here.
+  with structured output, a non-interactive mode and predictable exit
+  codes. It is in Limited Public Preview, it requires a Tabular Editor
+  account to download, and the vendor states the preview stops working
+  after 2026-10-31. It is not a dependency here.
 
 The runner targets Tabular Editor 2, and the invocation follows its
 documented flags. The previous invocation matched neither product.
+
+**The exit code is not a verdict.** Tabular Editor returns 1 when it
+produced any *Error*-level output, and a severity-3 BPA violation *is*
+an Error-level output. So exit 1 with violations in the output means
+"the model has problems", not "the tool failed" — the two are told
+apart by the output, not by the code.
 
 **Rules.** Tabular Editor 2 runs the rules of the machine it runs on.
 On a server that is none, so a run without a rules file would report a
@@ -37,11 +45,9 @@ Ruleset resolution (per spec):
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-import tempfile
+import re
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -103,8 +109,8 @@ class BpaRunner:
     so the orchestrator can run end-to-end without Tabular Editor
     installed. Tests use ``mock_findings`` to script output.
 
-    Real-binary path: the subprocess writes SARIF, which is parsed and
-    mapped to ``BpaFinding``.
+    Real-binary path: the subprocess runs the analysis and its console
+    output is parsed into ``BpaFinding``.
     """
 
     def __init__(
@@ -180,85 +186,95 @@ class BpaRunner:
 
         effective_timeout_s = resolve_timeout("te", requested_s=self._timeout_s)
 
-        with tempfile.TemporaryDirectory(prefix="pbi-bpa-") as tmp:
-            sarif_path = Path(tmp) / "bpa.sarif"
-            args = self._build_args(target, rules, sarif_path)
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    self._binary,
-                    *args,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+        args = self._build_args(target, rules)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                self._binary,
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            raise EngineNotFoundError(
+                f"{self._binary} not found",
+                engine="te",
+                code="engine_not_found",
+                remediation_hint=(
+                    "Install Tabular Editor 2: "
+                    "https://github.com/TabularEditor/TabularEditor/releases"
+                ),
+            ) from exc
+
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout_s)
+        except TimeoutError as exc:
+            proc.kill()
+            await proc.wait()
+            from powerbi_orchestrator_mcp.engines.errors import EngineTimeoutError
+
+            raise EngineTimeoutError(
+                f"te bpa timed out after {effective_timeout_s}s",
+                engine="te",
+                code="engine_timeout",
+                remediation_hint=(
+                    "Increase PBI_ENGINE_TIMEOUT_TE_S (the Tabular Editor "
+                    "analysis can take minutes on a large model)"
+                ),
+                timeout_s=effective_timeout_s,
+            ) from exc
+
+        output = stdout.decode("utf-8", errors="replace")
+        errors = stderr.decode("utf-8", errors="replace")
+        exit_code = proc.returncode or 0
+        findings = self._parse_output(output)
+
+        if exit_code != 0:
+            # Exit 1 means Tabular Editor produced an Error-level output,
+            # and a severity-3 BPA violation *is* an Error-level output.
+            # So a non-zero exit with findings in it means "the model has
+            # problems", not "the tool failed". The output tells the two
+            # apart, not the code.
+            if findings:
+                return BpaResult(
+                    score=_score_from(findings),
+                    findings=findings,
+                    ruleset_used=ruleset_name,
                 )
-            except FileNotFoundError as exc:
-                raise EngineNotFoundError(
-                    f"{self._binary} not found",
+            from powerbi_orchestrator_mcp.engines.exit_codes import (
+                map_exit_code_to_error,
+            )
+
+            err = map_exit_code_to_error("te", exit_code, errors or output)
+            if err is None:
+                from powerbi_orchestrator_mcp.engines.errors import EngineCrashedError
+
+                err = EngineCrashedError(
+                    f"te bpa failed (exit {exit_code}): {(errors or output)[:500]}",
                     engine="te",
-                    code="engine_not_found",
-                    remediation_hint=(
-                        "Install Tabular Editor 2: "
-                        "https://github.com/TabularEditor/TabularEditor/releases"
-                    ),
-                ) from exc
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=effective_timeout_s
+                    code="engine_crashed",
+                    remediation_hint="Inspect te installation / model file",
                 )
-            except TimeoutError as exc:
-                proc.kill()
-                await proc.wait()
-                from powerbi_orchestrator_mcp.engines.errors import EngineTimeoutError
+            raise err
 
-                raise EngineTimeoutError(
-                    f"te bpa timed out after {effective_timeout_s}s",
-                    engine="te",
-                    code="engine_timeout",
-                    remediation_hint=(
-                        "Increase PBI_ENGINE_TIMEOUT_TE_S (the Tabular Editor "
-                        "analysis can take minutes on a large model)"
-                    ),
-                    timeout_s=effective_timeout_s,
-                ) from exc
+        if not output.strip() and not findings:
+            # Nothing at all came back. That is a run that produced
+            # nothing, not a clean model: reporting "100, no findings"
+            # here would be a false green.
+            raise EngineError(
+                "Tabular Editor produced no output. The BPA check was not run.",
+                engine="te",
+                code="engine_output_parse_error",
+                remediation_hint=(
+                    "Check that the rules file is a BPA rules JSON and that "
+                    "the model is a .bim or .tmdl the CLI can read."
+                ),
+            )
 
-            exit_code = proc.returncode or 0
-            if exit_code != 0:
-                # The exit code says what happened: a validation failure, a
-                # missing model or a crash are different problems, and the
-                # mapped error says which.
-                from powerbi_orchestrator_mcp.engines.exit_codes import (
-                    map_exit_code_to_error,
-                )
-
-                stderr_text = stderr.decode("utf-8", errors="replace")
-                err = map_exit_code_to_error("te", exit_code, stderr_text)
-                if err is None:
-                    from powerbi_orchestrator_mcp.engines.errors import EngineCrashedError
-
-                    err = EngineCrashedError(
-                        f"te bpa failed (exit {exit_code}): {stderr_text[:500]}",
-                        engine="te",
-                        code="engine_crashed",
-                        remediation_hint="Inspect te installation / model file",
-                    )
-                raise err
-
-            if not sarif_path.exists():
-                # No SARIF: the run produced nothing to read. That is a
-                # failure of the run, not a clean model.
-                stdout_text = stdout.decode("utf-8", errors="replace").strip()
-                raise EngineError(
-                    "Tabular Editor produced no SARIF report. The BPA check was not run."
-                    + (f" Output was: {stdout_text[:300]}" if stdout_text else ""),
-                    engine="te",
-                    code="engine_output_parse_error",
-                    remediation_hint=(
-                        "Check that the rules file is a BPA rules JSON and "
-                        "that the model is a .bim or .tmdl the CLI can read."
-                    ),
-                )
-
-            return self._parse_sarif(sarif_path.read_text(encoding="utf-8"), ruleset_name)
+        return BpaResult(
+            score=_score_from(findings),
+            findings=findings,
+            ruleset_used=ruleset_name,
+        )
 
     def _resolve_rules(self, custom_ruleset: Path | None) -> str | None:
         """The rules file to run, or None when there is none.
@@ -273,107 +289,89 @@ class BpaRunner:
         from_env = os.environ.get(RULES_FILE_ENV, "").strip()
         return from_env or None
 
-    def _build_args(
-        self,
-        target: Path,
-        rules: str,
-        sarif_path: Path,
-    ) -> list[str]:
+    def _build_args(self, target: Path, rules: str) -> list[str]:
         """The Tabular Editor 2 command line.
 
-        ``<model> -A <rules.json> -G <report.sarif>``: analyse the model
-        with the given rules and write the results as SARIF.
+        ``<model> -A <rules.json> -V``: analyse the model with the given
+        rules and report the findings as VSTS annotations, so each
+        violation carries its severity.
+
+        ``-G`` is **not** a report path — it selects GitHub Actions
+        annotations, and ``-V`` selects VSTS ones. Tabular Editor 2 has
+        no structured BPA output, so the annotations are what there is
+        to read.
         """
         return [
             str(target),
             "-A",
             rules,
-            "-G",
-            str(sarif_path),
+            "-V",
         ]
 
-    def _parse_sarif(self, sarif_text: str, ruleset_name: str) -> BpaResult:
-        """Parse a SARIF report into a BpaResult.
+    def _parse_output(self, output: str) -> list[BpaFinding]:
+        """Read the violations out of the console output.
 
-        SARIF is the format Tabular Editor 2 writes with ``-G``. The
-        per-rule metadata lives in the driver, and each result points
-        at the rule it came from.
+        Tabular Editor reports a violation as ``... violates rule ...``,
+        at the severity the rule carries. With ``-V`` each line is a VSTS
+        annotation that names the severity; without it, the severity is
+        not in the text.
+
+        The parsing is deliberately tolerant — the format is a console
+        format, not a contract — but it never invents findings, and it
+        never turns unparseable output into a clean score: the caller
+        gets no findings and the run reports them as what it was.
         """
-        try:
-            data = json.loads(sarif_text)
-        except json.JSONDecodeError as exc:
-            from powerbi_orchestrator_mcp.engines.errors import (
-                EngineOutputParseError,
-            )
-
-            raise EngineOutputParseError(
-                f"te bpa output not JSON: {exc}",
-                engine="te",
-                code="engine_output_parse_error",
-                remediation_hint="Check the Tabular Editor installation",
-            ) from exc
-
         findings: list[BpaFinding] = []
-        for run in data.get("runs", []):
-            rule_meta = {
-                rule.get("id", ""): rule
-                for rule in run.get("tool", {}).get("driver", {}).get("rules", [])
-            }
-            for result in run.get("results", []):
-                rule_id = result.get("ruleId", "")
-                meta = rule_meta.get(rule_id, {})
-                description = (
-                    meta.get("shortDescription", {}).get("text")
-                    or meta.get("fullDescription", {}).get("text")
-                    or ""
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if not line or "violates rule" not in line:
+                continue
+
+            severity = _annotation_severity(line)
+            message, rule_id = _split_violation(line)
+
+            findings.append(
+                BpaFinding(
+                    rule_id=rule_id,
+                    rule_name=rule_id,
+                    severity=severity,
+                    object_name=_violation_object(message),
+                    object_type="",
+                    message=message,
                 )
-                findings.append(
-                    BpaFinding(
-                        rule_id=rule_id,
-                        rule_name=description or rule_id,
-                        severity=_sarif_severity(result.get("level", "warning")),
-                        object_name=_sarif_object_name(result),
-                        object_type=_sarif_object_type(result),
-                        message=result.get("message", {}).get("text", ""),
-                        auto_fixable=bool(result.get("fixes")),
-                        fix_suggestion=result.get("message", {}).get("text"),
-                    )
-                )
-
-        return BpaResult(
-            score=_score_from(findings),
-            findings=findings,
-            ruleset_used=ruleset_name,
-        )
+            )
+        return findings
 
 
-def _sarif_severity(level: str) -> str:
-    """Map a SARIF level onto the audit's severities."""
-    normalized = (level or "").strip().lower()
-    if normalized in ("error",):
+def _annotation_severity(line: str) -> str:
+    """The severity of a VSTS-annotated violation line."""
+    lowered = line.lower()
+    if "task.logissue type=error" in lowered:
         return "error"
-    if normalized in ("warning",):
+    if "task.logissue type=warning" in lowered:
         return "warning"
+    # Without the annotation the severity is not in the text, and a
+    # violation is at least worth knowing about.
     return "info"
 
 
-def _sarif_object_name(result: dict[str, Any]) -> str:
-    """The name of the object a finding is about."""
-    for location in result.get("locations", []):
-        for logical in location.get("logicalLocations", []):
-            name = logical.get("name") or logical.get("fullyQualifiedName")
-            if name:
-                return str(name)
-    return ""
+def _split_violation(line: str) -> tuple[str, str]:
+    """Split a violation line into its message and its rule name.
+
+    The message is the line without the annotation prefix: it is what a
+    reader wants to see, and it names the object and the rule.
+    """
+    message = re.sub(r"^##vso\[[^\]]*\]", "", line).strip()
+    _, _, tail = line.partition("violates rule")
+    rule_id = tail.strip(" .:;'\"").split(" ")[0].strip("'\"")
+    return message, rule_id or "unknown"
 
 
-def _sarif_object_type(result: dict[str, Any]) -> str:
-    """The kind of object a finding is about."""
-    for location in result.get("locations", []):
-        for logical in location.get("logicalLocations", []):
-            kind = logical.get("kind")
-            if kind:
-                return str(kind)
+def _violation_object(message: str) -> str:
+    """The object a violation is about, when the message names one."""
+    match = re.search(r"'([^']+)'", message)
+    if match:
+        return match.group(1)
     return ""
 
 

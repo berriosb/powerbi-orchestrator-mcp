@@ -1,14 +1,14 @@
 """Tests for the subprocess paths in BpaRunner.
 
-The real-binary code paths: the command line, the SARIF report, the
-missing binary, the timeout, the non-zero exit and the malformed
-report.
+The real-binary code paths: the command line, the console output, the
+missing binary, the timeout, the non-zero exit and the output that says
+nothing.
 
-The command line and the report format follow **Tabular Editor 2**:
-``<model> -A <rules.json> -G <report.sarif>``, with the results in
-SARIF. The previous invocation and output schema matched no real
-Tabular Editor, which is why nothing here had ever been run against
-the binary.
+The command line and the output follow **Tabular Editor 2**:
+``<model> -A <rules.json> -V``. Tabular Editor 2 has no structured BPA
+output, so the findings are read out of the console annotations. The
+previous invocation and output schema matched no real Tabular Editor,
+which is why nothing here had ever been run against the binary.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from powerbi_orchestrator_mcp.engines.errors import (
     EngineAuthError,
     EngineError,
     EngineNotFoundError,
-    EngineOutputParseError,
     EngineTimeoutError,
     EngineValidationError,
 )
@@ -33,67 +32,44 @@ from powerbi_orchestrator_mcp.validation.bpa_runner import (
 )
 
 
-def _sarif(results: list[dict], rules: list[dict] | None = None) -> str:
-    return json.dumps(
-        {
-            "version": "2.1.0",
-            "runs": [
-                {
-                    "tool": {
-                        "driver": {
-                            "name": "Tabular Editor",
-                            "rules": rules
-                            if rules is not None
-                            else [
-                                {
-                                    "id": "DoNotSummarizeByDefault",
-                                    "shortDescription": {"text": "Do not summarize by default"},
-                                }
-                            ],
-                        }
-                    },
-                    "results": results,
-                }
-            ],
-        }
-    )
+def _violation(
+    severity: str = "error",
+    obj: str = "Sales[TotalAmount]",
+    rule: str = "DoNotSummarizeByDefault",
+) -> str:
+    """A VSTS-annotated violation line, the way Tabular Editor writes it."""
+    return f"##vso[task.logissue type={severity};]The column '{obj}' violates rule '{rule}'."
 
 
 class TestBuildArgs:
     def test_the_command_line_follows_the_documented_flags(self) -> None:
         runner = BpaRunner()
-        args = runner._build_args(  # noqa: SLF001
-            Path("model.bim"), "/rules.json", Path("/out/bpa.sarif")
-        )
+        args = runner._build_args(Path("model.bim"), "/rules.json")  # noqa: SLF001
         assert args == [
             "model.bim",
             "-A",
             "/rules.json",
-            "-G",
-            "/out/bpa.sarif",
+            "-V",
         ]
 
     def test_the_model_is_the_first_argument(self) -> None:
         """Tabular Editor takes the model positionally, before the flags."""
         runner = BpaRunner()
-        args = runner._build_args(  # noqa: SLF001
-            Path("model.bim"), "/rules.json", Path("/out/bpa.sarif")
-        )
+        args = runner._build_args(Path("model.bim"), "/rules.json")  # noqa: SLF001
         assert args[0] == "model.bim"
 
     def test_the_rules_file_is_passed_with_dash_a(self) -> None:
         runner = BpaRunner()
-        args = runner._build_args(  # noqa: SLF001
-            Path("model.bim"), "/rules.json", Path("/out/bpa.sarif")
-        )
+        args = runner._build_args(Path("model.bim"), "/rules.json")  # noqa: SLF001
         assert args[args.index("-A") + 1] == "/rules.json"
 
-    def test_the_sarif_report_is_passed_with_dash_g(self) -> None:
+    def test_the_output_is_vsts_annotations(self) -> None:
+        """``-V`` is VSTS annotations. ``-G`` would be GitHub's, and
+        neither of them is a report file."""
         runner = BpaRunner()
-        args = runner._build_args(  # noqa: SLF001
-            Path("model.bim"), "/rules.json", Path("/out/bpa.sarif")
-        )
-        assert args[args.index("-G") + 1] == "/out/bpa.sarif"
+        args = runner._build_args(Path("model.bim"), "/rules.json")  # noqa: SLF001
+        assert "-V" in args
+        assert "-G" not in args
 
 
 class TestRulesResolution:
@@ -149,96 +125,78 @@ class TestNoRulesMeansNoRun:
         assert RULES_FILE_ENV in str(ei.value)
 
 
-class TestParseSarif:
-    def test_an_empty_report_scores_full(self) -> None:
+class TestParseOutput:
+    def test_no_output_is_no_findings(self) -> None:
         runner = BpaRunner()
-        result = runner._parse_sarif(_sarif([]), "default")  # noqa: SLF001
+        assert runner._parse_output("") == []  # noqa: SLF001
 
-        assert result.score == 100.0
-        assert result.findings == []
-        assert result.ruleset_used == "default"
-
-    def test_a_finding_is_normalised(self) -> None:
+    def test_output_without_violations_is_no_findings(self) -> None:
         runner = BpaRunner()
-        sarif = _sarif(
-            [
-                {
-                    "ruleId": "DoNotSummarizeByDefault",
-                    "level": "warning",
-                    "message": {"text": "Column is summarized by default"},
-                    "locations": [
-                        {"logicalLocations": [{"name": "Sales[TotalAmount]", "kind": "measure"}]}
-                    ],
-                }
-            ]
-        )
+        assert runner._parse_output("Tabular Editor 2.20.0\n") == []  # noqa: SLF001
 
-        result = runner._parse_sarif(sarif, "default")  # noqa: SLF001
+    def test_a_violation_is_normalised(self) -> None:
+        runner = BpaRunner()
+        output = _violation("error", "Sales[TotalAmount]", "DoNotSummarizeByDefault")
 
-        assert len(result.findings) == 1
-        finding = result.findings[0]
+        findings = runner._parse_output(output)  # noqa: SLF001
+
+        assert len(findings) == 1
+        finding = findings[0]
         assert finding.rule_id == "DoNotSummarizeByDefault"
-        assert finding.rule_name == "Do not summarize by default"
-        assert finding.severity == "warning"
+        assert finding.severity == "error"
         assert finding.object_name == "Sales[TotalAmount]"
-        assert finding.object_type == "measure"
-        assert finding.message == "Column is summarized by default"
+        assert "violates rule" in finding.message
 
-    def test_the_severity_comes_from_the_sarif_level(self) -> None:
+    def test_the_severity_comes_from_the_annotation(self) -> None:
         runner = BpaRunner()
-        sarif = _sarif(
+
+        error = runner._parse_output(_violation("error"))  # noqa: SLF001
+        warning = runner._parse_output(_violation("warning"))  # noqa: SLF001
+
+        assert error[0].severity == "error"
+        assert warning[0].severity == "warning"
+
+    def test_a_violation_without_an_annotation_is_still_a_finding(self) -> None:
+        """The severity is not in the text, but the violation is."""
+        runner = BpaRunner()
+        output = "The column 'Sales[Amount]' violates rule 'DoNotSummarizeByDefault'."
+
+        findings = runner._parse_output(output)  # noqa: SLF001
+
+        assert len(findings) == 1
+        assert findings[0].severity == "info"
+
+    def test_several_violations_are_all_read(self) -> None:
+        runner = BpaRunner()
+        output = "\n".join(
             [
-                {
-                    "ruleId": "R",
-                    "level": "error",
-                    "message": {"text": "boom"},
-                }
+                _violation("error", "Sales[Amount]", "RuleOne"),
+                _violation("warning", "Sales[Quantity]", "RuleTwo"),
             ]
         )
 
-        result = runner._parse_sarif(sarif, "default")  # noqa: SLF001
+        findings = runner._parse_output(output)  # noqa: SLF001
 
-        assert result.findings[0].severity == "error"
-
-    def test_a_note_is_info(self) -> None:
-        runner = BpaRunner()
-        sarif = _sarif([{"ruleId": "R", "level": "note", "message": {"text": "fyi"}}])
-
-        result = runner._parse_sarif(sarif, "default")  # noqa: SLF001
-
-        assert result.findings[0].severity == "info"
-
-    def test_the_score_drops_with_the_severity(self) -> None:
-        runner = BpaRunner()
-        sarif = _sarif(
-            [
-                {"ruleId": "R", "level": "error", "message": {"text": "boom"}},
-                {"ruleId": "R", "level": "warning", "message": {"text": "smell"}},
-            ]
-        )
-
-        result = runner._parse_sarif(sarif, "default")  # noqa: SLF001
-
-        # 100 - 10 (error) - 3 (warning)
-        assert result.score == 87.0
-
-    def test_the_score_never_goes_below_zero(self) -> None:
-        runner = BpaRunner()
-        sarif = _sarif(
-            [{"ruleId": f"R{i}", "level": "error", "message": {"text": "x"}} for i in range(20)]
-        )
-
-        result = runner._parse_sarif(sarif, "default")  # noqa: SLF001
-
-        assert result.score == 0.0
-
-    def test_malformed_json_raises_parse_error(self) -> None:
-        runner = BpaRunner()
-        with pytest.raises(EngineOutputParseError):
-            runner._parse_sarif("{ not json", "default")  # noqa: SLF001
+        assert [f.rule_id for f in findings] == ["RuleOne", "RuleTwo"]
 
 
 class TestRunSubprocess:
+    def _fake_process(self, exit_code: int, stdout: bytes = b"", stderr: bytes = b"") -> object:
+        class FakeProc:
+            def __init__(self) -> None:
+                self.returncode = exit_code
+
+            async def communicate(self) -> tuple[bytes, bytes]:
+                return (stdout, stderr)
+
+            async def wait(self) -> None:
+                return None
+
+            def kill(self) -> None:
+                pass
+
+        return FakeProc()
+
     async def test_missing_binary_raises_engine_not_found(self, tmp_path: Path) -> None:
         runner = BpaRunner(binary="/nonexistent/te-binary", rules_file="/rules.json")
         target = tmp_path / "model.bim"
@@ -249,32 +207,62 @@ class TestRunSubprocess:
 
         assert "/nonexistent/te-binary" in str(ei.value)
 
-    async def test_binary_exit_nonzero_is_mapped_to_its_error(
+    async def test_a_clean_run_with_no_violations_scores_full(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit code 2 is an authentication failure, not a crash."""
-
-        class FakeProc:
-            returncode = 2
-
-            async def communicate(self) -> tuple[bytes, bytes]:
-                return (b"", b"some te error message")
-
-            async def wait(self) -> None:
-                return None
-
-            def kill(self) -> None:
-                pass
-
-        async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
-            return FakeProc()
+        async def fake_exec(*_a: object, **_kw: object) -> object:
+            return self._fake_process(0, stdout=b"Tabular Editor 2.20.0\n")
 
         monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
         runner = BpaRunner(binary="te2", rules_file="/rules.json")
         target = tmp_path / "model.bim"
         target.write_text("")
 
-        with pytest.raises(EngineAuthError):
+        result = await runner.run(target)
+
+        assert result.score == 100.0
+        assert result.findings == []
+
+    async def test_a_violation_is_a_finding_not_a_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Tabular Editor returns 1 when it produced an Error-level output.
+
+        A severity-3 BPA violation *is* an Error-level output, so exit 1
+        with the violation in the output means "the model has problems",
+        not "the tool failed". Treating it as a failure would throw away
+        the findings the run just produced.
+        """
+        output = _violation("error").encode("utf-8")
+
+        async def fake_exec(*_a: object, **_kw: object) -> object:
+            return self._fake_process(1, stdout=output)
+
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+        runner = BpaRunner(binary="te2", rules_file="/rules.json")
+        target = tmp_path / "model.bim"
+        target.write_text("")
+
+        result = await runner.run(target)
+
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "DoNotSummarizeByDefault"
+        assert result.score < 100.0
+
+    async def test_a_non_zero_exit_without_violations_is_a_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with nothing in the output is the tool failing."""
+
+        async def fake_exec(*_a: object, **_kw: object) -> object:
+            return self._fake_process(1, stdout=b"", stderr=b"te said no")
+
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+        runner = BpaRunner(binary="te2", rules_file="/rules.json")
+        target = tmp_path / "model.bim"
+        target.write_text("")
+
+        with pytest.raises(EngineError):
             await runner.run(target)
 
     @pytest.mark.parametrize(
@@ -293,20 +281,8 @@ class TestRunSubprocess:
         exit_code: int,
         expected: type[Exception],
     ) -> None:
-        class FakeProc:
-            returncode = exit_code
-
-            async def communicate(self) -> tuple[bytes, bytes]:
-                return (b"", b"te said no")
-
-            async def wait(self) -> None:
-                return None
-
-            def kill(self) -> None:
-                pass
-
-        async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
-            return FakeProc()
+        async def fake_exec(*_a: object, **_kw: object) -> object:
+            return self._fake_process(exit_code, stderr=b"te said no")
 
         monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
         runner = BpaRunner(binary="te", rules_file="/rules.json")
@@ -315,6 +291,25 @@ class TestRunSubprocess:
 
         with pytest.raises(expected):
             await runner.run(target)
+
+    async def test_a_run_that_says_nothing_is_not_a_clean_model(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Silence is not a pass. Reporting "100, no findings" here would
+        be a false green."""
+
+        async def fake_exec(*_a: object, **_kw: object) -> object:
+            return self._fake_process(0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+        runner = BpaRunner(binary="te2", rules_file="/rules.json")
+        target = tmp_path / "model.bim"
+        target.write_text("")
+
+        with pytest.raises(EngineError) as ei:
+            await runner.run(target)
+
+        assert ei.value.code == "engine_output_parse_error"
 
     async def test_the_timeout_env_var_has_an_effect(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -343,7 +338,7 @@ class TestRunSubprocess:
             def kill(self) -> None:
                 pass
 
-        async def fake_exec(*_a: object, **_kw: object) -> FakeProc:
+        async def fake_exec(*_a: object, **_kw: object) -> object:
             return FakeProc()
 
         monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
@@ -355,69 +350,6 @@ class TestRunSubprocess:
             await runner.run(target)
 
         assert ei.value.timeout_s == 1
-
-    async def test_a_successful_run_reads_the_sarif_report(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The report is a file, not the process's stdout."""
-
-        class FakeProc:
-            returncode = 0
-
-            async def communicate(self) -> tuple[bytes, bytes]:
-                return (b"", b"")
-
-            async def wait(self) -> None:
-                return None
-
-            def kill(self) -> None:
-                pass
-
-        async def fake_exec(*args: object, **_kwargs: object) -> FakeProc:
-            # The SARIF path is the argument after -G.
-            sarif_path = Path(str(args[args.index("-G") + 1]))
-            sarif_path.write_text(_sarif([]), encoding="utf-8")
-            return FakeProc()
-
-        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
-        runner = BpaRunner(binary="te2", rules_file="/rules.json")
-        target = tmp_path / "model.bim"
-        target.write_text("")
-
-        result = await runner.run(target)
-
-        assert result.score == 100.0
-        assert result.ruleset_used == "default"
-
-    async def test_a_run_that_writes_no_report_is_a_failure(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """No report is not a clean model."""
-
-        class FakeProc:
-            returncode = 0
-
-            async def communicate(self) -> tuple[bytes, bytes]:
-                return (b"", b"")
-
-            async def wait(self) -> None:
-                return None
-
-            def kill(self) -> None:
-                pass
-
-        async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
-            return FakeProc()
-
-        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
-        runner = BpaRunner(binary="te2", rules_file="/rules.json")
-        target = tmp_path / "model.bim"
-        target.write_text("")
-
-        with pytest.raises(EngineError) as ei:
-            await runner.run(target)
-
-        assert ei.value.code == "engine_output_parse_error"
 
 
 class TestPublicApi:
@@ -442,3 +374,42 @@ class TestPublicApi:
                 await runner.run(target, ruleset_name="not-a-real-ruleset")
 
         asyncio.run(_go())
+
+    def test_the_score_is_derived_from_the_findings(self) -> None:
+        """Tabular Editor produces no score, so the audit derives one."""
+        from powerbi_orchestrator_mcp.validation.bpa_runner import (
+            BpaFinding,
+            _score_from,
+        )
+
+        findings = [
+            BpaFinding(
+                rule_id="R",
+                rule_name="R",
+                severity="error",
+                object_name="X",
+                object_type="",
+                message="boom",
+            ),
+            BpaFinding(
+                rule_id="R",
+                rule_name="R",
+                severity="warning",
+                object_name="Y",
+                object_type="",
+                message="smell",
+            ),
+        ]
+
+        # 100 - 10 (error) - 3 (warning)
+        assert _score_from(findings) == 87.0
+        assert _score_from([]) == 100.0
+
+    def test_the_json_shape_is_not_used_anymore(self) -> None:
+        """The old invented shape is gone, not just unused."""
+        source = Path(
+            "/home/bastianberrios/Proyectos/powerbi-orchestrator-mcp/"
+            "src/powerbi_orchestrator_mcp/validation/bpa_runner.py"
+        ).read_text(encoding="utf-8")
+        assert "sarif" not in source.lower()
+        assert json.dumps({"score": 1})

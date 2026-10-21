@@ -38,15 +38,51 @@ def _bim_from_fixture(temp_pbip: Path, dest: Path) -> Path:
     fixture ships as a PBIP, whose dataset is a ``.pbism`` — a different
     shape from the ``.bim`` that Tabular Editor reads, so the model is
     reshaped into one here.
+
+    The difference that matters is the name of the table collection: a
+    ``.bim`` calls it ``entities``, where a ``.pbism`` calls it
+    ``tables``. A ``.bim`` with ``tables`` in it is a model Tabular
+    Editor cannot load, and it says so by opening a dialog — which on a
+    headless runner means the process waits forever.
     """
     source = temp_pbip / "sample.Dataset" / "definition.pbism"
     model = json.loads(source.read_text(encoding="utf-8"))
+    body = model.get("model", {})
+
+    entities = []
+    for table in body.get("tables", []):
+        entity: dict[str, object] = {"name": table.get("name", "")}
+        columns = []
+        for column in table.get("columns", []):
+            columns.append(
+                {
+                    "name": column.get("name", ""),
+                    "dataType": column.get("dataType", "string"),
+                    "sourceColumn": column.get("name", ""),
+                }
+            )
+        if columns:
+            entity["columns"] = columns
+        measures = []
+        for measure in table.get("measures", []):
+            # In a .bim the measure belongs to its entity, so it does
+            # not repeat the table name.
+            measures.append(
+                {
+                    "name": measure.get("name", ""),
+                    "expression": measure.get("expression", ""),
+                }
+            )
+        if measures:
+            entity["measures"] = measures
+        entities.append(entity)
+
     dest.write_text(
         json.dumps(
             {
                 "name": "SampleModel",
                 "compatibilityLevel": 1500,
-                "model": {"culture": "en-US", **model.get("model", {})},
+                "model": {"culture": "en-US", "entities": entities},
             }
         ),
         encoding="utf-8",
