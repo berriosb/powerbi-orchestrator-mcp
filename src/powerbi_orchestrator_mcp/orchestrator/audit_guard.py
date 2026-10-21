@@ -130,10 +130,11 @@ def audited(
                 {"phase": "intent"},
             )
             if intent_warning is not None and _fail_closed():
+                # ``intent_warning`` already carries the
+                # ``audit_log_write_failed:`` prefix.
                 raise AuditUnavailableError(
-                    f"audit_log_write_failed: {intent_warning}. "
-                    f"Set {AUDIT_FAIL_CLOSED_ENV}=0 to act without an audit "
-                    f"trail, or free the audit directory."
+                    f"{intent_warning}. Set {AUDIT_FAIL_CLOSED_ENV}=0 to act "
+                    f"without an audit trail, or free the audit directory."
                 )
 
             try:
