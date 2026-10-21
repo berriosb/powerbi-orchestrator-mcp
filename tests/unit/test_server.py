@@ -484,11 +484,17 @@ class TestApplyPlan:
         assert all(s["success"] for s in result.executed_steps)
 
     @pytest.mark.asyncio
-    async def test_audit_plan_fails_honestly_on_a_missing_target(self) -> None:
+    async def test_audit_plan_fails_honestly_on_a_missing_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A target that does not exist must fail, not report a green audit."""
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        monkeypatch.setenv("PBI_WORKSPACE_ROOT", str(workspace))
+
         plan_res = await plan_change(
             intent="audit",
-            options={"target": "x", "checks": ["dax_lint"]},
+            options={"target": str(workspace / "x"), "checks": ["dax_lint"]},
         )
         result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
         assert result.result == "failed"
@@ -496,6 +502,32 @@ class TestApplyPlan:
         assert failed is not None
         assert failed["action"] == "gather_metadata"
         assert "does not exist" in (failed["error_message"] or "")
+
+    @pytest.mark.asyncio
+    async def test_audit_plan_refuses_a_target_outside_the_workspace(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A plan built on a target outside the root must not read it.
+
+        The plan carries the target, and a caller can build one with
+        any path. The step is refused before it reads anything.
+        """
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        monkeypatch.setenv("PBI_WORKSPACE_ROOT", str(workspace))
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        plan_res = await plan_change(
+            intent="audit",
+            options={"target": str(outside), "checks": ["dax_lint"]},
+        )
+        result = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+
+        assert result.result == "failed"
+        failed = result.failed_step
+        assert failed is not None
+        assert "outside allowed workspace root" in (failed["error_message"] or "")
 
     @pytest.mark.asyncio
     async def test_audit_plan_rejects_an_unknown_check(self, sample_pbip: Path) -> None:

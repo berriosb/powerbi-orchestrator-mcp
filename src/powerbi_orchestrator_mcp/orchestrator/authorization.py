@@ -125,6 +125,27 @@ def authorize_tool(tool_name: str) -> None:
     )
 
 
+def require_capability_scope(scope: str, *, reason: str) -> None:
+    """Raise when the bound identity lacks ``scope`` for one capability.
+
+    Some capabilities are worth more than the tool that exposes them.
+    Running a DAX query as another user, for instance, reads the data
+    that user's row-level security is there to hide — so it is not a
+    read, whatever the tool's own scope says.
+
+    Without a bound identity there is nothing to check against, the
+    same as for the per-tool scopes.
+    """
+    scopes = _granted_scopes()
+    if scopes is None:
+        return
+    if scope in scopes or SCOPE_ADMIN in scopes:
+        return
+    raise ToolAuthorizationError(
+        f"{reason} requires scope {scope}; granted scopes: {sorted(scopes) or 'none'}"
+    )
+
+
 def requires_scope(tool_name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Enforce the tool's required scope before the body runs."""
 

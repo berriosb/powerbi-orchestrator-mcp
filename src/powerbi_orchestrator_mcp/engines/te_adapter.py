@@ -40,7 +40,6 @@ import contextlib
 import json
 import os
 import re
-import tempfile
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -690,8 +689,20 @@ class InMemoryModelingAdapter:
         conn: ConnectionHandle,
         label: str,
     ) -> SnapshotHandle:
+        from powerbi_orchestrator_mcp.orchestrator.paths import (
+            atomic_write_private,
+            ensure_private_dir,
+            get_orchestrator_home,
+        )
+
         clean_label = Path(label).name
-        path = Path(tempfile.gettempdir()) / f"snapshot-{clean_label}.json"
+        # The snapshot holds the whole model, so it belongs in the
+        # orchestrator home with owner-only permissions. It used to go
+        # to the system temporary directory with the default mode,
+        # which left the model readable by every account on the host,
+        # outside the audit trail, and never removed it.
+        snapshot_dir = ensure_private_dir(get_orchestrator_home() / "snapshots")
+        path = snapshot_dir / f"snapshot-{clean_label}.json"
         target_files = _find_dataset_model_files(conn.target_ref)
         file_backups: dict[str, str] = {}
         for tf in target_files:
@@ -701,7 +712,10 @@ class InMemoryModelingAdapter:
             "in_memory": self._models.get(conn.target_ref, {}),
             "disk_files": file_backups,
         }
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        # Atomic and owner-only: a fixed name in a world-writable
+        # directory could be pre-created as a symlink and redirect the
+        # write anywhere.
+        atomic_write_private(path, json.dumps(payload, indent=2))
         return SnapshotHandle(label=label, path=path)
 
     async def restore_snapshot(

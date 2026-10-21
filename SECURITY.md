@@ -105,6 +105,22 @@ We aim to:
   Workspace, dataset, item and datasource identifiers are validated before
   they are interpolated into a Fabric REST path.
 
+### Limits of these controls, stated so nobody assumes more
+
+- The rate limiter and the circuit breaker are **per `FabricClient`
+  instance**, not per tenant: a tool that builds its own client gets
+  its own bucket, and the bucket dies with the call. They protect
+  against a burst inside one call, not against the fleet.
+- The elicitation is used by `apply_plan(confirm_each_step=True)`. No
+  other write tool elicits on its own; they are made safe by their
+  `dry_run` default and their scope.
+- The audit log covers the 20 state-changing tools. A call refused by
+  the scope check leaves no row, and `plan_change` — which writes to
+  the plan store — is not audited.
+- The audit log does not record **who** acted. It records what was
+  done; the plan store records the owner of a plan. Attributing an
+  action to a person needs both.
+
 ### Out-of-scope
 
 - Vulnerabilities in upstream Microsoft Power BI REST API behavior.
@@ -120,8 +136,8 @@ We aim to:
 
 | Feature | Where |
 |---|---|
-| Token-bucket rate limiting per tenant | `cloud/fabric_client.py` |
-| Circuit breaker (opens after 5 consecutive 5xx) | `cloud/fabric_client.py` |
+| Token-bucket rate limiting (per client instance, not per tenant) | `cloud/fabric_client.py` |
+| Circuit breaker (opens after 5 consecutive 5xx; per client instance) | `cloud/fabric_client.py` |
 | Least-privilege token scopes (read vs write) | `cloud/fabric_client.py`, `cloud/auth.py` |
 | HMAC-chained audit log (tamper-evident) | `orchestrator/audit.py` |
 | Unambiguous field encoding in the chain hash | `orchestrator/audit.py` |
@@ -129,13 +145,17 @@ We aim to:
 | Truncation detection via out-of-DB chain anchor | `orchestrator/audit.py` |
 | Owner-only permissions on plan/session/audit stores (POSIX hosts) | `orchestrator/paths.py` |
 | PII / token redaction in audit log (by pattern and by key) | `cloud/audit_cloud.py` (wired via `orchestrator/audit_guard.py`) |
-| Audit coverage for state-changing tools | `orchestrator/audit_guard.py` |
-| Elicitation before writes (configurable) | `orchestrator/elicitation.py` |
+| Audit coverage for state-changing tools (20 of them) | `orchestrator/audit_guard.py` |
+| Elicitation before each plan step (`apply_plan(confirm_each_step=True)`) | `orchestrator/elicitation.py` |
 | Write-path containment (`PBI_WORKSPACE_ROOT`) | `validation/path_safety.py` |
 | Output paths of the tools that write files | `validation/path_safety.py`, `tools/` |
 | Read-path containment (same root, explicit opt-out) | `validation/path_safety.py` |
 | Per-tool scope enforcement (HTTP transport) | `orchestrator/authorization.py` |
 | Output paths of the tools that produce files | `validation/path_safety.py`, `tools/` |
+| Read containment at the single choke point (`gather_pbip_metadata`) | `validation/model_metadata.py` |
+| Write containment of the plan target, before the engine gets it | `orchestrator/step_executor.py` |
+| Snapshots in the orchestrator home, owner-only, atomic | `engines/te_adapter.py`, `orchestrator/paths.py` |
+| Impersonation requires write access | `orchestrator/authorization.py` |
 | Scope check on every tool | `orchestrator/authorization.py`, `orchestrator/server.py` |
 | `Tools.Admin` required for release and labelling operations | `orchestrator/authorization.py` |
 | HTTP session bound to the calling credential | `orchestrator/transport.py` |

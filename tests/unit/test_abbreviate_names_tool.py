@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from powerbi_orchestrator_mcp.tools.abbreviate_names import abbreviate_names
 
 
@@ -220,7 +222,13 @@ class TestTheArguments:
         assert result["success"] is False
         assert "at least 8" in (result["error_message"] or "")
 
-    def test_a_project_that_cannot_be_read_is_reported(self, tmp_path: Path) -> None:
+    def test_a_project_that_cannot_be_read_is_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The workspace root is the working directory by default, and
+        # a temporary directory is outside it, so the path is refused
+        # by the boundary before it is even looked for.
+        monkeypatch.setenv("PBI_WORKSPACE_ROOT", str(tmp_path))
         result = abbreviate_names(str(tmp_path / "nope"))
 
         assert result["success"] is False

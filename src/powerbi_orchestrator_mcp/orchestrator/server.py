@@ -1345,6 +1345,24 @@ async def execute_dax_query(
             if (trimmed.upper().startswith("EVALUATE") or trimmed.upper().startswith("DEFINE"))
             else f"EVALUATE {trimmed}"
         )
+        if impersonated_user_name:
+            # Running the query as another user reads the data that
+            # user's row-level security is there to hide. The query
+            # travels with the orchestrator's own credential, so the
+            # caller would be reading rows the caller cannot see.
+            # That is not a read.
+            from powerbi_orchestrator_mcp.orchestrator.authorization import (
+                SCOPE_WRITE,
+                require_capability_scope,
+            )
+
+            require_capability_scope(
+                SCOPE_WRITE,
+                reason=(
+                    "impersonating another user to read a dataset "
+                    "(execute_dax_query with impersonated_user_name)"
+                ),
+            )
         result = await client.execute_queries(
             workspace_id=workspace_id,
             dataset_id=dataset_id,
@@ -2299,7 +2317,17 @@ def main() -> None:
 
     # Peek at argv; if --transport is absent, fast-path to stdio
     # without argparse overhead (preserves fast startup for stdio).
-    if "--transport" not in sys.argv and not any(a.startswith("--transport=") for a in sys.argv):
+    #
+    # PBI_TRANSPORT counts too: a container has no arguments to pass,
+    # and the documentation promises the variable works. Without this,
+    # the container started in stdio and published no port.
+    _env_transport = os.environ.get("PBI_TRANSPORT", "").strip().lower()
+    _transport_selected = (
+        "--transport" in sys.argv
+        or any(a.startswith("--transport=") for a in sys.argv)
+        or _env_transport == "http"
+    )
+    if not _transport_selected:
         reconcile_orphan_executions_on_boot()
         mcp.run(transport="stdio")
         return

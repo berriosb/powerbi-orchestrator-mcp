@@ -8,17 +8,17 @@
 # proxies stdio.
 #
 # Build:
-#   docker build -t powerbi-orchestrator-mcp:1.21.0 .
+#   docker build -t powerbi-orchestrator-mcp:1.21.1 .
 #
 # Run (stdio for MCP — connect via your MCP client):
-#   docker run --rm -i powerbi-orchestrator-mcp:1.21.0
+#   docker run --rm -i powerbi-orchestrator-mcp:1.21.1
 #
 # Run the standalone CLI (the entrypoint is the MCP server, so the CLI
 # needs its own entrypoint):
 #   docker run --rm --entrypoint powerbi-orchestrator \
-#     powerbi-orchestrator-mcp:1.21.0 version
+#     powerbi-orchestrator-mcp:1.21.1 version
 #   docker run --rm --entrypoint powerbi-orchestrator \
-#     -v /host/path:/data powerbi-orchestrator-mcp:1.21.0 validate /data
+#     -v /host/path:/data powerbi-orchestrator-mcp:1.21.1 validate /data
 #
 
 # ---------------------------------------------------------------------------
@@ -85,4 +85,4 @@ LABEL org.opencontainers.image.title="powerbi-orchestrator-mcp" \
       org.opencontainers.image.description="High-level MCP orchestrator for Power BI / Microsoft Fabric" \
       org.opencontainers.image.source="https://github.com/berriosb/powerbi-orchestrator-mcp" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="1.21.0"
+      org.opencontainers.image.version="1.21.1"
