@@ -18,6 +18,8 @@ documentation promised":
 from __future__ import annotations
 
 import json
+import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,12 @@ from powerbi_orchestrator_mcp.orchestrator.authorization import (
 from powerbi_orchestrator_mcp.validation.model_metadata import (
     MetadataError,
     gather_pbip_metadata,
+)
+
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits are not meaningful on Windows; "
+    "st_mode always reports 0o666/0o777 there and chmod only toggles read-only",
 )
 
 
@@ -155,8 +163,31 @@ class TestTheSnapshotStaysPrivate:
         path = Path(handle.path)
 
         assert str(path).startswith(str(home))
-        assert path.stat().st_mode & 0o777 == 0o600
-        assert path.parent.stat().st_mode & 0o777 == 0o700
+        # The location is the property that matters on every platform:
+        # the snapshot is out of the shared temporary directory.
+        assert "temp" not in str(path.parent).lower()
+
+    @posix_only
+    async def test_it_is_owner_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from powerbi_orchestrator_mcp.engines.base import ConnectionHandle
+        from powerbi_orchestrator_mcp.engines.te_adapter import InMemoryModelingAdapter
+
+        home = tmp_path / "home"
+        monkeypatch.setenv("PBI_ORCHESTRATOR_HOME", str(home))
+        monkeypatch.setenv("PBI_WORKSPACE_ROOT", str(tmp_path))
+
+        engine = InMemoryModelingAdapter()
+        conn = ConnectionHandle(
+            engine="test",
+            target_type="pbip_folder",
+            target_ref=str(_pbip_at(tmp_path / "proj")),
+            session_token="s",
+        )
+        handle = await engine.snapshot(conn, "pre-rename-plan_perms")
+        path = Path(handle.path)
+
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
     @pytest.mark.asyncio
     async def test_the_snapshot_step_refuses_a_target_outside_the_root(
