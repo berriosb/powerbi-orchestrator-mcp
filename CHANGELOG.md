@@ -69,6 +69,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `shell: bash`, so on Windows it ran under PowerShell and printed
   empty, making a working download look like a failed one.
 
+  **The first time they ran, two of the nine failed** — and both were
+  bugs in the test, not in the code:
+
+  - `test_add_measure_with_te_propagates_validation_error` never
+    reached the writer: it did not pass `dry_run=False`, so the tool
+    returned at the dry-run gate and the assertion was checking the
+    dry-run result instead of the propagated failure.
+  - The exit-code table expected `engine_incompatible_version` for
+    exit 5, but the spec (`specs/06-engine-error-contracts.md` §4)
+    calls that error `EngineVersionMismatchError`, which is what the
+    code emits and what the unit tests assert.
+
+  The contract tests do not invoke the `te` binary — they drive the
+  orchestrator with a stand-in for it. Requiring the binary to be
+  installed was the mistake that let them drift unnoticed, so the
+  dependency is gone and they now run on every platform. A test that
+  skips itself because of a fixture it does not use is a test that
+  proves nothing.
+
 ### Documentation
 - The README claimed v1.20.0 and 28 tools; `SECURITY.md` listed 1.19.x as
   the newest supported version; `docs/pilot-validation.md` said 1158

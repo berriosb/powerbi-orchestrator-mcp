@@ -1,7 +1,6 @@
 """E2E tests for the `te` (Tabular Editor) engine adapter.
 
-These tests exercise the real `te` binary against the load-bearing
-PBIP fixture. They verify that:
+These tests verify the **contract** between the orchestrator and `te`:
 
 1. `add_measure_with_validation` correctly delegates to `te` via the
    injected `measure_writer` callable.
@@ -9,6 +8,17 @@ PBIP fixture. They verify that:
    (see `specs/06-engine-error-contracts.md` §4).
 3. The orchestrator propagates `te`'s errors to the caller with the
    correct shape.
+
+They drive the orchestrator against the load-bearing PBIP fixture with
+a stand-in for `te`, and they assert the exit-code mapping directly.
+**They do not invoke the `te` binary**, so they do not need it
+installed: the contract is the same on every platform.
+
+That distinction matters. These tests used to require the binary and
+skip themselves when it was missing — which, combined with the binary
+being downloaded into a different CI job, meant they had never run in
+CI at all. A test that skips itself because of a fixture it does not
+use is a test that proves nothing.
 
 See `specs/qa/e2e-testing-strategy.md` §6 for the design.
 """
@@ -27,7 +37,6 @@ from powerbi_orchestrator_mcp.engines.exit_codes import (
 
 def test_add_measure_with_te_propagates_validation_error(
     temp_pbip: Path,
-    engine_te_path: Path,
 ) -> None:
     """`add_measure_with_validation` invokes `te` via measure_writer and surfaces BPA errors.
 
@@ -69,6 +78,11 @@ def test_add_measure_with_te_propagates_validation_error(
         table="Sales",
         expression="CALCULATE([Sales Amount])",  # missing filter context
         fail_on_severity="warning",
+        # The write path is what this test is about: `te` rejecting the
+        # measure. Without `dry_run=False` the tool returns at the dry-run
+        # gate and the writer is never called, so the assertion below was
+        # checking the dry-run result instead of the propagated failure.
+        dry_run=False,
         measure_writer=fake_te_measure_writer,
     )
 
@@ -82,7 +96,6 @@ def test_add_measure_with_te_propagates_validation_error(
 
 def test_add_measure_lint_blocks_before_invoking_te(
     temp_pbip: Path,
-    engine_te_path: Path,
 ) -> None:
     """DAX lint catches obvious errors BEFORE `te` is invoked.
 
@@ -117,9 +130,7 @@ def test_add_measure_lint_blocks_before_invoking_te(
     assert len(result["lint_findings"]) > 0
 
 
-def test_te_exit_code_3_maps_to_engine_timeout(
-    engine_te_path: Path,
-) -> None:
+def test_te_exit_code_3_maps_to_engine_timeout() -> None:
     """Contract test: `te` exit code 3 → `EngineTimeoutError`.
 
     Verifies the exit-code mapping defined in
@@ -144,12 +155,11 @@ def test_te_exit_code_3_maps_to_engine_timeout(
         (2, "engine_auth_failed"),
         (3, "engine_timeout"),
         (4, "engine_crashed"),
-        (5, "engine_incompatible_version"),
+        (5, "engine_version_mismatch"),
         (127, "engine_not_found"),
     ],
 )
 def test_te_exit_code_mapping_full_table(
-    engine_te_path: Path,
     exit_code: int,
     expected_code: str,
 ) -> None:

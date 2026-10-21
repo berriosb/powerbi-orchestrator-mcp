@@ -7,7 +7,7 @@
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-[![Tests](https://img.shields.io/badge/tests-1568%20passing-brightgreen)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-1577%20passing-brightgreen)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen)](./tests/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](./pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)

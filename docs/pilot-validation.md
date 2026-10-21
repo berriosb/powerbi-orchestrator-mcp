@@ -3,7 +3,7 @@
 Guía para validar `powerbi-orchestrator-mcp` contra un tenant de Fabric o
 Power BI antes de usarlo con datos de clientes.
 
-**El punto de partida:** la suite de tests (1568 casos) nunca llama a una API
+**El punto de partida:** la suite de tests (1577 casos) nunca llama a una API
 real. Toda ruta de nube se ejercita con dobles o en `dry_run`. Los fallos
 típicos de una integración real —permisos del service principal, drift de la
 forma de la respuesta, round-trip de DAX— **no** aparecen hasta que ejecutas

@@ -127,6 +127,28 @@ falla si los tests de `te` se saltan en el runner que sí tiene el
 binario**. Comprobado con JUnit sintético: el caso "3 passed, 9 skipped"
 ahora falla; Linux y macOS siguen pasando legítimamente.
 
+### Lo que encontró la CI al correrlos por primera vez
+
+La primera vez que los nueve tests se ejecutaron de verdad, **dos
+fallaron**. Los dos eran bugs del test, no del código:
+
+- `test_add_measure_with_te_propagates_validation_error` nunca llegaba
+  al writer: no pasaba `dry_run=False`, así que la tool retornaba en la
+  compuerta del dry-run y la aserción estaba mirando el resultado del
+  dry-run en vez del error propagado.
+- La tabla de exit codes esperaba `engine_incompatible_version` para el
+  exit 5, pero el spec (`specs/06-engine-error-contracts.md` §4) llama
+  a ese error `EngineVersionMismatchError` — que es lo que emite el
+  código y lo que asertan los unit tests.
+
+Los tests de contrato **no invocan el binario `te`**: manejan el
+orquestador con un sustituto. Exigir el binario instalado era
+justamente el error que los dejó pudrir sin que nadie lo notara, así
+que esa dependencia desapareció y ahora corren en todas las plataformas.
+
+> Un test que se salta a sí mismo por un fixture que no usa es un test
+> que no prueba nada.
+
 ---
 
 ## 📚 Documentación
@@ -165,7 +187,7 @@ deployment**, que siguen siendo:
 ## Verificación
 
 ```
-1568 passed, 9 skipped          # +21 tests nuevos
+1577 passed, 0 skipped           # +29 tests nuevos
 89% cobertura
 ruff check / ruff format        # limpio
 mypy --strict                   # 178 archivos, sin issues
