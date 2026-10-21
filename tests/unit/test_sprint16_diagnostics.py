@@ -95,8 +95,8 @@ class TestPowerbiHealth:
 
     async def test_check_count_matches_known_engines(self) -> None:
         result = await powerbi_health()
-        # 5 known engines + plan_store + execution_store + audit_log = 8.
-        assert len(result["checks"]) >= 8
+        # 3 known engines + plan_store + execution_store + audit_log = 6.
+        assert len(result["checks"]) >= 6
 
 
 # ---------------------------------------------------------------------------

@@ -157,10 +157,9 @@ de 500 primitivas dispersas.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-La capa 3 son los motores a los que el orquestrador **despacha**. El
-`health` check además detecta otros binarios presentes en la máquina
-(`dscmd`, `pbip-validator`), pero ninguna tool los usa: instalarlos no
-habilita ninguna operación.
+La capa 3 son los motores a los que el orquestrador **despacha**, y son
+todos los que el `health` check reporta: si aparece ahí, alguna tool lo
+usa.
 
 **Por qué npm NO es necesario para instalar el orquestrador** (sí para
 correr operaciones reales): npm es una dependencia RUNTIME de los
@@ -245,12 +244,10 @@ a probar con `python_report` (built-in), no necesitas instalar nada más.
 # Linux: dotnet tool install --global TabularEditor
 ```
 
-Los engines que el orquestrador **despacha** son esos tres. El `health`
-check detecta además otros binarios (`dscmd`, `pbip-validator`), pero
-ninguna tool los usa: instalarlos no habilita ninguna operación. El
-`pbip-validator` de Microsoft no está publicado en PyPI, y la
-validación PBIP que el orquestrador ejecuta es su propio validador
-estructural, que no necesita binario externo.
+Los engines que el orquestrador **despacha** son esos tres, y son los
+únicos que el `health` check reporta: si aparece ahí, alguna tool lo
+usa. La validación PBIP que el orquestrador ejecuta es su propio
+validador estructural, que no necesita binario externo.
 
 Ver [`docs/engines-setup.md`](./docs/engines-setup.md) para detalles de
 instalación por engine y troubleshooting.

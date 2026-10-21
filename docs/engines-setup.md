@@ -27,17 +27,17 @@ falls back or elicits a remediation hint — it doesn't crash the server.
 | `powerbi-modeling-mcp` | Modeling | Win/Mac/Linux | `npx @microsoft/powerbi-modeling-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ recommended |
 | `superbi-mcp` | Report | Windows primarily | `npx superbi-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ wired |
 | `te` (Tabular Editor CLI) | BPA | Win/Mac/Linux | [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases) | CLI subprocess (no MCP) | ✅ for the BPA check |
-| `dscmd` (DAX Studio CLI) | — | Windows only | [DAX Studio releases](https://daxstudio.org/) | CLI subprocess (no MCP) | ❌ detected only |
-| `pbip-validator` | — | Win/Mac/Linux | *not published on PyPI* | Python subprocess (no MCP) | ❌ detected only |
 
-**`dscmd` and `pbip-validator` are detected but not dispatched to.**
-No orchestrator tool reaches either of them: there is no adapter that
-uses them, and `pbip-validator` is not a package on PyPI. The health
-check reports them as *detected but not integrated* rather than
-suggesting an install that would enable no feature. The PBIP
-validation the orchestrator actually performs is its own structural
-validator (`PythonReportEngine.validate_pbir`), which needs no external
-binary.
+**Los motores que no están en la tabla no son motores del
+orquestador.** `dscmd` (DAX Studio CLI) y `pbip-validator` figuraron
+en el detector sin que ninguna tool los alcanzara: el health check los
+ofrecía como instalables y eso no habilitaba ninguna función.
+`pbip-validator` nunca llegó a publicarse en PyPI. Se han quitado del
+detector y de la tabla de timeouts.
+
+La validación PBIP que el orquestrador ejecuta es su propio validador
+estructural (`PythonReportEngine.validate_pbir`), que no necesita
+binario externo.
 
 **Protocol notes:**
 
@@ -47,8 +47,6 @@ binary.
   `src/engines/base.py::JsonRpcSubprocessEngine`).
 - **CLI subprocess (no MCP)** = the engine is a regular CLI binary; the
   orchestrator runs it with arguments and parses stdout. We do NOT use MCP.
-- **Python subprocess (no MCP)** = the engine is a Python package exposing a
-  CLI (e.g. `pbip-validator --model <path>`); same pattern as CLI.
 - **Direct file I/O** = `python_report` reads/writes PBIR JSON files
   directly without spawning anything. Fastest path; no external dep.
 
@@ -83,8 +81,7 @@ those tools internally talk to other MCP servers is invisible.
 
 ### Pattern B: Subprocess CLI wrapper (for native binaries)
 
-For `te`, `dscmd`, and (future) `pbip-validator`, the orchestrator wraps
-each CLI in an async subprocess call. Same error/timeout contracts as
+For `te`, the orchestrator wraps the CLI in an async subprocess call. Same error/timeout contracts as
 Pattern A, but the JSON-RPC envelope is replaced by CLI args + stdout
 parsing.
 
@@ -116,8 +113,6 @@ Expected output on a fully-loaded dev machine:
 ```
 powerbi-modeling-mcp: available=True version=0.1.9
 te: available=True version=3.0.0
-dscmd: available=False reason=binary not found in PATH...
-pbip-validator: available=True version=0.3.2
 superbi-mcp: available=False reason=binary not found in PATH...
 ```
 
@@ -166,34 +161,7 @@ te2 --version
 
 **License:** TE3 requires a license for commercial use; TE2 is free.
 
-### 3.3 `dscmd` (DAX Studio CLI)
-
-**What it is:** DAX query trace + server timings + benchmark. Windows
-only — Linux/macOS users get a `not found` warning and should skip
-DAX-specific tooling.
-
-**Install:** download from [DAX Studio releases](https://daxstudio.org/).
-
-**Verify:**
-```bash
-dscmd --version
-```
-
-### 3.4 `pbip-validator` (validation only)
-
-**What it is:** Microsoft's PBIP pre-flight validator (Python CLI).
-
-**Install** (when published):
-```bash
-pip install pbip-validator==0.3.2
-```
-
-**Verify:**
-```bash
-pbip-validator --version
-```
-
-### 3.5 `superbi-mcp` (Windows-focused, advanced report editing)
+### 3.3 `superbi-mcp` (Windows-focused, advanced report editing)
 
 **What it is:** Community MCP server with rich report editing capabilities
 (`.pbix` direct edits, M transformations, full PBIR + TMDL). License:
@@ -314,7 +282,6 @@ To add a new subprocess engine (e.g., `te3-mcp`):
 | Engine available=True but every op times out | subprocess launches but doesn't respond | Check firewall / sandboxing / antivirus |
 | `tablediff` errors in `te` | Wrong TE version | `te2 --version`, check pin in `src/engines/versions.py` |
 | `python_report` produces invalid PBIR | Model has edge cases the regex doesn't handle | Add a fixture for your model, file an issue |
-| `pbip-validator` exits 2 | Real PBIR corruption (parser error) | Run `pbip-validator pbir ./path` manually for details |
 | Connector errors on Linux | Some FABRIC SDK features are Windows-only | Expected; the orchestrator's `engine_warnings` field surfaces this |
 
 ---

@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   full disk would otherwise take every mutation down with it.
 
 ### Changed
+- **`dscmd` and `pbip-validator` are gone from the detector.** They
+  were listed as engines and had timeout entries, but no tool reaches
+  either: the health check offered to install them and installing
+  changed nothing. `pbip-validator` was never published on PyPI. The
+  PBIP validation the orchestrator performs is its own structural
+  validator, which needs no external binary.
 - **The live preflight can run on a schedule.** `pilot-validation.yml`
   still never runs on push or on pull requests, so it cannot become a
   required status check or block a merge — that is the property the

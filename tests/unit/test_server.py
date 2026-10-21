@@ -206,8 +206,9 @@ class TestConnectTarget:
         monkeypatch.setattr(shutil, "which", lambda _name: None)
 
         result = await connect_target(target_type="pbip_folder", target_ref=str(pbip_dir))
-        # All 5 engines should be reported as unavailable.
-        for engine in ("powerbi-modeling-mcp", "te", "dscmd", "pbip-validator", "superbi-mcp"):
+        # Every engine the detector knows about should be reported as
+        # unavailable. The list is the engines a tool can dispatch to.
+        for engine in ("powerbi-modeling-mcp", "te", "superbi-mcp"):
             assert engine in result.engines_available
             assert result.engines_available[engine].available is False
             assert result.engines_available[engine].reason_unavailable is not None

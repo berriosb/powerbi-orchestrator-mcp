@@ -17,9 +17,17 @@ class TestResolveTimeout:
     def test_known_engine_returns_default(self) -> None:
         assert resolve_timeout("powerbi-modeling-mcp", use_env_override=False) == 30
         assert resolve_timeout("te", use_env_override=False) == 60
-        assert resolve_timeout("dscmd", use_env_override=False) == 90
-        assert resolve_timeout("pbip-validator", use_env_override=False) == 15
         assert resolve_timeout("superbi-mcp", use_env_override=False) == 45
+
+    def test_the_engines_without_an_adapter_have_no_timeout(self) -> None:
+        """A timeout for an engine nothing dispatches to is dead config.
+
+        `dscmd` and `pbip-validator` had entries: the health check
+        offered to install them and no tool could use them.
+        """
+        for engine in ("dscmd", "pbip-validator"):
+            with pytest.raises(UnknownEngineError):
+                resolve_timeout(engine, use_env_override=False)
 
     def test_unknown_engine_raises(self) -> None:
         with pytest.raises(UnknownEngineError):
@@ -80,6 +88,5 @@ class TestDefaults:
             )
 
     def test_long_running_flag_consistent(self) -> None:
-        # Per spec §3: te and dscmd have long-running=True (trace FE/SE).
+        # Per spec §3: te has long-running=True (trace FE/SE).
         assert DEFAULT_TIMEOUTS["te"].long_running is True
-        assert DEFAULT_TIMEOUTS["dscmd"].long_running is True

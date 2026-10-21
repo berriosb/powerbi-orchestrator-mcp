@@ -22,7 +22,6 @@ from pydantic import BaseModel, Field
 from powerbi_orchestrator_mcp import __version__
 from powerbi_orchestrator_mcp.orchestrator.audit import AUDIT_DB, count_entries
 from powerbi_orchestrator_mcp.orchestrator.engine_detector import (
-    INTEGRATED_ENGINES,
     detect_all_engines,
 )
 from powerbi_orchestrator_mcp.orchestrator.plan_executions import EXEC_DB
@@ -72,7 +71,7 @@ async def powerbi_health(
 
     The orchestrator itself is always "running" (we just answered a tool
     call). The interesting parts are:
-    - Which engines are detected (powerbi-modeling-mcp, te, dscmd, ...).
+    - Which engines are available (powerbi-modeling-mcp, te, superbi-mcp).
     - How many plans / executions are persisted.
     - Whether the audit log exists and is being written to.
     """
@@ -85,36 +84,26 @@ async def powerbi_health(
     remediation: list[str] = []
 
     # Per-engine checks.
+    #
+    # Every engine the detector knows about is one a tool can dispatch
+    # to. An engine with no adapter is not listed at all: reporting it
+    # as available, and suggesting an install for it, sent operators to
+    # install something that enabled no feature.
     engine_dict: dict[str, dict[str, Any]] = {}
     for name, status in engines.items():
         ok = status.available
-        integrated = name in INTEGRATED_ENGINES
-        detail = status.reason_unavailable
-        if not integrated:
-            # The engine is present on the machine but no tool
-            # dispatches to it. Saying "unavailable" would be wrong —
-            # it is available, it is just not reachable.
-            detail = "detected but not integrated: no orchestrator tool dispatches to it"
-            if status.reason_unavailable:
-                detail = f"{detail} ({status.reason_unavailable})"
         checks.append(
             HealthCheck(
                 name=f"engine.{name}",
                 ok=ok,
-                detail=None if ok and integrated else detail,
+                detail=None if ok else (status.reason_unavailable or "unknown"),
             )
         )
         engine_dict[name] = {
             "available": ok,
             "version": status.version,
-            "integrated": integrated,
             "reason_unavailable": status.reason_unavailable,
-            "note": None
-            if integrated
-            else ("detected but not integrated: no orchestrator tool dispatches to it"),
         }
-        if not integrated:
-            continue
         if not ok:
             warnings.append(f"engine {name!r} unavailable")
             if name == "powerbi-modeling-mcp":

@@ -33,8 +33,6 @@ class EngineTimeout:
 DEFAULT_TIMEOUTS: dict[str, EngineTimeout] = {
     "powerbi-modeling-mcp": EngineTimeout(default_s=30, max_s=120),
     "te": EngineTimeout(default_s=60, max_s=300, long_running=True),
-    "dscmd": EngineTimeout(default_s=90, max_s=600, long_running=True),
-    "pbip-validator": EngineTimeout(default_s=15, max_s=60),
     "superbi-mcp": EngineTimeout(default_s=45, max_s=180),
 }
 
@@ -43,8 +41,6 @@ DEFAULT_TIMEOUTS: dict[str, EngineTimeout] = {
 ENV_TIMEOUT_OVERRIDES: dict[str, str] = {
     "PBI_ENGINE_TIMEOUT_POWERBI_MODELING_MCP_S": "powerbi-modeling-mcp",
     "PBI_ENGINE_TIMEOUT_TE_S": "te",
-    "PBI_ENGINE_TIMEOUT_DSCMD_S": "dscmd",
-    "PBI_ENGINE_TIMEOUT_PBIP_VALIDATOR_S": "pbip-validator",
     "PBI_ENGINE_TIMEOUT_SUPERBI_S": "superbi-mcp",
 }
 

@@ -15,8 +15,10 @@ Operations supported (per ``specs/05-engines-adapters.md`` §2.3):
 - ``add_visual`` — append a visual to an existing page.
 - ``update_visual`` — mutate fields on an existing visual.
 - ``propagate_rename`` — walk all PBIR JSON and rewrite references.
-- ``validate_pbir`` — structural sanity check (call out to ``pbip-validator``
-  if available; otherwise check JSON parses + visualContainer exists).
+- ``validate_pbir`` — structural sanity check: the JSON parses and every
+  page has its ``visualContainers`` key. It needs no external binary;
+  the ``pbip-validator`` package Microsoft was going to publish never
+  appeared, so nothing calls out to it.
 
 This adapter operates ENTIRELY on local files (no subprocess), so the
 ``StepExecutor`` integration is straightforward — we register it in the

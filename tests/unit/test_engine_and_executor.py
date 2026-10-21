@@ -107,7 +107,9 @@ class TestHelpers:
         engines = get_known_engines()
         assert isinstance(engines, tuple)
         assert "te" in engines
-        assert "pbip-validator" in engines
+        # Only engines a tool can dispatch to are listed.
+        assert "pbip-validator" not in engines
+        assert "dscmd" not in engines
 
     def test_get_engine_timeout_s(self) -> None:
         assert get_engine_timeout_s("te") == 60
