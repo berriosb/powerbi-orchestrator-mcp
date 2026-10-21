@@ -37,6 +37,19 @@ class StepExecutor(Protocol):
     async def execute_step(self, step: PlanStep) -> StepOutcome: ...
 
 
+def _validated_write_target(pbip_path: str) -> str:
+    """Bound a path an engine is about to write in to the workspace.
+
+    The engines write wherever they are told, and the path arrives from
+    the plan — which a caller can build with any target. Validating it
+    here, before the engine is handed the path, is what keeps a plan
+    from writing outside the workspace.
+    """
+    from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
+
+    return str(validate_write_path(pbip_path, must_exist=False))
+
+
 def _outcome(engine_name: str | None, **kwargs: Any) -> StepOutcome:
     """Build a step outcome that says which engine served the step.
 
@@ -218,6 +231,20 @@ class ValidationStepExecutor:
         if action == "create_snapshot":
             label = str(args.get("label", "snapshot"))
             pbip_path = args.get("pbip_path") or args.get("target_ref") or "."
+            # The snapshot reads the whole model, so the path is
+            # bounded to the workspace like any other read.
+            from powerbi_orchestrator_mcp.validation.path_safety import (
+                validate_safe_pbip_path,
+            )
+
+            try:
+                pbip_path = str(validate_safe_pbip_path(str(pbip_path), must_exist=False))
+            except ValueError as exc:
+                return StepOutcome(
+                    success=False,
+                    error_message=str(exc),
+                    changed_files=[],
+                )
             handle = await self._snapshot(str(pbip_path), label)
             if handle is None:
                 return StepOutcome(
@@ -454,6 +481,19 @@ class ModelingStepExecutor:
                     pbip_path = ctx.target.target_ref
         pbip_path = pbip_path or "."
 
+        # The engine is about to write in this directory, so the path
+        # is bounded to the workspace. A plan built from a target
+        # outside the root would otherwise write there.
+        try:
+            pbip_path = _validated_write_target(pbip_path)
+        except ValueError as exc:
+            return _outcome(
+                getattr(self, "_engine_name_hint", "") or "engine",
+                success=False,
+                error_message=str(exc),
+                changed_files=[],
+            )
+
         from powerbi_orchestrator_mcp.orchestrator.context import Target
 
         target = Target(
@@ -592,6 +632,18 @@ class ReportStepExecutor:
                 if ctx and ctx.target:
                     pbip_path = ctx.target.target_ref
         pbip_path = pbip_path or "."
+
+        # The engine is about to write in this directory, so the path
+        # is bounded to the workspace.
+        try:
+            pbip_path = _validated_write_target(pbip_path)
+        except ValueError as exc:
+            return _outcome(
+                "report",
+                success=False,
+                error_message=str(exc),
+                changed_files=[],
+            )
 
         engine = self._get_engine(str(pbip_path))
         engine_name = getattr(engine, "name", None) or type(engine).__name__

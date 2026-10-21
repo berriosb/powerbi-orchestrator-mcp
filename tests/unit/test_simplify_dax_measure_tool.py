@@ -126,7 +126,13 @@ class TestAMeasure:
         assert "no measure named" in (result["error_message"] or "")
         assert "Safe Amount" in result["available_measures"]
 
-    def test_a_project_that_cannot_be_read_is_reported(self, tmp_path: Path) -> None:
+    def test_a_project_that_cannot_be_read_is_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The workspace root is the working directory by default, and
+        # a temporary directory is outside it, so the path is refused
+        # by the boundary before it is even looked for.
+        monkeypatch.setenv("PBI_WORKSPACE_ROOT", str(tmp_path))
         result = simplify_dax_measure(pbip_path=str(tmp_path / "nope"), measure="X")
 
         assert result["success"] is False

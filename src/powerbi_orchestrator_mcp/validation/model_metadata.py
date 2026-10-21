@@ -184,15 +184,26 @@ def _read_report(pbip_root: Path, meta: ModelMetadata) -> None:
 def gather_pbip_metadata(pbip_path: str | Path) -> ModelMetadata:
     """Collect the metadata of a PBIP project.
 
+    The path is bounded to the workspace root, exactly like the write
+    path. Reading is how content reaches the model context, so a
+    project outside the root is refused here — at the single place
+    every tool goes through — rather than in each caller.
+
     Raises:
-        MetadataError: the path does not exist, is not a PBIP project, or
-            contains a model file that cannot be read.
+        MetadataError: the path does not exist, is not a PBIP project,
+            contains a model file that cannot be read, or is outside the
+            workspace root.
     """
-    root = Path(pbip_path)
-    if not root.exists():
-        raise MetadataError(f"PBIP path does not exist: {root}")
-    if not root.is_dir():
-        raise MetadataError(f"PBIP path is not a directory: {root}")
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        validate_safe_pbip_path,
+    )
+
+    try:
+        root = validate_safe_pbip_path(str(pbip_path), must_exist=True, must_be_dir=True)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        # The boundary refusal and a missing path are MetadataError
+        # here, so the callers keep their one error type.
+        raise MetadataError(str(exc)) from exc
 
     meta = ModelMetadata(pbip_path=str(root))
 

@@ -321,7 +321,9 @@ def parse_transport_args(
     parser.add_argument(
         "--transport",
         choices=["stdio", "http"],
-        default="stdio",
+        # PBI_TRANSPORT is the documented way to select the transport
+        # for a container, where there are no arguments to pass.
+        default=os.environ.get("PBI_TRANSPORT", "stdio").strip().lower() or "stdio",
         help="MCP transport (default: stdio).",
     )
     parser.add_argument(

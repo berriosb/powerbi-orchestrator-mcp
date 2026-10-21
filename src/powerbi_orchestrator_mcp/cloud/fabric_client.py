@@ -16,7 +16,9 @@ For MVP we focus on the operations needed by ``run_refresh`` and
 in ``specs/02-cloud-fabric.md``.
 
 Concurrency primitives (per Tier-B §6):
-- ``TokenBucket`` — limits requests/minute per tenant (default 200 RPM).
+- ``TokenBucket`` — limits requests/minute (default 200 RPM). It is per
+  client instance, not per tenant: a tool that builds its own client
+  gets its own bucket, and the bucket dies with the call.
 - ``CircuitBreaker`` — opens after 5 consecutive 5xx in 60s.
 - Long-running ops (refresh, deploy) bypass the main bucket.
 """

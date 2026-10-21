@@ -172,9 +172,12 @@ class RefreshOrchestrator:
             await asyncio.sleep(self.POLL_INTERVAL_S)
 
     async def _safe_get_history(self, workspace_id: str, dataset_id: str) -> list[dict[str, Any]]:
+        from powerbi_orchestrator_mcp.cloud.fabric_client import _path_segment
+
         try:
             resp = await self._client.get(
-                f"/workspaces/{workspace_id}/datasets/{dataset_id}/refreshes"
+                f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
+                f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/refreshes"
             )
             return resp.get("value", [])  # type: ignore[no-any-return]
         except FabricAPIError:
@@ -183,9 +186,13 @@ class RefreshOrchestrator:
     async def _safe_cancel(self, workspace_id: str, dataset_id: str, refresh_id: str) -> None:
         import contextlib
 
+        from powerbi_orchestrator_mcp.cloud.fabric_client import _path_segment
+
         with contextlib.suppress(FabricAPIError):
             await self._client.post(
-                f"/workspaces/{workspace_id}/datasets/{dataset_id}/refreshes/{refresh_id}/cancel"
+                f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
+                f"/datasets/{_path_segment(dataset_id, 'dataset_id')}"
+                f"/refreshes/{_path_segment(refresh_id, 'refresh_id')}/cancel"
             )
 
 
