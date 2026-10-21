@@ -71,7 +71,7 @@ jobs:
     timeout-minutes: 10
     environment: pilot-validation
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Refuse unless explicitly confirmed
         if: github.event_name == 'workflow_dispatch' && inputs.i_understand_this_touches_a_real_tenant != true
@@ -79,7 +79,7 @@ jobs:
           echo "::error::Set the confirmation input to true before running this workflow."
           exit 1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
