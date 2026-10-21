@@ -37,68 +37,17 @@ permissions:
 
 jobs:
   # -------------------------------------------------------------------------
-  # Download + cache engine binaries. Pinned by SHA256 (see
-  # specs/qa/e2e-testing-strategy.md §3.3 for the canonical table).
+  # Run E2E tests.
   #
-  # IMPORTANT: this job self-skips when SHA256 placeholders are still in
-  # place. To activate real E2E:
-  #   1. Replace `PLACEHOLDER_*_SHA256_*` below with real hashes (see
-  #      specs/qa/e2e-testing-strategy.md §3.3).
-  #   2. Verify the curl URLs point to existing release assets.
-  #   3. The workflow will then run nightly + on relevant PRs.
-  # -------------------------------------------------------------------------
-  engines:
-    name: download engines (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            engines: ''
-          - os: macos-latest
-            engines: ''
-          - os: windows-latest
-            engines: 'te'
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Download Tabular Editor CLI (`te`)
-        if: contains(matrix.engines, 'te')
-        env:
-          TE_VERSION: '2.20.0'
-          # SHA256 of TabularEditor.Portable.zip, published in the
-          # upstream release notes for 2.20.0.
-          TE_SHA256: 'f85e5dc765e5f0664a1518023547115d4046cbbf7e9d37682975844c1bbd9e3c'
-        shell: bash
-        run: |
-          if [[ "$TE_SHA256" == PLACEHOLDER_* ]]; then
-            echo "::warning::TE_SHA256 is a placeholder. Skipping `te` download until real SHA256 is set in .github/workflows/e2e-nightly.yml. See specs/qa/e2e-testing-strategy.md §3.3."
-            exit 0
-          fi
-          # The release asset is a zip; the CLI binary lives inside it.
-          curl --fail --silent --show-error --location \
-            -o te.zip \
-            "https://github.com/TabularEditor/TabularEditor/releases/download/${TE_VERSION}/TabularEditor.Portable.zip"
-          echo "${TE_SHA256}  te.zip" | sha256sum --check -
-          unzip -o -q te.zip -d te-dist
-          install -m 755 te-dist/TabularEditor.exe "${{ runner.temp }}/te.exe"
-          echo "TE_PATH=${{ runner.temp }}/te.exe" >> "$GITHUB_ENV"
-          rm -f te.zip
-          rm -rf te-dist
-
-      - name: Report engine availability
-        run: |
-          echo "te on PATH: $(command -v te || echo 'no')"
-          echo "te path: ${TE_PATH:-<none>}"
-
-  # -------------------------------------------------------------------------
-  # Run E2E tests. Depends on `engines` having downloaded the binaries.
+  # The engine binaries are downloaded **in this job**, not in a separate
+  # one. A separate job downloads them into its own runner's temp
+  # directory and throws them away when it ends: the binary never reached
+  # the tests, so the engine tests skipped themselves and the job went
+  # green having proved nothing. That is what happened — the `te`
+  # contract tests had never run in CI.
   # -------------------------------------------------------------------------
   e2e:
     name: pytest e2e (${{ matrix.os }} / py${{ matrix.python-version }})
-    needs: engines
     strategy:
       fail-fast: false
       matrix:
@@ -114,6 +63,44 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
+
+      - name: Download Tabular Editor CLI (`te`)
+        # Tabular Editor 2 ships a Windows binary, so this is the runner
+        # that gets it. The PBIP validation the orchestrator performs
+        # natively runs on every platform and needs no external binary.
+        if: runner.os == 'Windows'
+        env:
+          TE_VERSION: '2.20.0'
+          # SHA256 of TabularEditor.Portable.zip, published in the
+          # upstream release notes for 2.20.0.
+          TE_SHA256: 'f85e5dc765e5f0664a1518023547115d4046cbbf7e9d37682975844c1bbd9e3c'
+        shell: bash
+        run: |
+          if [[ "$TE_SHA256" == PLACEHOLDER_* ]]; then
+            echo "::error::TE_SHA256 is a placeholder. The engine tests would skip themselves and the job would prove nothing. See specs/qa/e2e-testing-strategy.md."
+            exit 1
+          fi
+          # The release asset is a zip; the CLI binary lives inside it.
+          curl --fail --silent --show-error --location \
+            -o te.zip \
+            "https://github.com/TabularEditor/TabularEditor/releases/download/${TE_VERSION}/TabularEditor.Portable.zip"
+          echo "${TE_SHA256}  te.zip" | sha256sum --check -
+          unzip -o -q te.zip -d te-dist
+          install -m 755 te-dist/TabularEditor.exe "${{ runner.temp }}/te.exe"
+          echo "TE_PATH=${{ runner.temp }}/te.exe" >> "$GITHUB_ENV"
+          rm -f te.zip
+          rm -rf te-dist
+
+      - name: Report engine availability
+        # `shell: bash` is not optional here: without it this step runs
+        # under PowerShell on the Windows runner, where `$(command -v te)`
+        # and `${TE_PATH:-<none>}` are not shell syntax — the step
+        # printed empty and made a working download look like a failed
+        # one.
+        shell: bash
+        run: |
+          echo "te on PATH: $(command -v te || echo 'no')"
+          echo "te path: ${TE_PATH:-<none>}"
 
       - name: Install package in editable mode
         run: |
@@ -140,9 +127,14 @@ jobs:
         # at least the platform-independent ones actually executed.
         if: always()
         shell: bash
+        env:
+          # The Windows runner downloads `te`, so its tests must run
+          # there. The Linux and macOS runners legitimately lack it.
+          REQUIRE_TE: ${{ runner.os == 'Windows' && '1' || '0' }}
         run: |
           set +e
           python - <<'PY'
+          import os
           import sys
           import xml.etree.ElementTree as ET
           import glob
@@ -161,6 +153,28 @@ jobs:
           print(f"tests={total} skipped={skipped} failed={failed}")
           if total == 0 or skipped == total:
               print("::error::every E2E test was skipped — the job proved nothing")
+              sys.exit(1)
+
+          # The `te` tests are opt-in per binary, so on the runner that
+          # has the binary they must actually run. A green job whose `te`
+          # tests all skipped is a job that proved nothing about the
+          # Tabular Editor contract.
+          te_total = te_skipped = 0
+          for path in files:
+              root = ET.parse(path).getroot()
+              for case in root.iter("testcase"):
+                  ident = f"{case.get('classname', '')}.{case.get('name', '')}"
+                  if "test_te_modeling" not in ident:
+                      continue
+                  te_total += 1
+                  if case.find("skipped") is not None:
+                      te_skipped += 1
+          print(f"te_tests={te_total} te_skipped={te_skipped}")
+          if os.environ.get("REQUIRE_TE") == "1" and te_total == 0:
+              print("::error::no `te` test ran on the runner that has the binary")
+              sys.exit(1)
+          if os.environ.get("REQUIRE_TE") == "1" and te_skipped == te_total:
+              print("::error::every `te` test was skipped — the Tabular Editor contract was not exercised")
               sys.exit(1)
           PY
 
