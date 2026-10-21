@@ -135,6 +135,7 @@ We aim to:
 | Output paths of the tools that write files | `validation/path_safety.py`, `tools/` |
 | Read-path containment (same root, explicit opt-out) | `validation/path_safety.py` |
 | Per-tool scope enforcement (HTTP transport) | `orchestrator/authorization.py` |
+| Output paths of the tools that produce files | `validation/path_safety.py`, `tools/` |
 | Scope check on every tool | `orchestrator/authorization.py`, `orchestrator/server.py` |
 | `Tools.Admin` required for release and labelling operations | `orchestrator/authorization.py` |
 | HTTP session bound to the calling credential | `orchestrator/transport.py` |

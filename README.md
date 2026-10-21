@@ -102,11 +102,14 @@ Además:
 - **DAX acotado.** `execute_dax_query` devuelve como máximo 1000 filas por
   defecto (techo 10 000) y marca el truncamiento.
 - **Scopes por tool** sobre transporte HTTP: cada una de las 31 tools
-  declara el scope que necesita. Las mutantes requieren `Tools.Write`;
-  liberar entre etapas de un pipeline y aplicar sensitivity labels
-  requieren `Tools.Admin`; `Tools.Admin` concede todos los inferiores.
-  Cada sesión HTTP queda ligada a la credencial que la abrió: otra
-  credencial recibe 404.
+  declara el scope que necesita. Las que **modifican el workspace o la
+  nube** requieren `Tools.Write`; liberar entre etapas de un pipeline y
+  aplicar sensitivity labels requieren `Tools.Admin`; `Tools.Admin`
+  concede todos los inferiores. Las que solo **producen ficheros**
+  dentro del workspace (el diccionario de datos, las capturas) siguen
+  siendo de lectura, pero su ruta de salida se valida como escritura
+  y queda dentro del workspace. Cada sesión HTTP queda ligada a la
+  credencial que la abrió: otra credencial recibe 404.
 - **Los planes tienen dueño.** Cada plan registra la identidad que lo creó y
   solo su dueño puede leerlo, listarlo o borrarlo; conocer el `plan_id`
   no alcanza.
