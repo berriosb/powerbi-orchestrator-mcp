@@ -88,8 +88,13 @@ Además:
   rechazan rutas fuera de `PBI_WORKSPACE_ROOT`, que por defecto es el
   directorio de trabajo del proceso.
 - **Las lecturas también.** Leer es cómo el contenido llega al contexto
-  del modelo, así que el path de lectura sigue la misma regla. La
-  salida explícita es `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1`.
+  del modelo, así que el path de lectura sigue la misma regla que el de
+  escritura. La precedencia es deliberada: un `PBI_WORKSPACE_ROOT`
+  configurado **es** la frontera y nada lo ensancha;
+  `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1` la quita solo cuando no hay
+  ninguna configurada (en ese caso la frontera es el directorio de
+  trabajo del proceso). Los directorios del sistema y de credenciales
+  (`/etc`, `/run`, `~/.ssh`, `~/.config`…) se rechazan siempre.
 - **Auditoría de todo lo que muta.** Las 20 tools con efecto sobre el
   workspace dejan registro (`success` / `failed` / `dry_run` / `partial` /
   `rolled_back`) en un log encadenado con HMAC. Los valores guardados bajo
