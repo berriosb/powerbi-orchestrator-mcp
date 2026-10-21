@@ -165,9 +165,21 @@ Stated explicitly so nobody assumes a control that is not there:
   **set `PBI_ORCHESTRATOR_AUDIT_SECRET` to a secret held elsewhere** (a
   secret manager, an injected environment variable, a mounted file) for
   that. The orchestrator logs a warning when it has to generate a key.
-- The audit log is **fail-open**: if a row cannot be written, the tool call
-  still goes ahead and the failure is surfaced as a warning in the result.
-  The audit log is for forensics, not for access control.
+- The audit log is **write-ahead**: the attempt is recorded *before* the
+  tool runs and the outcome after it. A mutation that dies half way
+  through therefore leaves a record of what was being attempted, instead
+  of nothing at all. The attempt row carries the status `attempted`; the
+  outcome row carries `success` / `failed` / `partial` / `dry_run` /
+  `rolled_back`.
+- The audit log is **fail-open by default**: if a row cannot be written,
+  the tool call still goes ahead and the failure is surfaced as a
+  warning in the result. That is deliberate — a full disk would
+  otherwise take every mutation down with it, and this log is a
+  forensic trail, not the compliance system of record. Set
+  `PBI_AUDIT_FAIL_CLOSED=1` to make it a **precondition** instead: a
+  state-changing call whose attempt cannot be recorded is refused
+  before it touches anything. The refusal names the variable that
+  relaxes it.
 - The HTTP transport's **Host allowlist** follows the bind address, so a
   server bound to a routable address answers requests for that address.
   DNS-rebinding protection stays enabled; list the exact names you serve

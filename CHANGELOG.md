@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [Unreleased]
+
+### Security
+- **The audit log is written ahead of time.** The attempt is recorded
+  before the tool body runs and the outcome after it, so a mutation that
+  dies half way through leaves a record of what was being attempted
+  instead of nothing at all. The attempt row carries the status
+  `attempted`.
+- **The audit log can be a precondition.** `PBI_AUDIT_FAIL_CLOSED=1`
+  refuses a state-changing call whose attempt cannot be recorded,
+  before it touches anything. It is fail-open by default on purpose: a
+  full disk would otherwise take every mutation down with it.
+
+### Documentation
+- **The README is six releases behind.** It said "Estado actual
+  (v1.14.2)", claimed the hardening backlog was closed with nothing
+  pending, pointed at the v1.14.2 release notes, and told the reader to
+  install `pbip-validator` — a package that does not exist on PyPI —
+  and DAX Studio, neither of which any tool uses.
+- **The README shows the three flows end to end**: the safe rename, the
+  deploy behind the quality gate, and the audit-fix-audit loop, with the
+  real arguments.
+- **A test keeps the README honest.** It parses the tool calls out of
+  the README and checks every argument against the schema the server
+  publishes, so the documentation cannot drift from the tools again.
+  Writing the calls out is what surfaced that `pre_deploy_check`
+  evaluates findings rather than a path, that
+  `apply_theme_and_accessibility_rules` takes a palette rather than a
+  theme object, and that `add_measure_with_validation` takes `target`
+  rather than `pbip_path`.
+
 ## [1.20.0] — 2026-10-20
 
 ### ⚠️ Breaking

@@ -453,8 +453,9 @@ pasada es la que dice si el arreglo funcionó.
   (`pilot-validation.yml`, `workflow_dispatch`). Los secrets no existen
   todavía en el repo, así que automatizarlo sin tenant es teatro.
 - ⏳ La propiedad de planes vive en un SQLite local, no en un IdP.
-- ⏳ El audit log es *fail-open*: una escritura fallida no detiene la
-  mutación, se reporta como aviso en el resultado.
+- ⏳ El audit log es *fail-open* por defecto: una escritura fallida no
+  detiene la mutación, se reporta como aviso en el resultado. Con
+  `PBI_AUDIT_FAIL_CLOSED=1` deja de serlo.
 
 Ver [`RELEASE-NOTES-v1.20.0.md`](./RELEASE-NOTES-v1.20.0.md) para detalles completos.
 
