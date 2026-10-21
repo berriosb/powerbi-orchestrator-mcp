@@ -5,26 +5,36 @@ name: pilot-validation
 # Why this exists: the unit and integration suites never call a live API, so
 # response-shape drift and service principal permission problems only
 # surface when someone runs against a tenant by hand. This job makes that
-# check repeatable.
+# check repeatable — by hand, and on a schedule once it is configured.
 #
 # Safety properties, in order of importance:
 #
-#   1. Manual trigger only. It never runs on push or on pull requests, so it
-#      cannot become a required status check or block a merge.
-#   2. Skips cleanly when the secrets are absent, following the same pattern
+#   1. It never runs on push or on pull requests, so it cannot become a
+#      required status check or block a merge. A scheduled run is not a
+#      merge gate either.
+#   2. It only ever reads. pilot_check.py never creates, updates, refreshes
+#      or deletes anything.
+#   3. The workspace and dataset are named explicitly — as inputs for a
+#      manual run, as repository variables for a scheduled one. There is no
+#      default and no discovery, so it cannot be pointed at an unintended
+#      tenant by accident.
+#   4. Skips cleanly when the secrets are absent, following the same pattern
 #      publish.yml uses for TEST_PYPI_API_TOKEN.
-#   3. The workspace and dataset must be named explicitly as inputs. There
-#      is no default and no discovery, so it cannot be pointed at an
-#      unintended tenant by accident.
-#   4. pilot_check.py is read-only. It never creates, updates, refreshes or
-#      deletes anything.
 #
 # To activate, set in repository settings -> Secrets:
 #   PBI_PILOT_TENANT_ID       Azure tenant id
 #   PBI_PILOT_CLIENT_ID       Service principal (app) id
 #   PBI_PILOT_CLIENT_SECRET   Service principal secret
-# and create the environment named `pilot-validation` below if you want
-# approval gating before it runs.
+#
+# To run it on a schedule, also set in repository settings -> Variables:
+#   PBI_PILOT_WORKSPACE_ID    Fabric workspace to validate against
+#   PBI_PILOT_DATASET_ID      Dataset to run the DAX check against
+#
+# Create the environment named `pilot-validation` below if you want
+# approval gating before it runs. Note that an environment with a required
+# approver holds a scheduled run until someone approves it, and GitHub
+# cancels it after 30 days — leave the environment ungated if you want the
+# nightly to actually happen.
 
 on:
   workflow_dispatch:
@@ -42,12 +52,16 @@ on:
         required: true
         type: boolean
         default: false
+  schedule:
+    # 05:23 UTC daily — deliberately not on the hour, and not the same
+    # slot as the engine e2e job.
+    - cron: '23 5 * * *'
 
 permissions:
   contents: read
 
 concurrency:
-  group: pilot-validation-${{ inputs.workspace_id }}
+  group: pilot-validation-${{ inputs.workspace_id || vars.PBI_PILOT_WORKSPACE_ID }}
   cancel-in-progress: true
 
 jobs:
@@ -60,7 +74,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Refuse unless explicitly confirmed
-        if: inputs.i_understand_this_touches_a_real_tenant != true
+        if: github.event_name == 'workflow_dispatch' && inputs.i_understand_this_touches_a_real_tenant != true
         run: |
           echo "::error::Set the confirmation input to true before running this workflow."
           exit 1
@@ -74,6 +88,32 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .
+
+      - name: Resolve the target
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          MANUAL_WORKSPACE: ${{ inputs.workspace_id }}
+          MANUAL_DATASET: ${{ inputs.dataset_id }}
+          SCHEDULED_WORKSPACE: ${{ vars.PBI_PILOT_WORKSPACE_ID }}
+          SCHEDULED_DATASET: ${{ vars.PBI_PILOT_DATASET_ID }}
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            # A scheduled run has no inputs. The operator opting in is
+            # having set the variables: there is no discovery and no
+            # fallback to "the first workspace this identity can see".
+            if [ -z "$SCHEDULED_WORKSPACE" ] || [ -z "$SCHEDULED_DATASET" ]; then
+              echo "::notice::PBI_PILOT_WORKSPACE_ID / PBI_PILOT_DATASET_ID are not set; skipping the scheduled preflight."
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "workspace=$SCHEDULED_WORKSPACE" >> "$GITHUB_OUTPUT"
+            echo "dataset=$SCHEDULED_DATASET" >> "$GITHUB_OUTPUT"
+          else
+            echo "workspace=$MANUAL_WORKSPACE" >> "$GITHUB_OUTPUT"
+            echo "dataset=$MANUAL_DATASET" >> "$GITHUB_OUTPUT"
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Skip cleanly when the pilot secrets are not configured
         id: secrets
@@ -90,7 +130,7 @@ jobs:
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Run the read-only preflight
-        if: steps.secrets.outputs.ready == 'true'
+        if: steps.target.outputs.ready == 'true' && steps.secrets.outputs.ready == 'true'
         env:
           PBI_AUTH_MODE: service_principal
           AZURE_TENANT_ID: ${{ secrets.PBI_PILOT_TENANT_ID }}
@@ -98,5 +138,5 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.PBI_PILOT_CLIENT_SECRET }}
         run: |
           python scripts/pilot_check.py \
-            --workspace-id "${{ inputs.workspace_id }}" \
-            --dataset-id "${{ inputs.dataset_id }}"
+            --workspace-id "${{ steps.target.outputs.workspace }}" \
+            --dataset-id "${{ steps.target.outputs.dataset }}"

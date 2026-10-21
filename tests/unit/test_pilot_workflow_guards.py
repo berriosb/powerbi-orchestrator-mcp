@@ -30,16 +30,22 @@ def _triggers(workflow: dict[str, Any]) -> dict[str, Any]:
 
 
 class TestWorkflowIsSafeByDefault:
-    def test_only_manual_trigger(self, workflow: dict) -> None:
-        triggers = _triggers(workflow)
+    def test_it_never_gates_a_merge(self) -> None:
+        """It must not run on push or pull requests.
 
-        assert list(triggers.keys()) == ["workflow_dispatch"]
-
-    def test_no_automatic_triggers(self) -> None:
+        That is the property that matters: a job that runs on a pull
+        request can become a required status check, and a required
+        status check blocks merges. A scheduled run cannot do either.
+        """
         source = _WORKFLOW.read_text(encoding="utf-8")
 
-        for forbidden in ("\n  push:", "\n  pull_request:", "\n  schedule:"):
+        for forbidden in ("\n  push:", "\n  pull_request:", "\n  pull_request_target:"):
             assert forbidden not in source
+
+    def test_the_triggers_are_manual_and_scheduled(self, workflow: dict) -> None:
+        triggers = _triggers(workflow)
+
+        assert set(triggers.keys()) == {"workflow_dispatch", "schedule"}
 
     def test_workflow_dispatch_has_no_dangerous_defaults(self, workflow: dict) -> None:
         inputs = _triggers(workflow)["workflow_dispatch"]["inputs"]
@@ -71,6 +77,50 @@ class TestWorkflowIsSafeByDefault:
         assert "--dataset-id" in commands
 
 
+class TestScheduledRun:
+    """The scheduled run has to be as deliberate as the manual one."""
+
+    def test_the_target_comes_from_an_explicit_variable(self) -> None:
+        source = _WORKFLOW.read_text(encoding="utf-8")
+
+        assert "vars.PBI_PILOT_WORKSPACE_ID" in source
+        assert "vars.PBI_PILOT_DATASET_ID" in source
+
+    def test_it_skips_when_the_variables_are_not_set(self, workflow: dict) -> None:
+        steps = workflow["jobs"]["preflight"]["steps"]
+        resolve = next(s for s in steps if s.get("id") == "target")
+
+        assert '[ -z "$SCHEDULED_WORKSPACE" ]' in resolve["run"]
+        assert '[ -z "$SCHEDULED_DATASET" ]' in resolve["run"]
+        assert "ready=false" in resolve["run"]
+
+    def test_it_never_picks_a_workspace_by_discovery(self, workflow: dict) -> None:
+        """The script can fall back to the first visible workspace.
+
+        From CI that fallback must be unreachable: the run always names
+        the workspace, so it cannot drift onto another tenant.
+        """
+        steps = workflow["jobs"]["preflight"]["steps"]
+        live = next(s for s in steps if "pilot_check.py" in s.get("run", ""))
+
+        assert "steps.target.outputs.workspace" in live["run"]
+        assert "steps.target.outputs.dataset" in live["run"]
+
+    def test_the_confirmation_only_applies_to_a_manual_run(self, workflow: dict) -> None:
+        """A scheduled run cannot ask a human, so it must not require one."""
+        steps = workflow["jobs"]["preflight"]["steps"]
+        confirm = next(s for s in steps if "explicitly confirmed" in s.get("name", ""))
+
+        assert "github.event_name == 'workflow_dispatch'" in confirm["if"]
+
+    def test_the_live_step_needs_both_the_target_and_the_secrets(self, workflow: dict) -> None:
+        steps = workflow["jobs"]["preflight"]["steps"]
+        live = next(s for s in steps if "pilot_check.py" in s.get("run", ""))
+
+        assert "steps.target.outputs.ready == 'true'" in live["if"]
+        assert "steps.secrets.outputs.ready == 'true'" in live["if"]
+
+
 class TestMissingSecretsSkipCleanly:
     def test_secret_probe_runs_before_the_live_step(self, workflow: dict) -> None:
         steps = workflow["jobs"]["preflight"]["steps"]
@@ -85,7 +135,7 @@ class TestMissingSecretsSkipCleanly:
         steps = workflow["jobs"]["preflight"]["steps"]
         live = next(s for s in steps if "pilot_check.py" in s.get("run", ""))
 
-        assert live["if"] == "steps.secrets.outputs.ready == 'true'"
+        assert "steps.secrets.outputs.ready == 'true'" in live["if"]
 
     def test_probe_treats_empty_secrets_as_not_ready(self, workflow: dict) -> None:
         steps = workflow["jobs"]["preflight"]["steps"]

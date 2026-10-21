@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before it touches anything. It is fail-open by default on purpose: a
   full disk would otherwise take every mutation down with it.
 
+### Changed
+- **The live preflight can run on a schedule.** `pilot-validation.yml`
+  still never runs on push or on pull requests, so it cannot become a
+  required status check or block a merge — that is the property the
+  guard test now asserts, instead of the old "manual only". A nightly
+  run takes its target from the `PBI_PILOT_WORKSPACE_ID` and
+  `PBI_PILOT_DATASET_ID` repository variables and skips cleanly when
+  they are not set: the workspace is named, never discovered. The
+  script's own fallback to "the first visible workspace" is unreachable
+  from CI.
+
 ### Documentation
 - **The README is six releases behind.** It said "Estado actual
   (v1.14.2)", claimed the hardening backlog was closed with nothing

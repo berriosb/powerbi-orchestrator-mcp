@@ -88,12 +88,14 @@ orquestador; todos los demás son de configuración.
 
 ### Repetirlo desde CI (opcional)
 
-Existe el workflow `pilot-validation.yml`, que corre este mismo script y
-**solo se dispara a mano**: nunca en push ni en pull requests, así que no
-entra como check requerido ni bloquea merges. Por defecto es inerte —si los
-secrets no están configurados, el job se salta con un aviso.
+Existe el workflow `pilot-validation.yml`, que corre este mismo script.
+Se dispara **a mano** o **programado**, y en ningún caso en push ni en pull
+requests, así que no entra como check requerido ni bloquea merges.
 
-Para activarlo:
+Por defecto es inerte: si los secrets no están configurados, el job se
+salta con un aviso.
+
+Para activarlo a mano:
 
 1. En *Settings → Environments*, crea un environment llamado
    `pilot-validation` (opcional, pero da un gate de aprobación antes de
@@ -105,6 +107,23 @@ Para activarlo:
 3. Lanza el workflow desde *Actions → pilot-validation → Run workflow*,
    indicando `workspace_id`, `dataset_id` y marcando la casilla de
    confirmación.
+
+Para activarlo **programado** (cada día a las 05:23 UTC), además de los
+secrets:
+
+4. En *Settings → Secrets and variables → Actions → Variables*, agrega:
+   - `PBI_PILOT_WORKSPACE_ID`
+   - `PBI_PILOT_DATASET_ID`
+
+Sin esas dos variables el run programado se salta con un aviso: el
+objetivo se nombra, nunca se descubre. El script sabe elegir "el primer
+workspace visible" si no se le pasa ninguno, y desde CI ese camino es
+inalcanzable — siempre se le pasa el que el operador configuró.
+
+Un detalle operativo: si el environment `pilot-validation` exige
+aprobación, un run programado se queda esperando a que alguien lo
+apruebe y GitHub lo cancela a los 30 días. Si quieres que el nocturno
+ocurra de verdad, deja el environment sin gate.
 
 Usa un service principal de **mínimo privilegio apuntando únicamente al
 workspace de pruebas**. Aunque el script es de solo lectura, un token con
