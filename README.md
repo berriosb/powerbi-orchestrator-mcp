@@ -88,8 +88,13 @@ Además:
   rechazan rutas fuera de `PBI_WORKSPACE_ROOT`, que por defecto es el
   directorio de trabajo del proceso.
 - **Las lecturas también.** Leer es cómo el contenido llega al contexto
-  del modelo, así que el path de lectura sigue la misma regla. La
-  salida explícita es `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1`.
+  del modelo, así que el path de lectura sigue la misma regla que el de
+  escritura. La precedencia es deliberada: un `PBI_WORKSPACE_ROOT`
+  configurado **es** la frontera y nada lo ensancha;
+  `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1` la quita solo cuando no hay
+  ninguna configurada (en ese caso la frontera es el directorio de
+  trabajo del proceso). Los directorios del sistema y de credenciales
+  (`/etc`, `/run`, `~/.ssh`, `~/.config`…) se rechazan siempre.
 - **Auditoría de todo lo que muta.** Las 20 tools con efecto sobre el
   workspace dejan registro (`success` / `failed` / `dry_run` / `partial` /
   `rolled_back`) en un log encadenado con HMAC. Los valores guardados bajo
@@ -97,11 +102,14 @@ Además:
 - **DAX acotado.** `execute_dax_query` devuelve como máximo 1000 filas por
   defecto (techo 10 000) y marca el truncamiento.
 - **Scopes por tool** sobre transporte HTTP: cada una de las 31 tools
-  declara el scope que necesita. Las mutantes requieren `Tools.Write`;
-  liberar entre etapas de un pipeline y aplicar sensitivity labels
-  requieren `Tools.Admin`; `Tools.Admin` concede todos los inferiores.
-  Cada sesión HTTP queda ligada a la credencial que la abrió: otra
-  credencial recibe 404.
+  declara el scope que necesita. Las que **modifican el workspace o la
+  nube** requieren `Tools.Write`; liberar entre etapas de un pipeline y
+  aplicar sensitivity labels requieren `Tools.Admin`; `Tools.Admin`
+  concede todos los inferiores. Las que solo **producen ficheros**
+  dentro del workspace (el diccionario de datos, las capturas) siguen
+  siendo de lectura, pero su ruta de salida se valida como escritura
+  y queda dentro del workspace. Cada sesión HTTP queda ligada a la
+  credencial que la abrió: otra credencial recibe 404.
 - **Los planes tienen dueño.** Cada plan registra la identidad que lo creó y
   solo su dueño puede leerlo, listarlo o borrarlo; conocer el `plan_id`
   no alcanza.

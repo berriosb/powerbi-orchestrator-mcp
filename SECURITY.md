@@ -78,8 +78,19 @@ We aim to:
 - It **does not read outside the workspace root by default.** The read
   path is bounded by `PBI_WORKSPACE_ROOT`, or by the working directory
   when it is unset, exactly like the write path. Reading is how content
-  reaches the model context, so an unbounded read is never the default;
-  `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1` is the explicit opt-out.
+  reaches the model context, so an unbounded read is never the default.
+
+  The precedence is deliberate: **a configured `PBI_WORKSPACE_ROOT` is
+  the boundary, and nothing widens it.**
+  `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1` removes the boundary only when
+  no root is configured. A deployment that set both — a copied
+  template, say — keeps its containment; the opt-out widening a root
+  the operator declared would be a footgun.
+
+  The system and credential directories are refused either way:
+  `/etc`, `/proc`, `/sys`, `/dev`, `/run`, `/root`, `/boot`, the system
+  binaries, and the credential directories `~/.ssh`, `~/.gnupg`,
+  `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker` and `~/.config`.
 - It **does not log raw DAX outputs or PII unless** the caller opts into a
   higher `max_rows`; audit payloads pass through `CloudAuditLog`, which
   redacts bearer tokens, connection strings and email addresses before
@@ -121,8 +132,10 @@ We aim to:
 | Audit coverage for state-changing tools | `orchestrator/audit_guard.py` |
 | Elicitation before writes (configurable) | `orchestrator/elicitation.py` |
 | Write-path containment (`PBI_WORKSPACE_ROOT`) | `validation/path_safety.py` |
+| Output paths of the tools that write files | `validation/path_safety.py`, `tools/` |
 | Read-path containment (same root, explicit opt-out) | `validation/path_safety.py` |
 | Per-tool scope enforcement (HTTP transport) | `orchestrator/authorization.py` |
+| Output paths of the tools that produce files | `validation/path_safety.py`, `tools/` |
 | Scope check on every tool | `orchestrator/authorization.py`, `orchestrator/server.py` |
 | `Tools.Admin` required for release and labelling operations | `orchestrator/authorization.py` |
 | HTTP session bound to the calling credential | `orchestrator/transport.py` |

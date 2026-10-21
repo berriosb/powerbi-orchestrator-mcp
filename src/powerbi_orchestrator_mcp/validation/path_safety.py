@@ -17,6 +17,11 @@ FORBIDDEN_SYSTEM_PATHS = {
     "/lib",
     "/lib64",
     "/private/etc",
+    # /run holds the container and systemd runtime state, and with it
+    # the mounted secrets of a pod. The workspace boundary already
+    # keeps it out of reach; this closes the second layer too, for
+    # the deployments that widen the boundary on purpose.
+    "/run",
 }
 
 FORBIDDEN_WINDOWS_DIRS = {
@@ -35,6 +40,9 @@ FORBIDDEN_SENSITIVE_DIRS = {
     ".azure",
     ".kube",
     ".docker",
+    # Holds the credentials of a lot of tools, and it is the one the
+    # read-path audit named explicitly.
+    ".config",
 }
 
 
@@ -125,14 +133,22 @@ def validate_write_path(
 def resolve_read_root(root: str | Path | None = None) -> Path | None:
     """Return the directory that bounds every read, or None to allow any.
 
-    Uses ``PBI_WORKSPACE_ROOT`` when the operator set it, otherwise falls
-    back to the process working directory — the same default the write
-    path uses.
+    The precedence is deliberate, and it is the safe one:
 
-    An operator who genuinely needs to read a project outside that root
-    sets ``PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1``. The allowance is
-    explicit on purpose: reading is how content reaches the model
-    context, so an unbounded read path should never be the default.
+    1. ``PBI_WORKSPACE_ROOT`` when the operator set it. That root is
+       the boundary, full stop.
+    2. Otherwise, the process working directory — the same default the
+       write path uses.
+
+    ``PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1`` removes the boundary
+    **only when there is no configured root**. It does not weaken a
+    root the operator has set: an operator who has declared where
+    their workspace is gets exactly that, and a second variable that
+    silently widens it would be a footgun in a deployment that sets
+    both.
+
+    Reading is how content reaches the model context, so an unbounded
+    read path is never the default.
     """
     configured = root or os.environ.get("PBI_WORKSPACE_ROOT")
     if configured:
@@ -146,6 +162,27 @@ def resolve_read_root(root: str | Path | None = None) -> Path | None:
     return Path.cwd().resolve()
 
 
+def _read_containment_hint() -> str:
+    """What to tell an operator whose read was refused.
+
+    The suggestion has to be one that would actually work: setting
+    ``PBI_ALLOW_OUTSIDE_WORKSPACE_READ`` does not widen a configured
+    ``PBI_WORKSPACE_ROOT``, so telling them to do that would send
+    them in a circle.
+    """
+    if os.environ.get("PBI_WORKSPACE_ROOT"):
+        return (
+            "Point PBI_WORKSPACE_ROOT at the directory that holds it. "
+            "PBI_ALLOW_OUTSIDE_WORKSPACE_READ does not widen a root that "
+            "is already set."
+        )
+    return (
+        "The workspace root is the process working directory. Point "
+        "PBI_WORKSPACE_ROOT at the directory that holds it, or set "
+        "PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1 to read outside it."
+    )
+
+
 def validate_safe_pbip_path(
     path_str: str,
     *,
@@ -157,8 +194,11 @@ def validate_safe_pbip_path(
 
     Containment is enforced by default, against ``PBI_WORKSPACE_ROOT``
     when it is set and against the process working directory otherwise —
-    the same rule the write path follows. An operator who needs to read
-    outside that root sets ``PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1``.
+    the same rule the write path follows.
+
+    A configured ``PBI_WORKSPACE_ROOT`` is the boundary and nothing
+    widens it. Without one, an operator who needs to read outside the
+    working directory sets ``PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1``.
 
     The system and credential directories are refused either way.
     """
@@ -171,10 +211,7 @@ def validate_safe_pbip_path(
         _enforce_contained(
             resolved,
             effective_ws,
-            hint=(
-                "Point PBI_WORKSPACE_ROOT at the directory that holds it, or set "
-                "PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1 to read outside the root"
-            ),
+            hint=_read_containment_hint(),
         )
 
     resolved_str = str(resolved).replace("\\", "/")

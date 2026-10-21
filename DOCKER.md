@@ -36,14 +36,24 @@ docker run --rm --entrypoint powerbi-orchestrator \
     powerbi-orchestrator-mcp:1.21.0 \
     version
 docker run --rm --entrypoint powerbi-orchestrator \
+    -e PBI_WORKSPACE_ROOT=/data \
     -v /host/path/to/sample.pbip:/data:ro \
     powerbi-orchestrator-mcp:1.21.0 \
     inspect /data
 docker run --rm --entrypoint powerbi-orchestrator \
+    -e PBI_WORKSPACE_ROOT=/data \
     -v /host/path/to/sample.pbip:/data:ro \
     powerbi-orchestrator-mcp:1.21.0 \
     validate /data --min-score 80
 ```
+
+> **`PBI_WORKSPACE_ROOT` is not optional when you mount a project
+> somewhere else.** The orchestrator bounds its reads and its writes to
+> the workspace root, which defaults to the working directory of the
+> process — `/home/orchestrator` in this image. A project mounted at
+> `/data` is outside that, and the command is refused with
+> `path '/data' is outside allowed workspace root`. Point the variable
+> at the mount (`-e PBI_WORKSPACE_ROOT=/data`) and it works.
 
 ### Check the image you just built
 

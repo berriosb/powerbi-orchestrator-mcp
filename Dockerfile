@@ -63,9 +63,14 @@ RUN useradd --system --create-home --uid 10001 orchestrator
 COPY --from=builder /app/.venv /app/.venv
 
 WORKDIR /app
+# The workspace root bounds the reads and the writes. It defaults to
+# the working directory, so it is set explicitly here to be visible in
+# `docker inspect`. An operator who mounts a project somewhere else
+# overrides it: `-e PBI_WORKSPACE_ROOT=/data`.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PBI_AUTH_MODE=interactive
+    PBI_AUTH_MODE=interactive \
+    PBI_WORKSPACE_ROOT=/home/orchestrator
 
 USER orchestrator
 WORKDIR /home/orchestrator
