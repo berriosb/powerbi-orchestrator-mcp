@@ -89,6 +89,12 @@ from powerbi_orchestrator_mcp.orchestrator.rollback import (
 from powerbi_orchestrator_mcp.orchestrator.step_executor import (
     get_default_registry,
 )
+from powerbi_orchestrator_mcp.tools.abbreviate_names import (
+    abbreviate_names as _abbreviate,
+)
+from powerbi_orchestrator_mcp.tools.abstract_measures import (
+    abstract_measures as _abstract,
+)
 from powerbi_orchestrator_mcp.tools.add_measure_with_validation import (
     add_measure_with_validation as _add_measure,
 )
@@ -1571,6 +1577,87 @@ async def simplify_dax_measure(
         measure=measure,
         all_measures=all_measures,
         apply_lint=apply_lint,
+    )
+
+
+@mcp.tool()
+@requires_scope("abstract_measures")
+async def abstract_measures(
+    pbip_path: str,
+    table: str | None = None,
+    min_group_size: int = 2,
+) -> dict[str, Any]:
+    """Find the logic that is written more than once in a semantic model.
+
+    Use this tool when the user asks to:
+    - Find duplicated or copy-pasted logic across measures.
+    - Know which measures compute the same thing and could share one.
+    - Find the measures that differ only in a number or a column, which
+      is what a calculation group is for.
+
+    Args:
+        pbip_path: Path to the root .pbip directory.
+        table: Only look at the measures of this table.
+        min_group_size: How many measures have to share a shape before
+            it is reported. Two is the minimum.
+
+    Returns:
+        Dict with the groups found and, for each, what the duplication
+        looks like: which measures share it and where exactly they
+        differ.
+
+        It does not write anything and does not apply the abstraction. A
+        Tabular measure cannot take a parameter, so the answer is a
+        calculation group, a helper table or a rewrite in place — and
+        which one is right depends on the model.
+    """
+    return _abstract(
+        pbip_path=pbip_path,
+        table=table,
+        min_group_size=min_group_size,
+    )
+
+
+@mcp.tool()
+@requires_scope("abbreviate_names")
+async def abbreviate_names(
+    pbip_path: str,
+    kind: str = "both",
+    max_length: int = 40,
+    abbreviate_words: bool = True,
+    drop_filler_words: bool = True,
+) -> dict[str, Any]:
+    """Propose shorter names for the measures and columns that need them.
+
+    Use this tool when the user asks to:
+    - Shorten, abbreviate or tidy up measure and column names.
+    - Find the names that have grown too long to read.
+    - Prepare a batch of renames before applying them.
+
+    Args:
+        pbip_path: Path to the root .pbip directory.
+        kind: "measures", "columns" or "both".
+        max_length: Above this length, a name is a candidate.
+        abbreviate_words: Shorten the words that have a standard
+            abbreviation ("Amount" to "Amt", "Quantity" to "Qty").
+        drop_filler_words: Drop the words that carry no meaning ("of",
+            "the", "in").
+
+    Returns:
+        Dict with the proposals and a rename map ready for
+        plan_change(intent="safe_rename").
+
+        It does not rename anything. A name that cannot be shortened
+        without changing what it says is reported as needing a name by
+        hand, and a proposal that would collide with an existing name
+        is adjusted.
+    """
+    return _abbreviate(
+        pbip_path=pbip_path,
+        kind=kind,
+        max_length=max_length,
+        abbreviate_words=abbreviate_words,
+        drop_filler_words=drop_filler_words,
     )
 
 
