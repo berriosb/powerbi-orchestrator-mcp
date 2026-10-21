@@ -49,6 +49,12 @@ def engine_te_path() -> Path:
     variable, which is where the GitHub Actions workflow puts the
     binary it downloads pinned to the upstream SHA256. Tabular Editor 2
     ships a Windows binary, so this only resolves on Windows runners.
+
+    **Only for tests that actually invoke the binary.** The contract
+    tests in ``test_te_modeling.py`` do not need it — they drive the
+    orchestrator with a stand-in for `te` — and they used to skip
+    themselves when it was missing, which is how they went years without
+    running in CI.
     """
     import os
 

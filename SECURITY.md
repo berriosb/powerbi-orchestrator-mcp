@@ -10,7 +10,9 @@
 
 | Version | Supported           |
 |---------|---------------------|
-| 1.19.x  | ✅ active           |
+| 1.22.x  | ✅ active           |
+| 1.21.x  | ✅ active           |
+| 1.20.x  | ✅ active           |
 | 1.18.x  | ✅ critical security fixes |
 | 1.17.x  | ✅ critical security fixes |
 | < 1.17  | ❌ upgrade required |
@@ -86,6 +88,12 @@ We aim to:
   no root is configured. A deployment that set both — a copied
   template, say — keeps its containment; the opt-out widening a root
   the operator declared would be a footgun.
+
+  The tools that **publish what they read** — `deploy_to_workspace` and
+  `sync_git_to_workspace`, which send a PBIP folder or a Git repository
+  to a Fabric workspace — validate their path as a **write**, whatever
+  the read opt-out says. What leaves the process is bounded by the
+  workspace, not by a read allowance.
 
   The system and credential directories are refused either way:
   `/etc`, `/proc`, `/sys`, `/dev`, `/run`, `/root`, `/boot`, the system

@@ -142,6 +142,9 @@ from powerbi_orchestrator_mcp.tools.promote_in_pipeline import (
     promote_in_pipeline as _promote,
 )
 from powerbi_orchestrator_mcp.tools.refactor_to_calculation_groups import (
+    RefactorResult,
+)
+from powerbi_orchestrator_mcp.tools.refactor_to_calculation_groups import (
     refactor_to_calculation_groups as _refactor,
 )
 from powerbi_orchestrator_mcp.tools.run_dax_regression import (
@@ -1536,6 +1539,17 @@ async def add_measure_with_validation(
     Returns:
         Dict with success status, lint findings, and modified file paths.
     """
+    if measure_writer is None:
+        # An MCP client cannot inject a Python callable, so over the
+        # protocol this was always None and the tool could not write
+        # anything — it answered "no measure_writer available". Build the
+        # writer from the modeling engine the orchestrator has.
+        from powerbi_orchestrator_mcp.orchestrator.engine_wiring import (
+            build_measure_writer,
+        )
+
+        measure_writer = build_measure_writer()
+
     result = _add_measure(
         target=target,
         measure_name=measure_name,
@@ -1807,6 +1821,27 @@ async def refactor_to_calculation_groups(
     Returns:
         Dict with proposed or applied calculation items, candidate measures, and impact assessment.
     """
+    if inspector is None or measure_writer is None:
+        # An MCP client cannot inject a Python callable, so over the
+        # protocol these were always None and the tool could neither read
+        # the model nor write to it — it answered "no inspector provided"
+        # and did nothing. Build both from the engine the orchestrator has.
+        from powerbi_orchestrator_mcp.orchestrator.engine_wiring import (
+            build_calc_group_writer,
+            build_measure_inspector,
+        )
+
+        if inspector is None:
+            try:
+                inspector = build_measure_inspector(target)
+            except Exception as exc:  # noqa: BLE001
+                return RefactorResult(
+                    dry_run=True,
+                    warnings=[f"no inspector available: {exc}"],
+                ).model_dump(mode="json")
+        if measure_writer is None:
+            measure_writer = build_calc_group_writer()
+
     result = _refactor(
         target=target,
         min_candidates=min_candidates,

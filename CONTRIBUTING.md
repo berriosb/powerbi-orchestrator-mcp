@@ -282,7 +282,9 @@ Include:
 - The OS + Python version.
 - The exact input you passed (mask any secrets).
 - The output you got vs what you expected.
-- The `powerbi-orchestrator-mcp --version` output.
+- The `powerbi-orchestrator version` output. (`powerbi-orchestrator-mcp`
+  is the MCP *server* entry point — it starts the server, so it prints no
+  version. The `powerbi-orchestrator` script is the CLI.)
 
 For security vulnerabilities, **do not** open a public issue — see
 [`SECURITY.md`](./SECURITY.md).

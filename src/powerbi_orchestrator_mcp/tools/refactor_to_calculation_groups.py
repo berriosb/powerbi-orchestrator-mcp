@@ -202,10 +202,11 @@ def refactor_to_calculation_groups(
             # delegate the persist step to TE and use the engine's
             # returned remappings.
             if hasattr(measure_writer, "refactor_to_calculation_groups"):
-                import asyncio
-
                 from powerbi_orchestrator_mcp.engines.te_adapter import (
                     CalcGroupSpec,
+                )
+                from powerbi_orchestrator_mcp.orchestrator.engine_wiring import (
+                    run_coroutine,
                 )
 
                 te_spec = [
@@ -219,7 +220,13 @@ def refactor_to_calculation_groups(
                     for plan in plans
                 ]
                 try:
-                    te_result = asyncio.run(
+                    # `asyncio.run` cannot be called from inside the MCP
+                    # server's event loop — it raises "asyncio.run()
+                    # cannot be called from a running event loop", which
+                    # turned every real refactor into a warning. The
+                    # helper runs the coroutine on a worker thread with
+                    # its own loop.
+                    te_result = run_coroutine(
                         measure_writer.refactor_to_calculation_groups(
                             pbip_path=target,
                             spec=te_spec,
