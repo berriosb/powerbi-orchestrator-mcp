@@ -13,7 +13,6 @@ which is why nothing here had ever been run against the binary.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -407,9 +406,9 @@ class TestPublicApi:
 
     def test_the_json_shape_is_not_used_anymore(self) -> None:
         """The old invented shape is gone, not just unused."""
-        source = Path(
-            "/home/bastianberrios/Proyectos/powerbi-orchestrator-mcp/"
-            "src/powerbi_orchestrator_mcp/validation/bpa_runner.py"
-        ).read_text(encoding="utf-8")
+        import inspect
+
+        from powerbi_orchestrator_mcp.validation import bpa_runner
+
+        source = inspect.getsource(bpa_runner)
         assert "sarif" not in source.lower()
-        assert json.dumps({"score": 1})
