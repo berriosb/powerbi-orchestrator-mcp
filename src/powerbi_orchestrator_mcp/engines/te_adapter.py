@@ -517,13 +517,23 @@ class InMemoryModelingAdapter:
                     for t in model_obj.get("tables", []):
                         if not table or str(t.get("name", "")).lower() == table.lower():
                             measures_list = t.setdefault("measures", [])
-                            measures_list.append(
-                                {
-                                    "name": measure.name,
-                                    "table": str(t.get("name", table)),
-                                    "expression": measure.expression,
-                                }
-                            )
+                            new_measure: dict[str, Any] = {
+                                "name": measure.name,
+                                "table": str(t.get("name", table)),
+                                "expression": measure.expression,
+                            }
+                            # The tool reports what it persisted. A measure
+                            # written without its format string, its
+                            # description or its hidden flag is not the
+                            # measure that was asked for, so the optional
+                            # attributes are written when they are set.
+                            if measure.format_string:
+                                new_measure["formatString"] = measure.format_string
+                            if measure.description:
+                                new_measure["description"] = measure.description
+                            if measure.is_hidden:
+                                new_measure["isHidden"] = True
+                            measures_list.append(new_measure)
                             file_modified = True
                             break
                     if file_modified:
@@ -541,7 +551,14 @@ class InMemoryModelingAdapter:
             elif tf.suffix == ".tmdl" and (not table or tf.stem.lower() == table.lower()):
                 try:
                     text = tf.read_text(encoding="utf-8")
-                    block = f"\n\n\tmeasure '{measure.name}' = {measure.expression}\n"
+                    properties = ""
+                    if measure.format_string:
+                        properties += f"\n\tformatString: {measure.format_string}"
+                    if measure.description:
+                        properties += f"\n\tdescription: {measure.description}"
+                    if measure.is_hidden:
+                        properties += "\n\tisHidden"
+                    block = f"\n\n\tmeasure '{measure.name}' = {measure.expression}{properties}\n"
                     tmp = tf.with_suffix(tf.suffix + ".tmp")
                     tmp.write_text(text + block, encoding="utf-8")
                     tmp.replace(tf)
