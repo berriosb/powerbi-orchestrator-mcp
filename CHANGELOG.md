@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.21.1] — 2026-10-20
+
+### Security
+- **The output path of three tools was not validated as a write.**
+  `generate_data_dictionary` wrote to the `output_path` it was given,
+  `screenshot_report_pages` created the `output_dir` it was given, and
+  the theme tool validated the PBIP path with the *read* validator and
+  then wrote inside it. The read validator is satisfied by the read
+  opt-out, so a caller holding `Tools.Read` could make the server
+  write outside the workspace and overwrite whatever was there. It was
+  verified, not assumed: a data dictionary was written outside the
+  workspace root and an existing file was replaced by it. All three
+  now validate the output as a write, which bounds it to the workspace
+  whatever the read opt-out says.
+- **The read opt-out did not do what the documentation said.** The
+  error a refused read produces told the operator to set
+  `PBI_ALLOW_OUTSIDE_WORKSPACE_READ=1` — and that would not have
+  helped, because a configured `PBI_WORKSPACE_ROOT` wins and nothing
+  widens it. The code was right and the message was wrong. The
+  precedence is now stated where it matters: a configured root is the
+  boundary, and the opt-out removes the boundary only when there is
+  none.
+- **`/run` and `~/.config` were missing from the denylist.** `/run`
+  holds the runtime state of a container and, with it, the secrets of
+  a pod; it was kept out only by the workspace boundary, so a
+  deployment that widens the boundary on purpose would have exposed
+  it. `~/.config` holds the credentials of a good number of tools and
+  is the one the read-path audit named explicitly.
+
+### Fixed
+- **The container command in DOCKER.md was broken.** The read-path
+  containment of v1.20.0 left the workspace root at the working
+  directory, `/home/orchestrator`, so a project mounted at `/data` was
+  refused — with a raw traceback, because the CLI did not catch the
+  error. The CLI now reports it as a message and exits 2, the
+  Dockerfile sets the root explicitly so it shows up in
+  `docker inspect`, and the compose file points it at the mount.
+- **The audit refusal message repeated its own prefix**
+  ("audit_log_write_failed: audit_log_write_failed:").
+
 ## [1.21.0] — 2026-10-20
 
 ### Added
