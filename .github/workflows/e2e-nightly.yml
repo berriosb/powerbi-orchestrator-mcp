@@ -21,6 +21,9 @@ on:
       - 'src/powerbi_orchestrator_mcp/validation/**'
       - 'tests/fixtures/**'
       - 'tests/e2e/**'
+      - 'Dockerfile'
+      - 'uv.lock'
+      - 'scripts/verify_docker_image.py'
       - '.github/workflows/e2e-nightly.yml'
 
 concurrency:
@@ -170,12 +173,44 @@ jobs:
           retention-days: 30
 
   # -------------------------------------------------------------------------
+  # Build the container image and check it really serves MCP.
+  #
+  # The image is the delivery form for anyone running the orchestrator in
+  # a container, and it breaks in ways the Python suite cannot see: a
+  # dependency missing from the image, an entrypoint pointing at a module
+  # that was never copied. It broke once that way — the package was
+  # installed editable, and the runtime stage did not carry the source
+  # tree the editable install pointed at.
+  # -------------------------------------------------------------------------
+  docker:
+    name: build and verify the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the package so the tool count can be compared
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Build the image
+        run: docker build -t powerbi-orchestrator-mcp:nightly .
+
+      - name: Check the image works as an MCP server
+        run: python scripts/verify_docker_image.py powerbi-orchestrator-mcp:nightly
+
+  # -------------------------------------------------------------------------
   # Auto-open a GitHub issue on nightly failure so the maintainer
   # gets pinged without having to dig through Actions logs.
   # -------------------------------------------------------------------------
   report-failure:
     name: report failure
-    needs: e2e
+    needs: [e2e, docker]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:

@@ -64,6 +64,16 @@ jobs:
           pip install pip-audit
           pip-audit --strict --skip-editable .
 
+      - name: The lock file is current
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          # uv.lock pins the dependency graph the Docker image and the
+          # dev environment resolve against. It rotted once — the
+          # project version in it was two releases behind — because
+          # nothing checked it. This is the check that was missing.
+          pip install uv
+          uv lock --check
+
   # ---------------------------------------------------------------
   # Job 2: test (full pytest + coverage + fresh-install e2e).
   # Depends on `lint` so we don't run tests when lint is broken.

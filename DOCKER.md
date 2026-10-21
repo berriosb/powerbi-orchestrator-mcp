@@ -4,10 +4,16 @@ Multi-stage Dockerfile that produces a minimal ~150 MB image with the
 orchestrator + all Python dependencies. Uses `uv` (Astral) for fast,
 cached dependency installs.
 
+The dependency graph comes from `uv.lock`, and the build runs
+`uv sync --locked`: if the lock and `pyproject.toml` disagree, the build
+fails instead of quietly resolving something else. CI checks the lock is
+current (`uv lock --check`), and the nightly builds the image and checks
+it really serves MCP.
+
 ## Build
 
 ```bash
-docker build -t powerbi-orchestrator-mcp:1.19.0 .
+docker build -t powerbi-orchestrator-mcp:1.20.0 .
 ```
 
 ## Run
@@ -15,31 +21,47 @@ docker build -t powerbi-orchestrator-mcp:1.19.0 .
 ### MCP server (stdio)
 
 ```bash
-docker run --rm -i powerbi-orchestrator-mcp:1.19.0
+docker run --rm -i powerbi-orchestrator-mcp:1.20.0
 ```
 
 The container listens on stdio; your MCP client attaches to it.
 
 ### Standalone CLI (validation, inspection, etc.)
 
+The image's entrypoint is the MCP server, so the CLI needs its own
+entrypoint:
+
 ```bash
-docker run --rm powerbi-orchestrator-mcp:1.19.0 version
-docker run --rm \
+docker run --rm --entrypoint powerbi-orchestrator \
+    powerbi-orchestrator-mcp:1.20.0 \
+    version
+docker run --rm --entrypoint powerbi-orchestrator \
     -v /host/path/to/sample.pbip:/data:ro \
-    powerbi-orchestrator-mcp:1.19.0 \
+    powerbi-orchestrator-mcp:1.20.0 \
     inspect /data
-docker run --rm \
+docker run --rm --entrypoint powerbi-orchestrator \
     -v /host/path/to/sample.pbip:/data:ro \
-    powerbi-orchestrator-mcp:1.19.0 \
+    powerbi-orchestrator-mcp:1.20.0 \
     validate /data --min-score 80
 ```
+
+### Check the image you just built
+
+```bash
+python scripts/verify_docker_image.py powerbi-orchestrator-mcp:1.20.0
+```
+
+It runs the CLI, completes the MCP handshake against the container, and
+compares the number of tools it exposes with the number the package
+exposes.
 
 ### Docker Compose
 
 ```bash
 docker compose up               # interactive stdio (MCP client)
-docker compose run --rm orchestrator version
-docker compose run --rm orchestrator validate /workspace/examples/01-safe-rename
+docker compose run --rm --entrypoint powerbi-orchestrator orchestrator version
+docker compose run --rm --entrypoint powerbi-orchestrator orchestrator \
+    validate /workspace/examples/01-safe-rename
 ```
 
 Persistent state (audit log, plan DB, execution DB) lives in the named
@@ -57,7 +79,7 @@ docker run --rm -i \
     -e PBI_TENANT_ID=00000000-0000-0000-0000-000000000000 \
     -e PBI_CLIENT_ID=00000000-0000-0000-0000-000000000000 \
     -e PBI_CLIENT_SECRET=your-secret \
-    powerbi-orchestrator-mcp:1.19.0
+    powerbi-orchestrator-mcp:1.20.0
 ```
 
 `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` are still
@@ -78,7 +100,7 @@ docker run --rm -p 8000:8000 \
     -e PBI_HTTP_ALLOWED_HOSTS=orchestrator.internal \
     -e PBI_ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000 \
     -e PBI_ENTRA_AUDIENCE=api://powerbi-orchestrator-mcp \
-    powerbi-orchestrator-mcp:1.19.0
+    powerbi-orchestrator-mcp:1.20.0
 ```
 
 `PBI_HTTP_ALLOWED_HOSTS` is a comma-separated list of Host header values the
@@ -105,5 +127,5 @@ Python packages (mcp, azure-identity, httpx, pydantic).
 
 To verify:
 ```bash
-docker images powerbi-orchestrator-mcp:1.19.0
+docker images powerbi-orchestrator-mcp:1.20.0
 ```
