@@ -1,0 +1,10 @@
+[
+  {
+    "Name": "OrchestratorSmokeRule",
+    "AppliesTo": ["Measures"],
+    "Expression": "TRUE()",
+    "Message": "Smoke rule: the BPA engine ran, applied its rules and reported a finding.",
+    "Category": "General",
+    "Severity": "Warning"
+  }
+]
