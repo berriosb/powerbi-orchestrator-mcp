@@ -10,6 +10,7 @@
 
 | Version | Supported           |
 |---------|---------------------|
+| 1.23.x  | ✅ active           |
 | 1.22.x  | ✅ active           |
 | 1.21.x  | ✅ active           |
 | 1.20.x  | ✅ active           |
@@ -125,9 +126,23 @@ We aim to:
 - The audit log covers the 20 state-changing tools. A call refused by
   the scope check leaves no row, and `plan_change` — which writes to
   the plan store — is not audited.
-- The audit log does not record **who** acted. It records what was
-  done; the plan store records the owner of a plan. Attributing an
-  action to a person needs both.
+- The audit log records **who** acted, in a column of its own. The
+  bound principal over HTTP; the OS user the process runs as over
+  stdio, marked with a `local:` prefix. The column is part of the
+  hashed row, so the actor cannot be edited afterwards without
+  breaking the chain. It is deliberately *not* redacted: a principal
+  is usually a UPN, and the payload redactor turns emails into hashes,
+  which is not an attribution.
+- A **read-only server** refuses every state-changing tool, whatever
+  the caller's scopes say. `PBI_READONLY=1`, or `--readonly` on the
+  command line. It is a property of the deployment, not of the caller:
+  a `Tools.Admin` principal is refused too.
+- The **deployment's configuration is reported** at startup and through
+  `powerbi_health`: whether the read boundary is on, where the
+  workspace root is, whether the transport makes the per-tool scopes
+  mean anything, whether the audit log is fail-closed, and whether the
+  orchestrator home is writable. A deployment that turned the read
+  boundary off says so.
 
 ### Out-of-scope
 
@@ -148,6 +163,9 @@ We aim to:
 | Circuit breaker (opens after 5 consecutive 5xx; per client instance) | `cloud/fabric_client.py` |
 | Least-privilege token scopes (read vs write) | `cloud/fabric_client.py`, `cloud/auth.py` |
 | HMAC-chained audit log (tamper-evident) | `orchestrator/audit.py` |
+| Actor recorded per audit entry (`principal` column, in the chain) | `orchestrator/audit.py`, `orchestrator/audit_guard.py` |
+| Read-only server mode (`PBI_READONLY=1` / `--readonly`) | `orchestrator/authorization.py` |
+| Production-readiness findings at startup and in `powerbi_health` | `orchestrator/readiness.py` |
 | Unambiguous field encoding in the chain hash | `orchestrator/audit.py` |
 | Signed chain anchor (truncation cannot be covered up) | `orchestrator/audit.py` |
 | Truncation detection via out-of-DB chain anchor | `orchestrator/audit.py` |

@@ -8,11 +8,25 @@ scope it needs and enforces that mapping before the tool body runs.
 Enforcement is skipped when no identity is bound to the context: over the
 stdio transport the MCP client already has full local access, so the process
 itself is the trust boundary (see ``SECURITY.md`` threat model).
+
+Two server-level policies live here too, because both are decisions about
+the *process* rather than about a caller:
+
+- **Read-only mode** (``PBI_READONLY=1`` or ``--readonly``) refuses every
+  mutating tool, whatever the caller's scopes say. It is the switch an
+  operator flips to run an LLM against a real workspace without letting it
+  change anything.
+- **The effective principal**: who is acting, for the audit trail. Over
+  HTTP that is the bound principal. Over stdio there is no principal, so
+  it is the OS user the process runs as — the human who physically asked
+  for the call. An audit trail that says nothing about who acted is not
+  a trail.
 """
 
 from __future__ import annotations
 
 import functools
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -22,7 +36,46 @@ SCOPE_ADMIN = "Tools.Admin"
 
 LOCAL_IDENTITY = "local"
 
+# Set to 1 to refuse every state-changing tool. The scopes say what a
+# principal may do; this says what the whole server may do, which is the
+# question a read-only deployment actually asks.
+READONLY_ENV = "PBI_READONLY"
+
 _IDENTITY_CLAIMS = ("oid", "sub", "upn", "preferred_username", "appid", "unique_name", "name")
+
+
+def readonly_mode() -> bool:
+    """True when the server refuses every state-changing tool."""
+    return os.environ.get(READONLY_ENV, "").strip().lower() in ("1", "true", "yes")
+
+
+def _os_user() -> str:
+    """The OS user this process runs as.
+
+    Over stdio there is no bound principal, but the process still runs as
+    somebody: the person who started it. That is the best available
+    answer to "who acted", and it is a real answer rather than a
+    placeholder.
+    """
+    try:
+        import getpass
+
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001 - a locked-down host may refuse
+        return LOCAL_IDENTITY
+
+
+def effective_principal() -> str:
+    """Who is acting, for the audit trail.
+
+    The bound principal when there is one; otherwise the OS user. The
+    ``local:`` prefix marks the second case so a reader can tell an
+    authenticated principal from a local session.
+    """
+    identity = current_identity()
+    if identity:
+        return identity
+    return f"{LOCAL_IDENTITY}:{_os_user()}"
 
 
 def current_identity() -> str | None:
@@ -83,6 +136,15 @@ class ToolAuthorizationError(PermissionError):
     """Raised when the caller's scopes do not cover the requested tool."""
 
 
+class ReadOnlyModeError(PermissionError):
+    """Raised when a state-changing tool is called in read-only mode.
+
+    The server was started read-only, so the tool is refused no matter
+    who is asking. A scoped principal is still refused: the read-only
+    switch is a property of the deployment, not of the caller.
+    """
+
+
 def required_scope_for_tool(tool_name: str) -> str:
     """Return the scope a tool needs, defaulting to read-only access."""
     return TOOL_REQUIRED_SCOPE.get(tool_name, SCOPE_READ)
@@ -111,12 +173,29 @@ def _granted_scopes() -> set[str] | None:
 
 
 def authorize_tool(tool_name: str) -> None:
-    """Raise when the bound identity lacks the scope required by a tool."""
+    """Raise when the tool may not run in this deployment.
+
+    Two checks, in this order:
+
+    1. **Read-only mode.** A state-changing tool is refused outright.
+       This is checked before the scopes because it is a property of the
+       server, not of the caller: a deployment that was started
+       read-only stays read-only whatever the caller's scopes say.
+    2. **The caller's scopes.** Skipped when no identity is bound, which
+       is the stdio case.
+    """
+    needed = required_scope_for_tool(tool_name)
+    if readonly_mode() and needed != SCOPE_READ:
+        raise ReadOnlyModeError(
+            f"tool {tool_name!r} is state-changing and the server is in "
+            f"read-only mode ({READONLY_ENV} is set). It would need "
+            f"{needed}. Unset {READONLY_ENV} to allow state changes."
+        )
+
     scopes = _granted_scopes()
     if scopes is None:
         return
 
-    needed = required_scope_for_tool(tool_name)
     if needed in scopes or SCOPE_ADMIN in scopes:
         return
 
@@ -165,13 +244,17 @@ def requires_scope(tool_name: str) -> Callable[[Callable[..., Any]], Callable[..
 
 __all__ = [
     "LOCAL_IDENTITY",
+    "READONLY_ENV",
     "SCOPE_ADMIN",
     "SCOPE_READ",
     "SCOPE_WRITE",
     "TOOL_REQUIRED_SCOPE",
+    "ReadOnlyModeError",
     "ToolAuthorizationError",
     "authorize_tool",
     "current_identity",
+    "effective_principal",
+    "readonly_mode",
     "required_scope_for_tool",
     "requires_scope",
 ]

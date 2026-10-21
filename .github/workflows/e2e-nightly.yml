@@ -110,6 +110,12 @@ jobs:
       - name: Run E2E suite
         id: pytest
         shell: bash
+        env:
+          # Tabular Editor runs the rules of the machine it runs on, and a
+          # CI runner has none. Without a rules file the BPA check is
+          # refused rather than reporting a clean score that means
+          # nothing, so the real-binary test needs one.
+          PBI_TE_BPA_RULES: ${{ github.workspace }}/tests/fixtures/bpa_rules.json
         run: |
           set +e
           mkdir -p test-results

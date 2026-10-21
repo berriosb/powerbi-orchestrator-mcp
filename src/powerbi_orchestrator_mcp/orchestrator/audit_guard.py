@@ -159,6 +159,12 @@ def _write(
     status: str,
     payload: dict[str, Any],
 ) -> str | None:
+    from powerbi_orchestrator_mcp.orchestrator.authorization import effective_principal
+
+    # Who acted goes into a column of its own, and that column is part
+    # of the hashed row: the actor cannot be edited afterwards without
+    # breaking the chain. A trail that says what happened but not who
+    # did it is not a trail.
     try:
         CloudAuditLog().record(
             operation=tool_name,
@@ -166,6 +172,7 @@ def _write(
             payload=payload,
             result_status=status,
             tool_args=call_args,
+            principal=effective_principal(),
         )
     except Exception as exc:
         message = f"audit_log_write_failed: {type(exc).__name__}: {exc}"

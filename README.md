@@ -7,13 +7,13 @@
 > El orquestrador **delega** a motores especializados (subprocess) y
 > presenta al LLM una superficie coherente y de alto nivel.
 
-[![Tests](https://img.shields.io/badge/tests-1577%20passing-brightgreen)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-1629%20passing-brightgreen)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen)](./tests/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](./pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.22.0 — Beta. 31 tools, 89% cobertura, enterprise hardening
+**Status:** v1.23.0 — Beta. 31 tools, 89% cobertura, enterprise hardening
 (per-tool scopes, read- and write-path containment, plan ownership, full
 audit trail).
 Every state-changing tool is safe by default: `dry_run=True` on
@@ -23,7 +23,7 @@ Every tool also **reports what it actually did**: a check that could not
 run says so instead of returning a green result, a rollback that only
 partly succeeded is reported as partial, and a step says which engine
 served it.
-See [release notes](./RELEASE-NOTES-v1.22.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./RELEASE-NOTES-v1.23.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
@@ -100,6 +100,22 @@ Además:
   workspace dejan registro (`success` / `failed` / `dry_run` / `partial` /
   `rolled_back`) en un log encadenado con HMAC. Los valores guardados bajo
   una clave que nombra un secreto se redactan enteros.
+- **La auditoría dice *quién*.** Cada entrada lleva el actor en una columna
+  propia: el principal ligado sobre HTTP, el usuario del sistema operativo
+  que corre el proceso sobre stdio (marcado `local:`). La columna está
+  dentro de la cadena, así que el actor no se puede retocar después sin
+  romperla. No se redacta a propósito: un principal suele ser una UPN, y
+  el redactor convierte los emails en hashes — que no es una atribución.
+- **Un servidor en solo-lectura.** `PBI_READONLY=1` (o `--readonly` en la
+  línea de comandos) rechaza toda tool que modifique estado, sea quien sea
+  el que llame: es una propiedad del despliegue, no del llamador. Un
+  principal con `Tools.Admin` tampoco puede saltárselo.
+- **El despliegue se reporta a sí mismo.** Al arrancar, y en
+  `powerbi_health`, el servidor dice si la frontera de lectura está activa,
+  dónde está el root del workspace, si el transporte hace que los scopes
+  signifiquen algo, si el audit log es fail-closed y si el home del
+  orquestador se puede escribir. Un despliegue que apagó la frontera de
+  lectura lo dice.
 - **DAX acotado.** `execute_dax_query` devuelve como máximo 1000 filas por
   defecto (techo 10 000) y marca el truncamiento.
 - **Scopes por tool** sobre transporte HTTP: cada una de las 31 tools

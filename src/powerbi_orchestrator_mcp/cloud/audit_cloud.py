@@ -209,11 +209,17 @@ class CloudAuditLog:
         payload: dict[str, Any] | None = None,
         result_status: str = "success",
         tool_args: dict[str, Any] | None = None,
+        principal: str | None = None,
     ) -> AuditEntry:
         """Record a cloud operation with mandatory redaction.
 
         ``operation`` becomes ``tool_name="cloud:<operation>"``.
         ``payload`` is redacted via ``redact_payload()`` before persisting.
+
+        ``principal`` is the actor. It is **not** redacted and it does
+        not go through the payload: a principal is usually a UPN, and
+        the redactor would turn it into a hash — which is not an
+        attribution.
         """
         redacted_payload = redact_payload(payload or {})
         # Include the structured fields in payload for forensic queries.
@@ -227,6 +233,7 @@ class CloudAuditLog:
             tool_args=tool_args or {"operation": operation},
             result_status=result_status,
             target_id=target_id,
+            principal=principal,
             payload={
                 **redacted_payload,
                 "retention_days": self._retention_days,

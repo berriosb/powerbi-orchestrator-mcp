@@ -26,7 +26,7 @@ falls back or elicits a remediation hint — it doesn't crash the server.
 | `python_modeling` (built-in) | Modeling | Win/Mac/Linux | (built into orchestrator) | Direct file I/O | ✅ always available |
 | `powerbi-modeling-mcp` | Modeling | Win/Mac/Linux | `npx @microsoft/powerbi-modeling-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ recommended |
 | `superbi-mcp` | Report | Windows primarily | `npx superbi-mcp` | **MCP over stdio** (JSON-RPC 2.0) | ✅ wired |
-| `te` (Tabular Editor CLI) | BPA | Win/Mac/Linux | [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases) | CLI subprocess (no MCP) | ✅ for the BPA check |
+| `te` (Tabular Editor 2) | BPA | Windows | [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases) | CLI subprocess (no MCP) | ✅ for the BPA check |
 
 **Los motores que no están en la tabla no son motores del
 orquestador.** `dscmd` (DAX Studio CLI) y `pbip-validator` figuraron
@@ -144,22 +144,46 @@ npx @microsoft/powerbi-modeling-mcp --version
 **License:** Microsoft EULA (preview). Commercial use requires EULA
 acceptance. The orchestrator does NOT auto-accept EULAs.
 
-### 3.2 `te` (Tabular Editor CLI)
+### 3.2 `te` (Tabular Editor)
 
-**What it is:** Best Practice Analyzer runner + TMDL editor + VertiPaq
-analyzer. Used as modeling fallback and for BPA validation.
+**What it is:** the Best Practice Analyzer runner. It is the only engine
+the orchestrator shells out to: the model edits go through the built-in
+`python_modeling` adapter.
 
-**Install:**
-- **Windows / macOS:** download from [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases)
-- **Linux:** install via `dotnet tool install --global TabularEditor`
+> **There are two products, and they are not interchangeable.**
+>
+> - **Tabular Editor 2** — `TabularEditor.exe`, free, Windows only. Its
+>   CLI runs BPA with `-A <rules.json>` and writes SARIF with
+>   `-G <report.sarif>`. **This is the one this project uses.**
+> - **Tabular Editor CLI** — `te`, newer, cross-platform. Different
+>   command shape (`te bpa run --model ... --output-format json`),
+>   it needs a Tabular Editor account to download, and the vendor
+>   states the preview stops working after **2026-10-31**. It is not a
+>   dependency here.
+
+**Install (Tabular Editor 2):**
+- **Windows:** download `TabularEditor.Portable.zip` from
+  [Tabular Editor releases](https://github.com/TabularEditor/TabularEditor/releases)
+- Put the binary on `PATH` as `te`, or point `PBI_TE_BPA_RULES` and
+  the runner at it.
 
 **Verify:**
 ```bash
-te2 --version
-# Expected: 3.0.0 (or pinned version)
+te --version
 ```
 
-**License:** TE3 requires a license for commercial use; TE2 is free.
+**Rules — required.** Tabular Editor runs the rules of the machine it
+runs on. On a server that is none, so a run without a rules file would
+report a clean score that means nothing. The runner refuses to run in
+that case: **no rules configured is a skipped check, not a passing
+one.**
+
+```bash
+export PBI_TE_BPA_RULES=/path/to/BPARules.json   # a path or a URL
+```
+
+**License:** Tabular Editor 2 is free. Tabular Editor 3 and its CLI
+require a license for commercial use.
 
 ### 3.3 `superbi-mcp` (Windows-focused, advanced report editing)
 

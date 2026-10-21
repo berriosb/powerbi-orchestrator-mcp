@@ -8,6 +8,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.23.0] — 2026-10-21
+
+### Security
+- **A read-only server mode.** `PBI_READONLY=1` — or `--readonly` on
+  the command line — refuses every state-changing tool. The check runs
+  in `authorize_tool` before the scopes, so it is a property of the
+  deployment rather than of the caller: a `Tools.Admin` principal is
+  refused too. One point of enforcement covers all twenty mutating
+  tools, and the tool body never runs.
+- **The audit log records who acted.** Every entry carries the actor in
+  a column of its own: the bound principal over HTTP, the OS user the
+  process runs as over stdio, marked `local:`. The column is part of
+  the hashed row, so it cannot be edited afterwards without breaking
+  the chain — and it is deliberately *not* redacted, because a
+  principal is usually a UPN and the payload redactor turns emails
+  into hashes, which is not an attribution. A row with no principal
+  hashes the older five fields, so an audit log written before the
+  column existed still verifies after the upgrade.
+- **The deployment reports its own configuration.** The startup log
+  and `powerbi_health` now say whether the read boundary is on, where
+  the workspace root is, whether the transport makes the per-tool
+  scopes mean anything, whether the audit log is fail-closed, whether
+  the orchestrator home is writable, and whether there are BPA rules
+  configured. A deployment that turned the read boundary off says so.
+
+### Fixed
+- **The BPA invocation matched no real Tabular Editor.** The runner
+  called `te bpa <model> --ruleset <name> --format json` and parsed a
+  `{"score", "findings": [{"RuleId"}]}` schema. Neither is the CLI of
+  either product. The runner now speaks Tabular Editor 2 — the product
+  the project pins and downloads — with `<model> -A <rules.json> -V`,
+  and reads the findings out of the VSTS annotations Tabular Editor
+  writes. The score is derived from the findings, because Tabular
+  Editor does not produce one.
+- **A BPA violation was going to be reported as a failed run.**
+  Tabular Editor returns exit code 1 when it produced any *Error*-level
+  output, and a severity-3 BPA violation *is* an Error-level output. The
+  exit code alone would have thrown away the findings the run had just
+  produced. The output tells the two apart, not the code.
+- **BPA without rules reported a clean score that meant nothing.**
+  Tabular Editor runs the rules of the machine it runs on, and a server
+  has none, so the run would have returned "100, no findings". The
+  runner now refuses to run without a rules file (`PBI_TE_BPA_RULES`,
+  or one passed by the caller): no rules configured is a skipped check,
+  not a passing one.
+- **A test that drives the real binary.** `tests/e2e/test_te_real_binary.py`
+  invokes Tabular Editor against the fixture and checks the whole
+  chain, plus the mapping of a real failure onto an `EngineError`. It
+  runs on the Windows runner of the nightly workflow, where the binary
+  is installed.
+- **A BPA run that waits for a window is now told apart from a slow
+  analysis.** Tabular Editor 2 is a desktop application: its Best
+  Practice Analyzer results open in a window, and on a headless runner
+  nothing closes it, so the process waits forever. The vendor states
+  that TE2 has no non-interactive mode and no structured output; the
+  product that has both — the Tabular Editor CLI — is a preview build
+  the vendor stops on 2026-10-31. The runner now says which of the two
+  happened, and never reports a clean score over output it could not
+  read.
+
+### Documentation
+- `docs/engines-setup.md` explains that Tabular Editor 2 and the
+  Tabular Editor CLI are different products with different CLIs, and
+  that the latter — which needs an account to download and whose
+  preview stops working after 2026-10-31 — is not a dependency here.
+
 ## [1.22.0] — 2026-10-21
 
 ### Security
