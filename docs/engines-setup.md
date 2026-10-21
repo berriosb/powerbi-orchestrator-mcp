@@ -76,7 +76,7 @@ async def _rpc(self, method, params, *, timeout_s=None):
 
 The orchestrator acts as a **headless MCP client** — it never exposes
 this to the upstream MCP client. From Claude Desktop's perspective,
-the orchestrator is "just" a server with 26 tools; the fact that
+the orchestrator is "just" a server with 31 tools; the fact that
 those tools internally talk to other MCP servers is invisible.
 
 ### Pattern B: Subprocess CLI wrapper (for native binaries)

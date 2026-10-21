@@ -1,6 +1,6 @@
 # MVP STATUS — powerbi-orchestrator-mcp
 
-> Estado de implementación vs specs. **Post-Sprint 14 = 26/26 tools**
+> Estado de implementación vs specs. **Post-Sprint 14 = 31/31 tools**
 > (12 MVP + 3 v1.1 + 8 v2 + 3 v3) per SPEC §6.1+§6.2+§6.3+§7. Latest
 > release [`v1.7.0`](../RELEASE-NOTES-v1.7.0.md); hardening backlog closed.
 
@@ -103,7 +103,7 @@
 - TE modeling adapter concretado: `mode='skeleton'` por defecto, `mode='subprocess'` cuando TE binario está en PATH. Wired en `create_semantic_model_from_schema` y `refactor_to_calculation_groups`.
 - Story variance analysis: comparación determinística byte-level de PNG screenshots para detectar regresiones visuales.
 
-Total: **26/26 tools implementadas**, backlog de hardening cerrado.
+Total: **31/31 tools implementadas**, backlog de hardening cerrado.
 
 ---
 
@@ -126,10 +126,10 @@ Sprint 13 fue ocupado por hardening sin tools nuevas (cobertura, redactado PII, 
 
 ```bash
 pip install -e .
-python scripts/verify_mcp_server.py    # fresh-install e2e check (26 tools)
+python scripts/verify_mcp_server.py    # fresh-install e2e check (31 tools)
 pytest tests/                          # 665 unit + integration tests
 mypy --strict src/powerbi_orchestrator_mcp
 ruff check src/powerbi_orchestrator_mcp
 ```
 
-Resultado esperado: 26 tools/list, 665/665 tests passing, mypy+ruff clean, exit code 0.
+Resultado esperado: 31 tools/list, los tests en verde, mypy+ruff clean, exit code 0.

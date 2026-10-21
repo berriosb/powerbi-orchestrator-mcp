@@ -8,7 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
-## [Unreleased]
+## [1.21.0] — 2026-10-20
+
+### Added
+- **Three model-refactoring tools** (28 → 31 tools). All three are
+  analysis tools: they report what they found and write nothing, so
+  they can be tried on a real model without a rollback plan.
+  - `simplify_dax_measure` — rewrites a DAX expression in its shorter
+    equivalent form, and says which rewrites produced it. It works on
+    an expression, on one measure, or on every measure in a project.
+  - `abstract_measures` — finds the logic that is written more than
+    once across measures, and reports where exactly it differs.
+  - `abbreviate_names` — proposes shorter names for the measures and
+    columns that have grown too long, as a rename map ready for
+    `plan_change(intent="safe_rename")`.
+- **A DAX expression parser.** The orchestrator could only look at a
+  measure with regular expressions, which is enough to match text but
+  not to answer "is this `IF` nested inside another `IF` on the same
+  test" or "does this subexpression appear twice". There is now a
+  tokeniser and a recursive-descent parser for the subset of DAX that
+  measures use. A construct it does not understand raises an error
+  with the offset, so an expression beyond it is left alone rather
+  than rewritten on a guess.
 
 ### Security
 - **The audit log is written ahead of time.** The attempt is recorded

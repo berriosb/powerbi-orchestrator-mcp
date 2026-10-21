@@ -12,7 +12,7 @@
 
 ## Cómo leer este repo de specs
 
-- **[`SPEC.md`](../SPEC.md)** — visión + arquitectura 6 capas + stack + catálogo completo (28 tools).
+- **[`SPEC.md`](../SPEC.md)** — visión + arquitectura 6 capas + stack + catálogo completo (31 tools).
 - **[`docs/architecture.md`](../docs/architecture.md)** — arquitectura detallada con diagramas.
 - **Specs por capa (`0X-*.md`)** — cómo se implementa cada capa del servidor.
 - **Specs por tool (`tools/*.md`)** — herramientas individuales de alto nivel.
@@ -46,6 +46,12 @@
 - [x] `tools/audit-model-and-report.md` — Auditoría integral: BPA + WCAG + lint + star-schema + naming.
 - [x] `tools/deploy-to-workspace.md` — Publish PBIP a Fabric workspace con refresh + RLS + labels.
 - [x] `tools/generate-data-dictionary.md` — Data dictionary Markdown/HTML con diagrama Mermaid + coverage score (creado 2026-08-26).
+
+### Tools de refactoring del modelo (v1.21)
+
+- [x] `tools/simplify-dax-measure.md` — Reescribe una expresión DAX en su forma equivalente y corta, y dice qué reescrituras la produjeron (creado 2026-10-20).
+- [x] `tools/abstract-measures.md` — Encuentra la lógica escrita más de una vez entre medidas y dice dónde difieren (creado 2026-10-20).
+- [x] `tools/abbreviate-names.md` — Propone nombres más cortos para las medidas y columnas que se han hecho demasiado largos (creado 2026-10-20).
 
 ### Tools MVP v1 documentadas en specs por capa (no en `specs/tools/`)
 

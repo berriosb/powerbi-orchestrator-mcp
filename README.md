@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.20.0 — Beta. 28 tools, 88% cobertura, enterprise hardening
+**Status:** v1.21.0 — Beta. 31 tools, 89% cobertura, enterprise hardening
 (per-tool scopes, write-path containment, plan ownership, full audit trail).
 Every state-changing tool is safe by default: `dry_run=True` on
 `deploy_to_workspace` and `run_refresh`, per-step confirmation on
@@ -51,7 +51,7 @@ powerbi-orchestrator-mcp --start  # runs over stdio
 python scripts/verify_mcp_server.py
 ```
 
-That's it — your LLM now sees 28 tools for Power BI / Fabric. See the
+That's it — your LLM now sees 31 tools for Power BI / Fabric. See the
 [`examples/`](./examples/) directory for 3 reproducible workflows.
 
 > **Antes de usarlo con datos de clientes**, la suite de tests no cubre nada
@@ -96,7 +96,7 @@ Además:
   una clave que nombra un secreto se redactan enteros.
 - **DAX acotado.** `execute_dax_query` devuelve como máximo 1000 filas por
   defecto (techo 10 000) y marca el truncamiento.
-- **Scopes por tool** sobre transporte HTTP: cada una de las 28 tools
+- **Scopes por tool** sobre transporte HTTP: cada una de las 31 tools
   declara el scope que necesita. Las mutantes requieren `Tools.Write`;
   liberar entre etapas de un pipeline y aplicar sensitivity labels
   requieren `Tools.Admin`; `Tools.Admin` concede todos los inferiores.
@@ -132,14 +132,14 @@ incluidos los controles que **no** existen.
 
 El proyecto **NO** es un wrapper sobre los MCP servers existentes. Es un
 servidor MCP propio que **consume** otros MCP servers como subprocess.
-Esto es lo que permite presentar al LLM 28 tools coherentes en lugar
+Esto es lo que permite presentar al LLM 31 tools coherentes en lugar
 de 500 primitivas dispersas.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Capa 1: MCP Client (Claude Desktop, VS Code, Copilot, Cursor)    │
 │         Habla JSON-RPC sobre stdio con el orquestrador.          │
-│         El LLM ve 28 tools de alto nivel.                        │
+│         El LLM ve 31 tools de alto nivel.                        │
 └────────────────────────────┬────────────────────────────────────┘
                              │ stdio + JSON-RPC
 ┌────────────────────────────▼────────────────────────────────────┐
@@ -281,7 +281,7 @@ Claude Code, Cursor** y cualquier cliente MCP stdio.
 
 ### 4. Probar
 
-En tu cliente MCP, el LLM ve **28 tools de alto nivel**, agrupadas por capa:
+En tu cliente MCP, el LLM ve **31 tools de alto nivel**, agrupadas por capa:
 
 **Sesión y planificación**
 - `connect_target` — abrir sesión contra un PBIP / Fabric workspace / PBI Desktop
@@ -291,6 +291,11 @@ En tu cliente MCP, el LLM ve **28 tools de alto nivel**, agrupadas por capa:
 **Modelado semántico**
 - `create_semantic_model_from_schema`, `add_measure_with_validation`,
   `refactor_to_calculation_groups`, `diff_models`, `generate_data_dictionary`
+
+**Refactoring del modelo**
+- `simplify_dax_measure` — reescribir una medida DAX en su forma corta equivalente
+- `abstract_measures` — la lógica que está escrita más de una vez
+- `abbreviate_names` — nombres de medidas y columnas que se han hecho demasiado largos
 
 **Autoría de reportes**
 - `create_report_from_dataset`, `edit_report_visual`,
@@ -428,7 +433,7 @@ pasada es la que dice si el arreglo funcionó.
 
 ## Estado actual (v1.20.0)
 
-- ✅ 28 tools implementadas (modelado, reportes, nube, auditoría, UX, DAX)
+- ✅ 31 tools implementadas (modelado, refactoring, reportes, nube, auditoría, UX, DAX)
 - ✅ Cross-engine rollback
 - ✅ Audit log encadenado con HMAC, con anchor firmado
 - ✅ PlanBuilder con templates versionables

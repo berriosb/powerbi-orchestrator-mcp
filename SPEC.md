@@ -5,7 +5,7 @@
 > [`docs/architecture.md`](./docs/architecture.md) y los specs modulares en
 > [`specs/`](./specs/README.md).
 
-**Status:** v1.11.0 released (2026-10-01). 28 tools implementadas en FastMCP (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + 2 runtime extensions). Ver [`RELEASE-NOTES-v1.11.0.md`](./RELEASE-NOTES-v1.11.0.md) y [`CHANGELOG.md`](./CHANGELOG.md).
+**Status:** v1.21.0 (2026-10-20). 31 tools implementadas en FastMCP (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + 2 runtime extensions + 3 refactoring). Ver [`RELEASE-NOTES-v1.11.0.md`](./RELEASE-NOTES-v1.11.0.md) y [`CHANGELOG.md`](./CHANGELOG.md).
 **Fecha:** 2026-08-21 (spec original); v1.11.0 released 2026-10-01
 **Owner:** Bastian Berrios (@berriosb)
 **Licencia:** MIT
@@ -58,7 +58,7 @@ agente. Las otras 5 son internas.
                              │ MCP (stdio)
 ┌────────────────────────────▼────────────────────────────────────┐
 │ CAPA 6 · ORQUESTACIÓN (este servidor)                           │
-│   28 tools de alto nivel + planner + rollback engine            │
+│   31 tools de alto nivel + planner + rollback engine            │
 └──┬───────────┬───────────┬───────────┬──────────────────────────┘
    │           │           │           │
    ▼           ▼           ▼           ▼
@@ -142,7 +142,7 @@ Config (igual en todos):
 
 ## 4. Herramientas (alto nivel)
 
-**28 tools de alto nivel** agrupados en 7 categorías. Cada tool devuelve
+**31 tools de alto nivel** agrupados en 8 categorías. Cada tool devuelve
 `structuredContent` (JSON Schema validado por Pydantic) y opcionalmente
 `artifact` (screenshot, archivo generado).
 
@@ -156,6 +156,11 @@ Config (igual en todos):
 - `add_measure_with_validation` — añade measure con lint DAX + runtime check (v1.1).
 - `refactor_to_calculation_groups` — refactor measures candidatas con reconciliación de totales (v2).
 - `setup_rls_and_roles` — crea roles RLS + matriz de prueba por rol (v2).
+
+### 4.2b Refactoring del modelo (3)
+- `simplify_dax_measure` — reescribe una expresión DAX en su forma equivalente y corta (v1.21).
+- `abstract_measures` — encuentra la lógica escrita más de una vez y dice dónde difieren (v1.21).
+- `abbreviate_names` — propone nombres más cortos para medidas y columnas que se hicieron largos (v1.21).
 
 ### 4.3 Reporte (3)
 - `create_report_from_dataset` — scaffold PBIR mínimo viable desde dataset (v1.1).
@@ -188,8 +193,8 @@ Config (igual en todos):
 - `screenshot_report_pages` — renderizado de visuales (SVGs y PNGs nativos con manifest) (v2/v3).
 - `powerbi_health` — snapshot de salud del servidor MCP, engines disponibles, plan store y audit log (v1.9).
 
-Detalle de cada tool en `specs/tools/`. Todas las 28 herramientas están
-implementadas y operativas en el servidor FastMCP a partir de la versión v1.11.0.
+Detalle de cada tool en `specs/tools/`. Todas las 31 herramientas están
+implementadas y operativas en el servidor FastMCP.
 
 ---
 

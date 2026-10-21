@@ -13,7 +13,7 @@ it really serves MCP.
 ## Build
 
 ```bash
-docker build -t powerbi-orchestrator-mcp:1.20.0 .
+docker build -t powerbi-orchestrator-mcp:1.21.0 .
 ```
 
 ## Run
@@ -21,7 +21,7 @@ docker build -t powerbi-orchestrator-mcp:1.20.0 .
 ### MCP server (stdio)
 
 ```bash
-docker run --rm -i powerbi-orchestrator-mcp:1.20.0
+docker run --rm -i powerbi-orchestrator-mcp:1.21.0
 ```
 
 The container listens on stdio; your MCP client attaches to it.
@@ -33,22 +33,22 @@ entrypoint:
 
 ```bash
 docker run --rm --entrypoint powerbi-orchestrator \
-    powerbi-orchestrator-mcp:1.20.0 \
+    powerbi-orchestrator-mcp:1.21.0 \
     version
 docker run --rm --entrypoint powerbi-orchestrator \
     -v /host/path/to/sample.pbip:/data:ro \
-    powerbi-orchestrator-mcp:1.20.0 \
+    powerbi-orchestrator-mcp:1.21.0 \
     inspect /data
 docker run --rm --entrypoint powerbi-orchestrator \
     -v /host/path/to/sample.pbip:/data:ro \
-    powerbi-orchestrator-mcp:1.20.0 \
+    powerbi-orchestrator-mcp:1.21.0 \
     validate /data --min-score 80
 ```
 
 ### Check the image you just built
 
 ```bash
-python scripts/verify_docker_image.py powerbi-orchestrator-mcp:1.20.0
+python scripts/verify_docker_image.py powerbi-orchestrator-mcp:1.21.0
 ```
 
 It runs the CLI, completes the MCP handshake against the container, and
@@ -79,7 +79,7 @@ docker run --rm -i \
     -e PBI_TENANT_ID=00000000-0000-0000-0000-000000000000 \
     -e PBI_CLIENT_ID=00000000-0000-0000-0000-000000000000 \
     -e PBI_CLIENT_SECRET=your-secret \
-    powerbi-orchestrator-mcp:1.20.0
+    powerbi-orchestrator-mcp:1.21.0
 ```
 
 `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` are still
@@ -100,7 +100,7 @@ docker run --rm -p 8000:8000 \
     -e PBI_HTTP_ALLOWED_HOSTS=orchestrator.internal \
     -e PBI_ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000 \
     -e PBI_ENTRA_AUDIENCE=api://powerbi-orchestrator-mcp \
-    powerbi-orchestrator-mcp:1.20.0
+    powerbi-orchestrator-mcp:1.21.0
 ```
 
 `PBI_HTTP_ALLOWED_HOSTS` is a comma-separated list of Host header values the
@@ -127,5 +127,5 @@ Python packages (mcp, azure-identity, httpx, pydantic).
 
 To verify:
 ```bash
-docker images powerbi-orchestrator-mcp:1.20.0
+docker images powerbi-orchestrator-mcp:1.21.0
 ```
