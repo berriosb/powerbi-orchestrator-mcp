@@ -132,6 +132,7 @@ We aim to:
 | Audit coverage for state-changing tools | `orchestrator/audit_guard.py` |
 | Elicitation before writes (configurable) | `orchestrator/elicitation.py` |
 | Write-path containment (`PBI_WORKSPACE_ROOT`) | `validation/path_safety.py` |
+| Output paths of the tools that write files | `validation/path_safety.py`, `tools/` |
 | Read-path containment (same root, explicit opt-out) | `validation/path_safety.py` |
 | Per-tool scope enforcement (HTTP transport) | `orchestrator/authorization.py` |
 | Scope check on every tool | `orchestrator/authorization.py`, `orchestrator/server.py` |

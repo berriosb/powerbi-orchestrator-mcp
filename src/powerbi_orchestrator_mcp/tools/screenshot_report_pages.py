@@ -311,6 +311,7 @@ def screenshot_report_pages(
     """
     from powerbi_orchestrator_mcp.validation.path_safety import (
         validate_safe_pbip_path,
+        validate_write_path,
     )
 
     resolved_path = validate_safe_pbip_path(pbip_path, must_exist=False)
@@ -328,7 +329,9 @@ def screenshot_report_pages(
             rendering_warnings=["no pages selected or PBIP is empty"],
         )
 
-    out_path = Path(output_dir)
+    # The screenshots are written where the caller said, so that
+    # directory is a write and it has to be inside the workspace.
+    out_path = validate_write_path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
     viewport = _RESOLUTION_SIZE.get(resolution, _RESOLUTION_SIZE["desktop"])

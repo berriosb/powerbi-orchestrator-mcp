@@ -112,6 +112,7 @@ def generate_data_dictionary(
 ) -> DataDictionaryResult:
     from powerbi_orchestrator_mcp.validation.path_safety import (
         validate_safe_pbip_path,
+        validate_write_path,
     )
 
     resolved_path = validate_safe_pbip_path(pbip_path, must_exist=False)
@@ -207,7 +208,11 @@ def generate_data_dictionary(
     markdown = "\n".join(lines)
 
     if output_path:
-        out = Path(output_path)
+        # The dictionary is written to a path the caller chose, so it
+        # is a write and it has to be inside the workspace. Validating
+        # it as a read would let a read-scoped caller write — and
+        # overwrite — anywhere the process can reach.
+        out = validate_write_path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(markdown, encoding="utf-8")
 

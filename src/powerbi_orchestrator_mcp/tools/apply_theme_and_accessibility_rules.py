@@ -104,10 +104,12 @@ def apply_theme_and_accessibility_rules(
     4. Re-run WCAG audit (after-score).
     """
     from powerbi_orchestrator_mcp.validation.path_safety import (
-        validate_safe_pbip_path,
+        validate_write_path,
     )
 
-    resolved_path = validate_safe_pbip_path(pbip_path, must_exist=False)
+    # This tool writes theme.json and the page files inside the PBIP,
+    # so the path has to be validated as a write, not as a read.
+    resolved_path = validate_write_path(pbip_path, must_exist=False)
     pbip = resolved_path
     files_changed: list[str] = []
     warnings: list[str] = []
