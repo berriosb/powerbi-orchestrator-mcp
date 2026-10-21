@@ -144,6 +144,18 @@ Stated explicitly so nobody assumes a control that is not there:
 - Plan ownership is **per-process state in a local SQLite file**, not an
   enterprise identity provider. It binds plans to the claims presented at
   creation time; it does not re-validate that those claims are still valid.
+  What it does cover: reading, listing, deleting *and applying* a plan all
+  filter by owner, so knowing a `plan_id` is not enough to use it. Over
+  HTTP the owner is the Entra object id of the validated token; over stdio
+  there is no identity and every caller is the local process, which is the
+  same trust boundary as the filesystem.
+
+  The consequence for deployment: the plan store is a local file, so the
+  orchestrator is **single-node**. Two replicas have separate plan stores
+  and a plan created on one is invisible on the other. Pointing both at a
+  shared volume is *not* a supported workaround — SQLite's locking is not
+  reliable over NFS. A multi-node deployment needs a different plan store
+  backend, which the orchestrator does not have yet.
 
 - There is **no `--readonly` flag**. Write tools are made safe by
   `dry_run=True` defaults and per-tool scopes, not by a global mode switch.

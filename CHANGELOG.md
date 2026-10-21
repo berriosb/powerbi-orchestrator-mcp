@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   full disk would otherwise take every mutation down with it.
 
 ### Changed
+- **The in-memory plan cache is bounded.** It held every plan the server
+  had ever made, each with its full YAML and step list, for the life of
+  the process. The plan store is the source of truth, so the cache can
+  and now does evict the least recently used plan.
 - **`dscmd` and `pbip-validator` are gone from the detector.** They
   were listed as engines and had timeout entries, but no tool reaches
   either: the health check offered to install them and installing

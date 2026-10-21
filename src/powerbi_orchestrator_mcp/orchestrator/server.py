@@ -20,6 +20,7 @@ import contextvars
 import json
 import os
 import re
+from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -246,9 +247,26 @@ mcp._mcp_server.version = __version__
 # Module-level state (MVP in-memory plan + active session)
 # ---------------------------------------------------------------------------
 
-_plans: dict[str, Plan] = {}
+# The in-memory plan cache is an optimisation, not the source of truth:
+# the plan store is. An evicted plan is still reachable through the
+# store, so the cache can be bounded — which it has to be, because a
+# long-running server would otherwise hold every plan it ever made,
+# each with its full YAML and step list.
+PLAN_CACHE_MAX_ENTRIES = 256
+
+_plans: OrderedDict[str, Plan] = OrderedDict()
 _plan_owners: dict[str, str] = {}
 _plan_store = PlanStore()
+
+
+def _cache_plan(plan: Plan, owner: str) -> None:
+    """Put a plan in the cache, evicting the least recently used one."""
+    _plans[plan.id] = plan
+    _plan_owners[plan.id] = owner
+    _plans.move_to_end(plan.id)
+    while len(_plans) > PLAN_CACHE_MAX_ENTRIES:
+        evicted, _ = _plans.popitem(last=False)
+        _plan_owners.pop(evicted, None)
 
 
 def _owner_now() -> str:
@@ -271,7 +289,10 @@ def _owned_plan(plan_id: str) -> Plan | None:
     owner = _owner_now()
     cached = _plans.get(plan_id)
     if cached is not None and _plan_owners.get(plan_id, LOCAL_IDENTITY) == owner:
+        _plans.move_to_end(plan_id)
         return cached
+    # The cache is bounded and the store is the source of truth, so a
+    # plan that was evicted is still reachable here.
     return _plan_store.get(plan_id, owner=owner)
 
 
@@ -564,8 +585,7 @@ async def plan_change(
 
     plan = _build_plan_from_intent(intent, template_args, opts)
     owner = _owner_now()
-    _plans[plan.id] = plan
-    _plan_owners[plan.id] = owner
+    _cache_plan(plan, owner)
     _plan_store.put(plan, owner=owner)
     return PlanResult(
         plan_id=plan.id,
