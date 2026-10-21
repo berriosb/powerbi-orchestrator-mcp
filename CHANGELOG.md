@@ -55,9 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not a passing one.
 - **A test that drives the real binary.** `tests/e2e/test_te_real_binary.py`
   invokes Tabular Editor against the fixture and checks the whole
-  chain — binary, rules, SARIF, parsed findings — plus the mapping of a
-  real failure onto an `EngineError`. It runs on the Windows runner of
-  the nightly workflow, where the binary is installed.
+  chain, plus the mapping of a real failure onto an `EngineError`. It
+  runs on the Windows runner of the nightly workflow, where the binary
+  is installed.
+- **A BPA run that waits for a window is now told apart from a slow
+  analysis.** Tabular Editor 2 is a desktop application: its Best
+  Practice Analyzer results open in a window, and on a headless runner
+  nothing closes it, so the process waits forever. The vendor states
+  that TE2 has no non-interactive mode and no structured output; the
+  product that has both — the Tabular Editor CLI — is a preview build
+  the vendor stops on 2026-10-31. The runner now says which of the two
+  happened, and never reports a clean score over output it could not
+  read.
 
 ### Documentation
 - `docs/engines-setup.md` explains that Tabular Editor 2 and the

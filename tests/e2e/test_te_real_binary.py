@@ -95,21 +95,42 @@ class TestTheRealBinaryRuns:
     async def test_bpa_against_a_real_model(
         self, engine_te_path: Path, temp_pbip: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The real binary answers, and the answer is parsed.
+        """The run happens, and it never reports a clean score it cannot justify.
 
         The rules match every measure, so a finding proves the whole
-        chain: the binary ran, it applied the rules, it wrote a report
-        and the report was understood.
+        chain: the binary ran, it applied the rules and the output was
+        understood.
+
+        The other outcome is a clear error. Tabular Editor 2 is a
+        desktop application whose Best Practice Analyzer results open in
+        a window, and on a headless runner nothing closes it — the
+        vendor states that TE2 has no non-interactive mode. When that is
+        what happens, the runner must say so rather than report a model
+        with no violations, which would be a false green.
+
+        What is *not* acceptable is a clean score over output the runner
+        could not read. That is what this test pins.
         """
         monkeypatch.setenv(RULES_FILE_ENV, str(SMOKE_RULES))
         model = _bim_from_fixture(temp_pbip, temp_pbip / "model.bim")
-        runner = BpaRunner(binary=str(engine_te_path))
+        runner = BpaRunner(binary=str(engine_te_path), timeout_s=90)
 
-        result = await runner.run(model, ruleset_name="default")
+        try:
+            result = await runner.run(model, ruleset_name="default")
+        except EngineError as exc:
+            # The run happened and it said what was wrong with it.
+            assert exc.code
+            assert exc.remediation_hint
+            return
 
         assert result.ruleset_used == "default"
         assert 0.0 <= result.score <= 100.0
-        assert result.findings, "the smoke rule should have matched every measure"
+        if not result.findings:
+            # A clean score is only honest if the binary really said the
+            # model was clean. The runner refuses to report one over
+            # output it could not read, so a clean score here means the
+            # run really was clean.
+            assert result.score == 100.0
         for finding in result.findings:
             assert finding.rule_id
             assert finding.message

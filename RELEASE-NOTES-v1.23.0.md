@@ -167,12 +167,64 @@ El archivo de reglas del smoke test
 toda medida, así que un finding demuestra que todo el recorrido
 funcionó.
 
-La primera vez que corrió, encontró dos cosas que ningún test podía
-haber visto: el `.bim` del fixture estaba escrito con `tables` (el
-nombre que usa un `.pbism`) cuando un `.bim` los llama `entities`, y
-Tabular Editor responde a un modelo que no puede cargar abriendo un
-diálogo — que en un runner sin interfaz es un proceso que espera
-para siempre.
+La primera vez que corrió, encontró cosas que ningún test podía haber
+visto, y la segunda vez enseñó la respuesta de fondo.
+
+### Tabular Editor 2 no es automatizable en headless
+
+El `.bim` del fixture estaba escrito con `tables` (el nombre que usa
+un `.pbism`) cuando un `.bim` los llama `entities`. Corregido.
+
+Pero con el modelo bien formado, el proceso **no terminó nunca**. Y
+no es un bug del runner: la comparación oficial de los dos productos
+lo dice sin rodeos.
+
+| | Tabular Editor 2 | Tabular Editor CLI |
+|---|---|---|
+| Modo no interactivo | **No tiene flag**; los errores pueden pedir input | `--non-interactive`, falla rápido |
+| Salida estructurada | **No tiene** | `--output-format json/csv/tmdl` |
+| Binario | App WinForms: necesita un wrapper `start /wait` | Consola, sin wrapper |
+| Estado | Estable, production-ready | Preview, **deja de funcionar el 2026-10-31** |
+
+La BPA de TE2 es una operación de escritorio: **los resultados se
+abren en una ventana**, y en un runner sin interfaz nadie la cierra.
+El proceso espera para siempre.
+
+La versión de Tabular Editor que sí es automatizable —consola, modo no
+interactivo, salida estructurada— es la que está en preview y **el
+proveedor la apaga el 2026-10-31**, además de requerir una cuenta
+para descargarla.
+
+### Qué hace el runner con eso
+
+Distingue los dos casos y lo dice:
+
+- Si el proceso **no terminó y no dijo nada**, es que está esperando
+  una ventana. El error lo explica y dice qué hacer.
+- Si **no terminó pero dijo algo**, es un análisis lento: el error
+  apunta a `PBI_ENGINE_TIMEOUT_TE_S`.
+
+Y en ningún caso reporta un score limpio sobre una salida que no pudo
+leer. Eso sería un verde falso, y un verde falso es peor que un
+check omitido.
+
+### La conclusión honesta
+
+**El check de BPA contra un binario externo no es un camino de
+producción automatizable hoy.** Los validadores propios del
+orquestador —PBIP, lint de DAX, WCAG, nomenclatura— no necesitan
+ningún binario externo y cubren el audit sin él. La BPA de Tabular
+Editor queda como lo que es: un extra opcional para quien lo tenga
+configurado en un escritorio con alguien que cierre la ventana.
+
+El test E2E fija la propiedad que sí es demostrable en cualquier
+entorno: **la corrida ocurre, y nunca devuelve un score limpio sobre
+una salida que no pudo leer.**
+
+Lo que el test **sí** prueba sin ambigüedad, y ya pasaba desde la
+primera vuelta: el binario se invoca de verdad, y un fallo real del
+binario vuelve como `EngineError` con su exit code mapeado. Eso es
+justo lo que ningún mock puede probar.
 
 ---
 

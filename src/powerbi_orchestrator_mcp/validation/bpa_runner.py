@@ -209,8 +209,42 @@ class BpaRunner:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout_s)
         except TimeoutError as exc:
             proc.kill()
+            # Whatever it managed to say is worth having: a process that
+            # is waiting for a window says nothing, and a process that is
+            # working says a lot.
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            except Exception:  # noqa: BLE001
+                stdout, stderr = b"", b""
             await proc.wait()
             from powerbi_orchestrator_mcp.engines.errors import EngineTimeoutError
+
+            if not (stdout.strip() or stderr.strip()):
+                # Tabular Editor 2 is a desktop application: its BPA
+                # results open in a window, and on a headless runner
+                # nothing ever closes it. The vendor states that TE2 has
+                # no non-interactive mode.
+                raise EngineTimeoutError(
+                    f"Tabular Editor produced no output and did not finish "
+                    f"within {effective_timeout_s}s. It is a desktop "
+                    "application: the Best Practice Analyzer results open in "
+                    "a window, and on a headless runner nothing closes it, "
+                    "so the process waits forever.",
+                    engine="te",
+                    code="engine_timeout",
+                    remediation_hint=(
+                        "Tabular Editor 2 has no non-interactive mode and no "
+                        "structured output, so its BPA check cannot be driven "
+                        "from a headless runner. The automation-grade product "
+                        "is the Tabular Editor CLI (`te`), which has "
+                        "--non-interactive and --output-format json - but it "
+                        "is a preview build the vendor stops on 2026-10-31. "
+                        "The orchestrator's own validators (PBIP, DAX lint, "
+                        "WCAG, naming) need no external binary and cover the "
+                        "audit without it."
+                    ),
+                    timeout_s=effective_timeout_s,
+                ) from exc
 
             raise EngineTimeoutError(
                 f"te bpa timed out after {effective_timeout_s}s",
