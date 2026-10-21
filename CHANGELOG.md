@@ -8,6 +8,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
 > at the repo root. This file is a condensed digest for quick lookup.
 
+## [1.21.0] — 2026-10-20
+
+### Added
+- **Three model-refactoring tools** (28 → 31 tools). All three are
+  analysis tools: they report what they found and write nothing, so
+  they can be tried on a real model without a rollback plan.
+  - `simplify_dax_measure` — rewrites a DAX expression in its shorter
+    equivalent form, and says which rewrites produced it. It works on
+    an expression, on one measure, or on every measure in a project.
+  - `abstract_measures` — finds the logic that is written more than
+    once across measures, and reports where exactly it differs.
+  - `abbreviate_names` — proposes shorter names for the measures and
+    columns that have grown too long, as a rename map ready for
+    `plan_change(intent="safe_rename")`.
+- **A DAX expression parser.** The orchestrator could only look at a
+  measure with regular expressions, which is enough to match text but
+  not to answer "is this `IF` nested inside another `IF` on the same
+  test" or "does this subexpression appear twice". There is now a
+  tokeniser and a recursive-descent parser for the subset of DAX that
+  measures use. A construct it does not understand raises an error
+  with the offset, so an expression beyond it is left alone rather
+  than rewritten on a guess.
+
+### Security
+- **The audit log is written ahead of time.** The attempt is recorded
+  before the tool body runs and the outcome after it, so a mutation that
+  dies half way through leaves a record of what was being attempted
+  instead of nothing at all. The attempt row carries the status
+  `attempted`.
+- **The audit log can be a precondition.** `PBI_AUDIT_FAIL_CLOSED=1`
+  refuses a state-changing call whose attempt cannot be recorded,
+  before it touches anything. It is fail-open by default on purpose: a
+  full disk would otherwise take every mutation down with it.
+
+### Changed
+- **The in-memory plan cache is bounded.** It held every plan the server
+  had ever made, each with its full YAML and step list, for the life of
+  the process. The plan store is the source of truth, so the cache can
+  and now does evict the least recently used plan.
+- **`dscmd` and `pbip-validator` are gone from the detector.** They
+  were listed as engines and had timeout entries, but no tool reaches
+  either: the health check offered to install them and installing
+  changed nothing. `pbip-validator` was never published on PyPI. The
+  PBIP validation the orchestrator performs is its own structural
+  validator, which needs no external binary.
+- **The live preflight can run on a schedule.** `pilot-validation.yml`
+  still never runs on push or on pull requests, so it cannot become a
+  required status check or block a merge — that is the property the
+  guard test now asserts, instead of the old "manual only". A nightly
+  run takes its target from the `PBI_PILOT_WORKSPACE_ID` and
+  `PBI_PILOT_DATASET_ID` repository variables and skips cleanly when
+  they are not set: the workspace is named, never discovered. The
+  script's own fallback to "the first visible workspace" is unreachable
+  from CI.
+
+### Documentation
+- **The README is six releases behind.** It said "Estado actual
+  (v1.14.2)", claimed the hardening backlog was closed with nothing
+  pending, pointed at the v1.14.2 release notes, and told the reader to
+  install `pbip-validator` — a package that does not exist on PyPI —
+  and DAX Studio, neither of which any tool uses.
+- **The README shows the three flows end to end**: the safe rename, the
+  deploy behind the quality gate, and the audit-fix-audit loop, with the
+  real arguments.
+- **A test keeps the README honest.** It parses the tool calls out of
+  the README and checks every argument against the schema the server
+  publishes, so the documentation cannot drift from the tools again.
+  Writing the calls out is what surfaced that `pre_deploy_check`
+  evaluates findings rather than a path, that
+  `apply_theme_and_accessibility_rules` takes a palette rather than a
+  theme object, and that `add_measure_with_validation` takes `target`
+  rather than `pbip_path`.
+
 ## [1.20.0] — 2026-10-20
 
 ### ⚠️ Breaking

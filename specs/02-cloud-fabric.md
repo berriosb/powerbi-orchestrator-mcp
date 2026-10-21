@@ -401,7 +401,7 @@ y `verify()` funciona transparentemente sobre todo.
   indexado via `CREATE INDEX idx_audit_tool_name ON audit_log(tool_name)` (añadido al
   schema si no existe).
 - Retention: opt-in via `PBI_AUDIT_CLOUD_RETENTION_DAYS` (default 365 días
-  para filas cloud; las orquestación更重要 infinito hasta rotación manual).
+  para filas cloud; las de orquestación se guardan hasta rotación manual).
 
 ### 5.6 Acceptance criteria
 

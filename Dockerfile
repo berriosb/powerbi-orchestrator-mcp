@@ -1,21 +1,24 @@
 # Multi-stage Dockerfile for powerbi-orchestrator-mcp.
 #
-# Stage 1: builder — installs the package + dependencies.
+# Stage 1: builder — installs the package + dependencies from uv.lock.
 # Stage 2: runtime — minimal image with just the package + runtime deps.
 #
 # The image is for running the orchestrator as an MCP server (stdio).
-# For HTTP transport (planned v4) you'd expose port + use a process
-# manager that proxies stdio.
+# For HTTP transport you'd expose the port and use a process manager that
+# proxies stdio.
 #
 # Build:
-#   docker build -t powerbi-orchestrator-mcp:1.8.0 .
+#   docker build -t powerbi-orchestrator-mcp:1.21.0 .
 #
 # Run (stdio for MCP — connect via your MCP client):
-#   docker run --rm -i powerbi-orchestrator-mcp:1.8.0
+#   docker run --rm -i powerbi-orchestrator-mcp:1.21.0
 #
-# Run the standalone CLI:
-#   docker run --rm powerbi-orchestrator-mcp:1.8.0 version
-#   docker run --rm -v /host/path:/data powerbi-orchestrator-mcp:1.8.0 validate /data
+# Run the standalone CLI (the entrypoint is the MCP server, so the CLI
+# needs its own entrypoint):
+#   docker run --rm --entrypoint powerbi-orchestrator \
+#     powerbi-orchestrator-mcp:1.21.0 version
+#   docker run --rm --entrypoint powerbi-orchestrator \
+#     -v /host/path:/data powerbi-orchestrator-mcp:1.21.0 validate /data
 #
 
 # ---------------------------------------------------------------------------
@@ -23,31 +26,29 @@
 # ---------------------------------------------------------------------------
 FROM python:3.11-slim AS builder
 
-# uv is significantly faster than pip + caches better.
-COPY --from=ghcr.io/astral-sh/uv:0.4.18 /uv /uvx /usr/local/bin/
+# The uv version has to be able to read the lock file. The lock is on
+# revision 5, which needs a recent uv; the old 0.4.18 pin could not read
+# it, which is why the dependency list used to be spelled out by hand
+# here instead.
+COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /uvx /usr/local/bin/
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
 
-# Copy only what uv needs to resolve dependencies first (cache layer).
-COPY pyproject.toml ./
+# The lock file pins the dependency graph. --locked makes the build fail
+# rather than silently resolve something else, so the image holds the
+# versions that were audited, not the ones that happen to resolve today.
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-install-project --no-dev
 
-# Create a virtualenv at /app/.venv for the runtime stage to copy.
-RUN uv venv /app/.venv --python 3.11 && \
-    uv pip install --python /app/.venv/bin/python \
-        "mcp[cli]>=1.0.0,<2.0.0" \
-        "pydantic>=2.0.0,<3.0.0" \
-        "pydantic-settings>=2.0.0" \
-        "azure-identity>=1.15.0" \
-        "azure-core>=1.30.0" \
-        "httpx>=0.27.0" \
-        "structlog>=24.1.0" \
-        "pyyaml>=6.0.1" \
-        "rich>=13.7.0" \
-        "pyjwt[crypto]>=2.8.0"
-
-# Now copy the source and install the package itself (no deps).
+# Now copy the source and install the package itself. --no-editable puts
+# a real copy in site-packages: an editable install would point back at
+# /app/src, which the runtime stage does not carry.
 COPY src /app/src
-RUN uv pip install --python /app/.venv/bin/python --no-deps /app
+RUN uv sync --locked --no-dev --no-editable
 
 # ---------------------------------------------------------------------------
 # Stage 2 — runtime
@@ -60,11 +61,9 @@ RUN useradd --system --create-home --uid 10001 orchestrator
 
 # Copy the pre-built virtualenv.
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src /app/src
 
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app/src" \
     PYTHONUNBUFFERED=1 \
     PBI_AUTH_MODE=interactive
 
@@ -80,4 +79,5 @@ CMD ["--start"]
 LABEL org.opencontainers.image.title="powerbi-orchestrator-mcp" \
       org.opencontainers.image.description="High-level MCP orchestrator for Power BI / Microsoft Fabric" \
       org.opencontainers.image.source="https://github.com/berriosb/powerbi-orchestrator-mcp" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="1.21.0"

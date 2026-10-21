@@ -76,6 +76,9 @@ EXPECTED_TOOLS = {
     "set_sensitivity_labels",
     "powerbi_health",
     "execute_dax_query",
+    "simplify_dax_measure",
+    "abstract_measures",
+    "abbreviate_names",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 

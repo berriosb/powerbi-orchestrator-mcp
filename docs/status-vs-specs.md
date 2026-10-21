@@ -3,7 +3,7 @@
 > Snapshot of what the codebase delivers vs what the specs require.
 > Supersedes the post-Sprint 12 / post-Sprint 14 gap analysis.
 
-**TL;DR:** v1.14.2 delivers **28 tools DONE** (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + `powerbi_health` diagnóstico + `execute_dax_query` DAX en vivo), **9/9 acceptance criteria PASS**, **v2 y v3 milestones COMPLETE**, y enterprise hardening listo para producción.
+**TL;DR:** v1.21.0 delivers **31 tools DONE** (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + `powerbi_health` diagnóstico + `execute_dax_query` DAX en vivo), **9/9 acceptance criteria PASS**, **v2 y v3 milestones COMPLETE**, y enterprise hardening listo para producción.
 
 ---
 
@@ -73,7 +73,7 @@ v2 tools (§6.2):     9       9       ✅ 100% (Sprints 9-11)
 v3 tools (§6.2):     3       3       ✅ 100% (Sprint 12)
 Extensions:          2       2       ✅ 100% (powerbi_health, execute_dax_query)
 ─────────────────────────────────────────────────────
-Tool coverage:       28      28      (100% exposed in FastMCP)
+Tool coverage:       31      31      (100% exposed in FastMCP)
 ```
 
 ```
@@ -108,7 +108,7 @@ Capa 6 (Orquestación): 100% (planner, rollback engine, HMAC audit log)
 | Coverage | ~90% |
 | mypy --strict | clean (124 source files) |
 | ruff | clean |
-| MCP tools registered | 28 tools expuestas en FastMCP |
+| MCP tools registered | 31 tools expuestas en FastMCP |
 | Specs cross-cutting | 4 (transport, publish, e2e, supersede) sincronizados |
 | Hardening backlog | 0 items pendientes ✅ |
 
@@ -146,4 +146,4 @@ pip install -e .
 python scripts/verify_mcp_server.py
 ```
 
-Expected: 28 tools/list expuestas, JSON-RPC stdio handshake correcto, exit code 0.
+Expected: 31 tools/list expuestas, JSON-RPC stdio handshake correcto, exit code 0.

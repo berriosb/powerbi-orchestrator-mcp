@@ -101,7 +101,7 @@ class PlanOptions(BaseModel):
 3. Para tools conocidos (`safe_rename`, `audit_*`, `deploy_*`): el plan es
    fijo, viene de un template.
 4. Para intents libres: usa un LLM local (NO OpenAI) para des componer.
-   En MVP, NO se soporta intents libres arbitrarios — solo los 26 tools
+   En MVP, NO se soporta intents libres arbitrarios — solo los 31 tools
    de alto nivel predefinidos (ver SPEC §4).
 5. Calcula `risk_score` heurístico: nº de archivos afectados × tipo de
    operación (rename bajo, drop alto).
@@ -1015,7 +1015,7 @@ Reglas para bumpear `SCHEMA_VERSION` (en PR con ADR):
 - ❌ Persistencia entre sesiones (el agente guarda su propio memory).
 - ❌ Remote transport (HTTP) → v4.
 - ❌ UI propia para elicitation (depende del cliente MCP).
-- ❌ Intents NL libres arbitrarios (solo los 26 tools predefinidos, ver SPEC §4).
+- ❌ Intents NL libres arbitrarios (solo los 31 tools predefinidos, ver SPEC §4).
 
 ## 8. Riesgos
 

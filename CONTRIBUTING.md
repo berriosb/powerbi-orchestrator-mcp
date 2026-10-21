@@ -60,7 +60,7 @@ This installs:
 ### Verify the install
 
 ```bash
-# Sanity check: the package imports and 26 tools are registered.
+# Sanity check: the package imports and the tools are registered.
 python scripts/verify_mcp_server.py
 
 # Run the full test suite.

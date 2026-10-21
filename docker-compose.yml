@@ -7,8 +7,9 @@
 #
 # Usage:
 #   docker compose up                  # interactive stdio (MCP client)
-#   docker compose run --rm orchestrator version
-#   docker compose run --rm orchestrator validate /workspace/sample.pbip
+#   docker compose run --rm --entrypoint powerbi-orchestrator orchestrator version
+#   docker compose run --rm --entrypoint powerbi-orchestrator orchestrator \
+#       validate /workspace/examples/01-safe-rename
 #
 
 services:
@@ -16,7 +17,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: powerbi-orchestrator-mcp:1.19.0
+    image: powerbi-orchestrator-mcp:1.21.0
     container_name: powerbi-orchestrator-mcp
     environment:
       # Set auth mode + credentials via .env or environment override.

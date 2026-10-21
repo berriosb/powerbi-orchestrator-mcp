@@ -58,35 +58,17 @@ _ENGINE_PROBES: tuple[EngineProbe, ...] = (
         version_args=("--version",),
     ),
     EngineProbe(
-        engine="dscmd",
-        binary_names=("dscmd", "daxstudio"),
-        version_args=("--version",),
-    ),
-    EngineProbe(
-        engine="pbip-validator",
-        binary_names=("pbip-validator",),
-        version_args=("--version",),
-    ),
-    EngineProbe(
         engine="superbi-mcp",
         binary_names=("superbi-mcp",),
         npx_package="superbi-mcp",
     ),
 )
 
-# The engines an orchestrator tool can actually dispatch to.
-#
-# The others are still detected, so the health check can say what is
-# installed on the machine, but no tool reaches them: installing them
-# changes nothing. Saying so is better than suggesting an install that
-# enables no feature.
-INTEGRATED_ENGINES: frozenset[str] = frozenset(
-    {
-        "powerbi-modeling-mcp",
-        "te",
-        "superbi-mcp",
-    }
-)
+# Every engine listed above is one a tool can dispatch to. An engine
+# with no adapter does not belong here: `dscmd` and `pbip-validator`
+# used to be listed, which meant the health check reported them as
+# available and suggested installing them — and no tool reaches
+# either, so installing them changed nothing.
 
 
 def _resolve_binary(binary_names: tuple[str, ...]) -> str | None:

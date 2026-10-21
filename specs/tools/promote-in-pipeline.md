@@ -69,7 +69,7 @@ o pausar para acción humana.
 
 ## Fuera de alcance (v2)
 
-- ❌ Crear el pipeline (solo se asume pre-existente;用户提供 pipeline_id).
+- ❌ Crear el pipeline (solo se asume pre-existente; el usuario aporta el pipeline_id).
 - ❌ Asignar workspaces a stages (asumimos pre-asignados).
 - ❌ Quality gates que dependen de otros items fuera del pipeline.
 - ❌ Aprobaciones multi-usuario (requerido para prod en muchas orgs).

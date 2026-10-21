@@ -20,6 +20,7 @@ import contextvars
 import json
 import os
 import re
+from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -88,6 +89,12 @@ from powerbi_orchestrator_mcp.orchestrator.rollback import (
 from powerbi_orchestrator_mcp.orchestrator.step_executor import (
     get_default_registry,
 )
+from powerbi_orchestrator_mcp.tools.abbreviate_names import (
+    abbreviate_names as _abbreviate,
+)
+from powerbi_orchestrator_mcp.tools.abstract_measures import (
+    abstract_measures as _abstract,
+)
 from powerbi_orchestrator_mcp.tools.add_measure_with_validation import (
     add_measure_with_validation as _add_measure,
 )
@@ -152,6 +159,9 @@ from powerbi_orchestrator_mcp.tools.set_sensitivity_labels import (
 )
 from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
     setup_rls_and_roles as _setup_rls,
+)
+from powerbi_orchestrator_mcp.tools.simplify_dax_measure import (
+    simplify_dax_measure as _simplify_dax,
 )
 from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (
     sync_git_to_workspace as _sync_git,
@@ -246,9 +256,26 @@ mcp._mcp_server.version = __version__
 # Module-level state (MVP in-memory plan + active session)
 # ---------------------------------------------------------------------------
 
-_plans: dict[str, Plan] = {}
+# The in-memory plan cache is an optimisation, not the source of truth:
+# the plan store is. An evicted plan is still reachable through the
+# store, so the cache can be bounded — which it has to be, because a
+# long-running server would otherwise hold every plan it ever made,
+# each with its full YAML and step list.
+PLAN_CACHE_MAX_ENTRIES = 256
+
+_plans: OrderedDict[str, Plan] = OrderedDict()
 _plan_owners: dict[str, str] = {}
 _plan_store = PlanStore()
+
+
+def _cache_plan(plan: Plan, owner: str) -> None:
+    """Put a plan in the cache, evicting the least recently used one."""
+    _plans[plan.id] = plan
+    _plan_owners[plan.id] = owner
+    _plans.move_to_end(plan.id)
+    while len(_plans) > PLAN_CACHE_MAX_ENTRIES:
+        evicted, _ = _plans.popitem(last=False)
+        _plan_owners.pop(evicted, None)
 
 
 def _owner_now() -> str:
@@ -271,7 +298,10 @@ def _owned_plan(plan_id: str) -> Plan | None:
     owner = _owner_now()
     cached = _plans.get(plan_id)
     if cached is not None and _plan_owners.get(plan_id, LOCAL_IDENTITY) == owner:
+        _plans.move_to_end(plan_id)
         return cached
+    # The cache is bounded and the store is the source of truth, so a
+    # plan that was evicted is still reachable here.
     return _plan_store.get(plan_id, owner=owner)
 
 
@@ -564,8 +594,7 @@ async def plan_change(
 
     plan = _build_plan_from_intent(intent, template_args, opts)
     owner = _owner_now()
-    _plans[plan.id] = plan
-    _plan_owners[plan.id] = owner
+    _cache_plan(plan, owner)
     _plan_store.put(plan, owner=owner)
     return PlanResult(
         plan_id=plan.id,
@@ -1503,6 +1532,133 @@ async def add_measure_with_validation(
         measure_writer=measure_writer,
     )
     return result
+
+
+@mcp.tool()
+@requires_scope("simplify_dax_measure")
+async def simplify_dax_measure(
+    expression: str | None = None,
+    pbip_path: str | None = None,
+    measure: str | None = None,
+    all_measures: bool = False,
+    apply_lint: bool = True,
+) -> dict[str, Any]:
+    """Rewrite a DAX expression in its shorter, equivalent form.
+
+    Use this tool when the user asks to:
+    - Simplify, tidy or shorten a DAX measure.
+    - Find the measures in a model that are written the long way.
+    - Replace a hand-rolled blank check, error check or IF chain with
+      the function that already does it.
+
+    Args:
+        expression: The DAX expression to simplify. Mutually exclusive
+            with pbip_path.
+        pbip_path: A PBIP project to read the measures from.
+        measure: The measure to simplify. Requires pbip_path.
+        all_measures: Simplify every measure in the project and report
+            which ones could be written shorter. Requires pbip_path.
+        apply_lint: Include the linter verdict before and after, so a
+            rewrite that silences a finding — or creates one — is visible.
+
+    Returns:
+        Dict with the simplified expression and the rewrites that
+        produced it. The equivalence is *structural*: the expression is
+        never evaluated against data, so the rewrite changes the shape
+        and not the meaning, and a reader can check it. An expression
+        that could not be parsed comes back unchanged, with the reason.
+
+        This tool writes nothing. To apply the result, pass the
+        simplified expression to add_measure_with_validation.
+    """
+    return _simplify_dax(
+        expression=expression,
+        pbip_path=pbip_path,
+        measure=measure,
+        all_measures=all_measures,
+        apply_lint=apply_lint,
+    )
+
+
+@mcp.tool()
+@requires_scope("abstract_measures")
+async def abstract_measures(
+    pbip_path: str,
+    table: str | None = None,
+    min_group_size: int = 2,
+) -> dict[str, Any]:
+    """Find the logic that is written more than once in a semantic model.
+
+    Use this tool when the user asks to:
+    - Find duplicated or copy-pasted logic across measures.
+    - Know which measures compute the same thing and could share one.
+    - Find the measures that differ only in a number or a column, which
+      is what a calculation group is for.
+
+    Args:
+        pbip_path: Path to the root .pbip directory.
+        table: Only look at the measures of this table.
+        min_group_size: How many measures have to share a shape before
+            it is reported. Two is the minimum.
+
+    Returns:
+        Dict with the groups found and, for each, what the duplication
+        looks like: which measures share it and where exactly they
+        differ.
+
+        It does not write anything and does not apply the abstraction. A
+        Tabular measure cannot take a parameter, so the answer is a
+        calculation group, a helper table or a rewrite in place — and
+        which one is right depends on the model.
+    """
+    return _abstract(
+        pbip_path=pbip_path,
+        table=table,
+        min_group_size=min_group_size,
+    )
+
+
+@mcp.tool()
+@requires_scope("abbreviate_names")
+async def abbreviate_names(
+    pbip_path: str,
+    kind: str = "both",
+    max_length: int = 40,
+    abbreviate_words: bool = True,
+    drop_filler_words: bool = True,
+) -> dict[str, Any]:
+    """Propose shorter names for the measures and columns that need them.
+
+    Use this tool when the user asks to:
+    - Shorten, abbreviate or tidy up measure and column names.
+    - Find the names that have grown too long to read.
+    - Prepare a batch of renames before applying them.
+
+    Args:
+        pbip_path: Path to the root .pbip directory.
+        kind: "measures", "columns" or "both".
+        max_length: Above this length, a name is a candidate.
+        abbreviate_words: Shorten the words that have a standard
+            abbreviation ("Amount" to "Amt", "Quantity" to "Qty").
+        drop_filler_words: Drop the words that carry no meaning ("of",
+            "the", "in").
+
+    Returns:
+        Dict with the proposals and a rename map ready for
+        plan_change(intent="safe_rename").
+
+        It does not rename anything. A name that cannot be shortened
+        without changing what it says is reported as needing a name by
+        hand, and a proposal that would collide with an existing name
+        is adjusted.
+    """
+    return _abbreviate(
+        pbip_path=pbip_path,
+        kind=kind,
+        max_length=max_length,
+        abbreviate_words=abbreviate_words,
+        drop_filler_words=drop_filler_words,
+    )
 
 
 @mcp.tool()

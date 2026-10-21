@@ -105,11 +105,32 @@ class TestAuditedDecorator:
         await demo_tool(workspace_id="ws-9")
 
         rows = _rows(audit_db)
-        assert len(rows) == 1
-        assert rows[0][0] == "cloud:demo_tool"
-        assert rows[0][1] == "ws-9"
-        assert rows[0][2] == "success"
+        # The attempt is recorded before the action, the outcome after.
+        assert len(rows) == 2
+        assert rows[0][2] == audit_guard.RESULT_ATTEMPTED
+        assert rows[1][0] == "cloud:demo_tool"
+        assert rows[1][1] == "ws-9"
+        assert rows[1][2] == "success"
         assert AuditLog(db_path=audit_db).verify().valid
+
+    @pytest.mark.asyncio
+    async def test_the_attempt_is_recorded_before_the_action(self, audit_db: Path) -> None:
+        """A crash in the middle must leave a trace of what was attempted.
+
+        Without the write-ahead record, a mutation that dies half way
+        through leaves nothing in the log at all.
+        """
+        seen: list[str] = []
+
+        @audited("mid_tool")
+        async def mid_tool() -> dict[str, Any]:
+            seen.append(_rows(audit_db)[0][2])
+            raise RuntimeError("died half way")
+
+        with pytest.raises(RuntimeError, match="died half way"):
+            await mid_tool()
+
+        assert seen == [audit_guard.RESULT_ATTEMPTED]
 
     @pytest.mark.asyncio
     async def test_records_failure_and_reraises(self, audit_db: Path) -> None:
@@ -121,9 +142,9 @@ class TestAuditedDecorator:
             await boom_tool()
 
         rows = _rows(audit_db)
-        assert rows[0][2] == "failed"
-        assert "RuntimeError" in rows[0][3]
-        assert "kaboom" not in rows[0][3]
+        assert rows[-1][2] == "failed"
+        assert "RuntimeError" in rows[-1][3]
+        assert "kaboom" not in rows[-1][3]
 
     @pytest.mark.asyncio
     async def test_records_dry_run_status(self, audit_db: Path) -> None:
@@ -133,7 +154,7 @@ class TestAuditedDecorator:
 
         await dry_tool()
 
-        assert _rows(audit_db)[0][2] == "dry_run"
+        assert _rows(audit_db)[-1][2] == "dry_run"
 
     @pytest.mark.asyncio
     async def test_secret_args_are_not_persisted_in_clear(self, audit_db: Path) -> None:
@@ -167,3 +188,89 @@ class TestAuditedDecorator:
         result = await ok_tool()
 
         assert AUDIT_WARNING_KEY not in result
+
+
+class TestFailClosed:
+    """The audit log as a precondition, not a report.
+
+    Failing closed is only possible because the attempt is recorded
+    before the action: if the write happens after, the action has
+    already happened and there is nothing left to refuse.
+    """
+
+    @pytest.fixture
+    def broken_audit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _factory(*_a: Any, **_kw: Any) -> CloudAuditLog:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(audit_guard, "CloudAuditLog", _factory)
+
+    @pytest.mark.asyncio
+    async def test_the_tool_does_not_run_when_the_audit_cannot_be_written(
+        self, broken_audit: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(audit_guard.AUDIT_FAIL_CLOSED_ENV, "1")
+        ran: list[str] = []
+
+        @audited("blocked_tool")
+        async def blocked_tool() -> dict[str, Any]:
+            ran.append("ran")
+            return {"status": "ok"}
+
+        with pytest.raises(audit_guard.AuditUnavailableError):
+            await blocked_tool()
+
+        assert ran == [], "the tool ran even though the audit could not be written"
+
+    @pytest.mark.asyncio
+    async def test_the_default_is_fail_open(
+        self, broken_audit: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without the opt-in, a broken audit log must not block the tool.
+
+        A full disk would otherwise take every mutation down with it,
+        and the local audit log is a forensic trail, not the compliance
+        system of record.
+        """
+        monkeypatch.delenv(audit_guard.AUDIT_FAIL_CLOSED_ENV, raising=False)
+        ran: list[str] = []
+
+        @audited("open_tool")
+        async def open_tool() -> dict[str, Any]:
+            ran.append("ran")
+            return {"status": "ok"}
+
+        result = await open_tool()
+
+        assert ran == ["ran"]
+        assert AUDIT_WARNING_KEY in result
+        assert "audit_log_write_failed" in result[AUDIT_WARNING_KEY]
+
+    @pytest.mark.asyncio
+    async def test_the_error_names_the_variable_that_relaxes_it(
+        self, broken_audit: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(audit_guard.AUDIT_FAIL_CLOSED_ENV, "1")
+
+        @audited("blocked_tool")
+        async def blocked_tool() -> dict[str, Any]:
+            return {}
+
+        with pytest.raises(audit_guard.AuditUnavailableError) as exc:
+            await blocked_tool()
+
+        assert audit_guard.AUDIT_FAIL_CLOSED_ENV in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_fail_closed_accepts_the_documented_spellings(
+        self, broken_audit: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for value in ("1", "true", "TRUE", "yes"):
+            monkeypatch.setenv(audit_guard.AUDIT_FAIL_CLOSED_ENV, value)
+
+            @audited("blocked_tool")
+            async def blocked_tool() -> dict[str, Any]:
+                return {}
+
+            with pytest.raises(audit_guard.AuditUnavailableError):
+                await blocked_tool()

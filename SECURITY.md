@@ -144,6 +144,18 @@ Stated explicitly so nobody assumes a control that is not there:
 - Plan ownership is **per-process state in a local SQLite file**, not an
   enterprise identity provider. It binds plans to the claims presented at
   creation time; it does not re-validate that those claims are still valid.
+  What it does cover: reading, listing, deleting *and applying* a plan all
+  filter by owner, so knowing a `plan_id` is not enough to use it. Over
+  HTTP the owner is the Entra object id of the validated token; over stdio
+  there is no identity and every caller is the local process, which is the
+  same trust boundary as the filesystem.
+
+  The consequence for deployment: the plan store is a local file, so the
+  orchestrator is **single-node**. Two replicas have separate plan stores
+  and a plan created on one is invisible on the other. Pointing both at a
+  shared volume is *not* a supported workaround — SQLite's locking is not
+  reliable over NFS. A multi-node deployment needs a different plan store
+  backend, which the orchestrator does not have yet.
 
 - There is **no `--readonly` flag**. Write tools are made safe by
   `dry_run=True` defaults and per-tool scopes, not by a global mode switch.
@@ -165,9 +177,21 @@ Stated explicitly so nobody assumes a control that is not there:
   **set `PBI_ORCHESTRATOR_AUDIT_SECRET` to a secret held elsewhere** (a
   secret manager, an injected environment variable, a mounted file) for
   that. The orchestrator logs a warning when it has to generate a key.
-- The audit log is **fail-open**: if a row cannot be written, the tool call
-  still goes ahead and the failure is surfaced as a warning in the result.
-  The audit log is for forensics, not for access control.
+- The audit log is **write-ahead**: the attempt is recorded *before* the
+  tool runs and the outcome after it. A mutation that dies half way
+  through therefore leaves a record of what was being attempted, instead
+  of nothing at all. The attempt row carries the status `attempted`; the
+  outcome row carries `success` / `failed` / `partial` / `dry_run` /
+  `rolled_back`.
+- The audit log is **fail-open by default**: if a row cannot be written,
+  the tool call still goes ahead and the failure is surfaced as a
+  warning in the result. That is deliberate — a full disk would
+  otherwise take every mutation down with it, and this log is a
+  forensic trail, not the compliance system of record. Set
+  `PBI_AUDIT_FAIL_CLOSED=1` to make it a **precondition** instead: a
+  state-changing call whose attempt cannot be recorded is refused
+  before it touches anything. The refusal names the variable that
+  relaxes it.
 - The HTTP transport's **Host allowlist** follows the bind address, so a
   server bound to a routable address answers requests for that address.
   DNS-rebinding protection stays enabled; list the exact names you serve

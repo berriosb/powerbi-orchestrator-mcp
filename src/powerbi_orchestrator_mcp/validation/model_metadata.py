@@ -50,6 +50,12 @@ class ModelMetadata:
     tables: list[str] = field(default_factory=list)
     columns: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     measures: dict[str, str] = field(default_factory=dict)
+    measure_tables: dict[str, str] = field(default_factory=dict)
+    """Which table each measure belongs to.
+
+    A measure name is unique across the model, but knowing its table
+    is what lets a tool say where a change would land.
+    """
     pages: list[str] = field(default_factory=list)
     visuals_count: int = 0
     sources: list[str] = field(default_factory=list)
@@ -122,6 +128,7 @@ def _read_json_model(path: Path, meta: ModelMetadata) -> None:
             expression = str(measure.get("expression", ""))
             if measure_name:
                 meta.measures[measure_name] = expression
+                meta.measure_tables[measure_name] = name
     meta.sources.append(str(path))
 
 
@@ -144,7 +151,9 @@ def _read_tmdl_model(paths: list[Path], meta: ModelMetadata) -> None:
                 }
             )
         for match in _TMDL_MEASURE.finditer(text):
-            meta.measures[match.group("name")] = match.group("expression").strip()
+            measure_name = match.group("name")
+            meta.measures[measure_name] = match.group("expression").strip()
+            meta.measure_tables[measure_name] = table_name
         meta.sources.append(str(path))
 
 

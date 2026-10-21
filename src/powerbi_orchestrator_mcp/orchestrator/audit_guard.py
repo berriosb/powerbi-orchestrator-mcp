@@ -4,11 +4,21 @@ Every mutating tool invocation must leave a tamper-evident trail covering
 success, failure and dry-run outcomes. The audit sink records a SHA-256
 hash of the arguments rather than the arguments themselves, so credentials
 and row-level data are never persisted.
+
+The trail is written *ahead of time*: the attempt is recorded before the
+tool body runs, and the outcome is recorded after. Two consequences:
+
+- A crash in the middle of a mutation leaves a record of what was being
+  attempted. Without it, the log would show nothing at all.
+- The tool can refuse to act when the audit log cannot be written, which
+  is what ``PBI_AUDIT_FAIL_CLOSED=1`` asks for. Failing closed is only
+  possible if the check happens before the action.
 """
 
 from __future__ import annotations
 
 import functools
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -20,7 +30,24 @@ _log = structlog.get_logger(__name__)
 
 AUDIT_WARNING_KEY = "_audit_warning"
 
+# Set to 1 to refuse a state-changing call whose attempt could not be
+# recorded. Off by default: the local audit log is a forensic trail,
+# and a full disk would otherwise block every mutation. With it on, the
+# audit log is a precondition, not a report.
+AUDIT_FAIL_CLOSED_ENV = "PBI_AUDIT_FAIL_CLOSED"
+
+# The status of the record written before the tool body runs.
+RESULT_ATTEMPTED = "attempted"
+
 _SECRET_KEY_HINTS = ("secret", "password", "token", "key", "credential")
+
+
+class AuditUnavailableError(RuntimeError):
+    """The audit log could not be written, so the action was not attempted.
+
+    Only raised when the operator asked for fail-closed auditing with
+    ``PBI_AUDIT_FAIL_CLOSED=1``.
+    """
 
 
 def _redact(args: dict[str, Any]) -> dict[str, Any]:
@@ -68,18 +95,47 @@ def _summarize(result: Any) -> dict[str, Any]:
     return summary
 
 
+def _fail_closed() -> bool:
+    """True when the operator asked for fail-closed auditing."""
+    return os.environ.get(AUDIT_FAIL_CLOSED_ENV, "").strip().lower() in ("1", "true", "yes")
+
+
 def audited(
     tool_name: str,
     *,
     target_arg: str | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Record every invocation of a state-changing tool in the audit log."""
+    """Record every invocation of a state-changing tool in the audit log.
+
+    The attempt is recorded before the tool runs and the outcome after
+    it, so the trail shows both that something was attempted and how it
+    ended. When the attempt cannot be recorded and the operator asked
+    for fail-closed auditing, the tool does not run at all.
+    """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             call_args = _redact({**kwargs})
             target_id = call_args.get(target_arg) if target_arg else None
+
+            # Write-ahead: the attempt goes in the log before the
+            # action, so a crash in the middle leaves a trace of what
+            # was being attempted.
+            intent_warning = _write(
+                tool_name,
+                call_args,
+                target_id,
+                RESULT_ATTEMPTED,
+                {"phase": "intent"},
+            )
+            if intent_warning is not None and _fail_closed():
+                raise AuditUnavailableError(
+                    f"audit_log_write_failed: {intent_warning}. "
+                    f"Set {AUDIT_FAIL_CLOSED_ENV}=0 to act without an audit "
+                    f"trail, or free the audit directory."
+                )
+
             try:
                 result = await func(*args, **kwargs)
             except BaseException as exc:
@@ -117,4 +173,10 @@ def _write(
     return None
 
 
-__all__ = ["AUDIT_WARNING_KEY", "audited"]
+__all__ = [
+    "AUDIT_FAIL_CLOSED_ENV",
+    "AUDIT_WARNING_KEY",
+    "RESULT_ATTEMPTED",
+    "AuditUnavailableError",
+    "audited",
+]

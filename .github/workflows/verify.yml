@@ -57,12 +57,26 @@ jobs:
         run: ruff format --check src tests
 
       - name: Run mypy
-        run: mypy src tests
+        # The scripts are checked too: they are part of the repo, and
+        # the local pre-push gate checks them. CI used to look only at
+        # src and tests, so nine type errors in scripts/pilot_check.py
+        # sat there unnoticed.
+        run: mypy src tests scripts
 
       - name: Audit dependencies for known CVEs
         run: |
           pip install pip-audit
           pip-audit --strict --skip-editable .
+
+      - name: The lock file is current
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          # uv.lock pins the dependency graph the Docker image and the
+          # dev environment resolve against. It rotted once — the
+          # project version in it was two releases behind — because
+          # nothing checked it. This is the check that was missing.
+          pip install uv
+          uv lock --check
 
   # ---------------------------------------------------------------
   # Job 2: test (full pytest + coverage + fresh-install e2e).

@@ -28,7 +28,7 @@
 │    • planner.py       — NL → Plan (YAML declarativo)                 │
 │    • context.py       — estado de sesión (target, engines, undo)     │
 │    • audit.py         — log HMAC-chained a SQLite                    │
-│    • tools/           — 26 tools de alto nivel                       │
+│    • tools/           — 31 tools de alto nivel                       │
 │                                                                       │
 │  NO implementa primitivas — solo delega y orquesta.                  │
 └─────┬───────────────┬───────────────┴─────────────────┬──────────────┘
@@ -244,7 +244,7 @@ Python (demasiado pesado para MVP). El protocolo es literalmente
 JSON-RPC 2.0 sobre stdio — exactamente lo que define MCP.
 
 Desde el punto de vista del cliente MCP upstream (Claude Desktop, VS Code...),
-el orquestrador aparece como un servidor "con 26 tools". El hecho de que
+el orquestrador aparece como un servidor "con 31 tools". El hecho de que
 esas herramientas internamente coordinan 4-5 servidores MCP adicionales
 es invisible.
 
