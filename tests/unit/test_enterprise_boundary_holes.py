@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import stat
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -164,8 +165,10 @@ class TestTheSnapshotStaysPrivate:
 
         assert str(path).startswith(str(home))
         # The location is the property that matters on every platform:
-        # the snapshot is out of the shared temporary directory.
-        assert "temp" not in str(path.parent).lower()
+        # the snapshot is in the orchestrator home, not dropped in the
+        # shared temporary directory the way it used to be.
+        assert path.parent.name == "snapshots"
+        assert path.parent != Path(tempfile.gettempdir())
 
     @posix_only
     async def test_it_is_owner_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
