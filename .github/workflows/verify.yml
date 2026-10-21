@@ -57,7 +57,11 @@ jobs:
         run: ruff format --check src tests
 
       - name: Run mypy
-        run: mypy src tests
+        # The scripts are checked too: they are part of the repo, and
+        # the local pre-push gate checks them. CI used to look only at
+        # src and tests, so nine type errors in scripts/pilot_check.py
+        # sat there unnoticed.
+        run: mypy src tests scripts
 
       - name: Audit dependencies for known CVEs
         run: |

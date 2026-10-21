@@ -76,7 +76,12 @@ class Report:
         return "\n".join(lines)
 
 
-def _truncate(text: str, limit: int = 160) -> str:
+def _truncate(text: object, limit: int = 160) -> str:
+    """Shorten a message for the report.
+
+    It takes an ``object`` because the callers pass either the API
+    response body or the exception itself.
+    """
     collapsed = " ".join(str(text).split())
     if len(collapsed) <= limit:
         return collapsed
