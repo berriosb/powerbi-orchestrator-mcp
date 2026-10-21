@@ -187,6 +187,21 @@ async def powerbi_health(
         )
     )
 
+    # Deployment readiness: is this configuration one the code supports,
+    # and is the boundary where the operator thinks it is?
+    from powerbi_orchestrator_mcp.orchestrator.readiness import collect_readiness
+
+    for finding in collect_readiness():
+        checks.append(
+            HealthCheck(
+                name=f"readiness:{finding.name}",
+                ok=finding.ok,
+                detail=finding.detail,
+            )
+        )
+        if not finding.ok:
+            warnings.append(f"{finding.name}: {finding.detail}")
+
     result = PowerbiHealthResult(
         server_version=__version__,
         uptime_seconds=round(uptime, 2),

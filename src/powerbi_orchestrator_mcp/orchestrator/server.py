@@ -2335,12 +2335,35 @@ def _apply_transport_security(http_cfg: HttpConfig) -> None:
     )
 
 
+def _log_startup_warnings() -> None:
+    """Report the configuration findings that matter, at boot.
+
+    A misconfigured deployment should say so when it starts, not when
+    the first thing goes wrong. The findings go to stderr so they show
+    up next to the server's own logs without polluting its stdout,
+    which is the MCP transport.
+    """
+    import sys
+
+    from powerbi_orchestrator_mcp.orchestrator.readiness import (
+        collect_readiness,
+    )
+
+    for finding in collect_readiness():
+        if finding.ok:
+            continue
+        line = f"[{finding.severity}] {finding.name}: {finding.detail}"
+        sys.stderr.write(line + "\n")
+
+
 def main() -> None:
     """Run the MCP server.
 
     Default transport is stdio (for Claude Desktop, VS Code, Cursor).
     Pass `--transport http` (or set `PBI_TRANSPORT=http`) to expose
     the server over Streamable HTTP with Entra ID authentication.
+    Pass `--readonly` (or set `PBI_READONLY=1`) to refuse every
+    state-changing tool, whatever the caller's scopes say.
 
     See `specs/architecture/07-http-transport.md` for the design.
     """
@@ -2349,6 +2372,15 @@ def main() -> None:
     from powerbi_orchestrator_mcp.orchestrator.transport import (
         parse_transport_args,
     )
+
+    # `--readonly` is a switch on the process, not on a caller, so it
+    # is applied before anything can dispatch a tool. The environment
+    # variable does the same thing for a container that has no
+    # arguments to pass.
+    if "--readonly" in sys.argv:
+        os.environ["PBI_READONLY"] = "1"
+
+    _log_startup_warnings()
 
     # Peek at argv; if --transport is absent, fast-path to stdio
     # without argparse overhead (preserves fast startup for stdio).
