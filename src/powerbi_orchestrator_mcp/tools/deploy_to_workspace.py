@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from powerbi_orchestrator_mcp.cloud.auth import AuthConfig, FabricCredential
 from powerbi_orchestrator_mcp.cloud.fabric_client import FabricClient
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
 from powerbi_orchestrator_mcp.validation.pre_deploy_gate import (
     GateResult,
     PreDeployGate,
@@ -123,6 +124,11 @@ async def deploy_to_workspace(
     """
     findings = findings or []
     result = DeployResult()
+
+    # The PBIP's contents leave the process: they are base64-encoded and
+    # sent to the Fabric API. Validated as a write on purpose — the read
+    # opt-out must not be able to widen what gets published to the cloud.
+    pbip_path = str(validate_write_path(pbip_path, must_exist=False))
 
     # The planned actions are computed before the gate runs so a blocked
     # deploy still reports what it *would* have done. A dry run that

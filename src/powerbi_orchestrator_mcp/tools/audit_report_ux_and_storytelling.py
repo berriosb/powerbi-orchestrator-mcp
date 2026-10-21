@@ -387,7 +387,16 @@ def audit_report_ux_and_storytelling(
     strictness: str = "standard",
 ) -> AuditReportUxAndStorytellingResult:
     """Run qualitative heuristics on all (or one) page(s) of a PBIP."""
-    pbip = Path(pbip_path)
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        validate_safe_pbip_path,
+    )
+
+    # The path arrives from the caller and the pages it points at end up in
+    # the findings (page names, visual ids), so it has to be bounded to the
+    # workspace before anything is read. A read-scoped caller must not be
+    # able to pull a report from anywhere on the host into the model
+    # context.
+    pbip = validate_safe_pbip_path(pbip_path, must_exist=False)
     if not pbip.exists():
         return AuditReportUxAndStorytellingResult(
             overall_score=0.0,

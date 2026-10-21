@@ -23,6 +23,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
+
 _VALID_RESOLUTION: set[str] = {
     "manual",
     "prefer_workspace",
@@ -316,7 +318,12 @@ def sync_git_to_workspace(
     """Deploy the local Git PBIP tree to the workspace."""
     warnings: list[str] = []
 
-    repo = Path(repo_path)
+    # The repository's contents leave the process: they are pushed to a
+    # Fabric workspace. The per-file check below keeps each blob inside
+    # the repository, and this keeps the repository itself inside the
+    # workspace. It is validated as a write on purpose — the read opt-out
+    # must not be able to widen what gets published to the cloud.
+    repo = validate_write_path(repo_path, must_exist=False)
     if not (repo / ".git").exists():
         return SyncGitToWorkspaceResult(
             dry_run=dry_run,

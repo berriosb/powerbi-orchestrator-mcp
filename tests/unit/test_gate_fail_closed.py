@@ -11,6 +11,8 @@ never happen:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from powerbi_orchestrator_mcp.tools.deploy_to_workspace import deploy_to_workspace
@@ -75,9 +77,9 @@ class TestPreDeployCheckTool:
 
 class TestDeployGate:
     @pytest.mark.asyncio
-    async def test_deploy_without_findings_is_blocked(self) -> None:
+    async def test_deploy_without_findings_is_blocked(self, tmp_path: Path) -> None:
         """A deploy must not clear its gate on zero evidence."""
-        result = await deploy_to_workspace("/tmp/model.pbip", "ws-1", dry_run=True)
+        result = await deploy_to_workspace(str(tmp_path / "model.pbip"), "ws-1", dry_run=True)
 
         assert result.gate_result is not None
         assert result.gate_result.passed is False
@@ -86,17 +88,17 @@ class TestDeployGate:
         assert any("gate_blocked" in e for e in result.errors)
 
     @pytest.mark.asyncio
-    async def test_blocked_deploy_still_reports_the_planned_actions(self) -> None:
+    async def test_blocked_deploy_still_reports_the_planned_actions(self, tmp_path: Path) -> None:
         """A dry run that is blocked must still say what it would have done."""
-        result = await deploy_to_workspace("/tmp/model.pbip", "ws-1", dry_run=True)
+        result = await deploy_to_workspace(str(tmp_path / "model.pbip"), "ws-1", dry_run=True)
 
         assert result.planned_actions
         assert any("create PowerBIDataset" in a for a in result.planned_actions)
 
     @pytest.mark.asyncio
-    async def test_deploy_with_clean_findings_clears_the_gate(self) -> None:
+    async def test_deploy_with_clean_findings_clears_the_gate(self, tmp_path: Path) -> None:
         result = await deploy_to_workspace(
-            "/tmp/model.pbip",
+            str(tmp_path / "model.pbip"),
             "ws-1",
             dry_run=True,
             findings=[{"severity": "info", "message": "all good"}],
