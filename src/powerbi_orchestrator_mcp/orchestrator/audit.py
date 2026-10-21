@@ -59,6 +59,15 @@ class AuditEntry(BaseModel):
     prev_hash: str
     row_hash: str
     payload_json: str
+    principal: str | None = None
+    """Who acted.
+
+    A column of its own rather than part of the payload: the payload is
+    redacted, and a principal is usually a UPN — an email — which the
+    redactor would replace with a hash. A hash is not an attribution.
+    The column is part of the hashed row, so the actor cannot be edited
+    afterwards without breaking the chain.
+    """
 
 
 class AuditVerifyResult(BaseModel):
@@ -148,9 +157,21 @@ def _row_fields(
     target_id: str | None,
     result_status: str,
     payload_json: str,
+    principal: str | None = None,
 ) -> list[str]:
-    """The hashed fields of a row, in a fixed order."""
-    return [tool_name, args_hash, target_id or "", result_status, payload_json]
+    """The hashed fields of a row, in a fixed order.
+
+    The principal is hashed with the rest when there is one, so an actor
+    cannot be rewritten after the fact without invalidating the chain.
+
+    A row with no principal hashes the older five fields. That keeps an
+    audit log written before the column existed verifiable after the
+    upgrade, instead of failing the whole chain at row one.
+    """
+    fields = [tool_name, args_hash, target_id or "", result_status, payload_json]
+    if principal:
+        fields.append(principal)
+    return fields
 
 
 def _ensure_audit_dir() -> Path:
@@ -224,12 +245,26 @@ def _get_conn() -> sqlite3.Connection:
             result_status TEXT NOT NULL,
             prev_hash TEXT NOT NULL,
             row_hash TEXT NOT NULL,
-            payload_json TEXT NOT NULL
+            payload_json TEXT NOT NULL,
+            principal TEXT
         )
         """
     )
+    _add_principal_column(conn)
     conn.commit()
     return conn
+
+
+def _add_principal_column(conn: sqlite3.Connection) -> None:
+    """Add the ``principal`` column to an audit log that predates it.
+
+    The column is new. An audit log written before it existed has rows
+    without an actor, and those rows keep verifying: a row with no
+    principal hashes the older five fields.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(audit_log)")}
+    if "principal" not in columns:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN principal TEXT")
 
 
 class AuditLog:
@@ -254,10 +289,12 @@ class AuditLog:
                 result_status TEXT NOT NULL,
                 prev_hash TEXT NOT NULL,
                 row_hash TEXT NOT NULL,
-                payload_json TEXT NOT NULL
+                payload_json TEXT NOT NULL,
+                principal TEXT
             )
             """
         )
+        _add_principal_column(conn)
         conn.commit()
         return conn
 
@@ -274,6 +311,7 @@ class AuditLog:
         target_id: str | None = None,
         payload: dict[str, Any] | None = None,
         *,
+        principal: str | None = None,
         timestamp: str | None = None,
     ) -> AuditEntry:
         """Insert a new audit entry with HMAC chain.
@@ -308,14 +346,17 @@ class AuditLog:
             new_id = max_id + 1
 
             prev_hash = self._get_last_hash(conn)
-            fields = _row_fields(tool_name, args_hash, target_id, result_status, payload_json)
+            fields = _row_fields(
+                tool_name, args_hash, target_id, result_status, payload_json, principal
+            )
             row_hash = _compute_row_hash(key, prev_hash, new_id, ts, fields)
 
             conn.execute(
                 """
                 INSERT INTO audit_log (id, timestamp, tool_name, tool_args_hash,
-                    target_id, result_status, prev_hash, row_hash, payload_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    target_id, result_status, prev_hash, row_hash, payload_json,
+                    principal)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_id,
@@ -327,6 +368,7 @@ class AuditLog:
                     prev_hash,
                     row_hash,
                     payload_json,
+                    principal,
                 ),
             )
             conn.execute("COMMIT")
@@ -343,6 +385,7 @@ class AuditLog:
                 result_status=result_status,
                 target_id=target_id,
                 payload=payload,
+                principal=principal,
                 timestamp=ts,
             )
         except Exception:
@@ -365,6 +408,7 @@ class AuditLog:
             prev_hash=prev_hash,
             row_hash=row_hash,
             payload_json=payload_json,
+            principal=principal,
         )
 
     def verify(self) -> AuditVerifyResult:
@@ -378,7 +422,7 @@ class AuditLog:
         try:
             rows = conn.execute(
                 "SELECT id, timestamp, tool_name, tool_args_hash, target_id, "
-                "result_status, prev_hash, row_hash, payload_json "
+                "result_status, prev_hash, row_hash, payload_json, principal "
                 "FROM audit_log ORDER BY id ASC"
             ).fetchall()
 
@@ -405,6 +449,7 @@ class AuditLog:
                     stored_prev,
                     stored_hash,
                     payload,
+                    principal,
                 ) = row
 
                 # Verify prev_hash chain
@@ -423,7 +468,7 @@ class AuditLog:
                     prev_hash,
                     row_id,
                     ts,
-                    _row_fields(tool_name, args_hash, target_id, result_status, payload),
+                    _row_fields(tool_name, args_hash, target_id, result_status, payload, principal),
                 )
 
                 if not hmac.compare_digest(stored_hash, expected_hash):
