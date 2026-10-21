@@ -153,11 +153,14 @@ de 500 primitivas dispersas.
 │         powerbi-modeling-mcp → npm: npx @microsoft/...          │
 │         te (Tabular Editor)    → .NET binary                     │
 │         superbi-mcp             → npm: npx superbi-mcp            │
-│         dscmd (DAX Studio)      → Windows binary                  │
-│         pbip-validator          → pip: pip install pbip-validator │
 │         python_report           → built-in (parte del orquestrador)│
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+La capa 3 son los motores a los que el orquestrador **despacha**. El
+`health` check además detecta otros binarios presentes en la máquina
+(`dscmd`, `pbip-validator`), pero ninguna tool los usa: instalarlos no
+habilita ninguna operación.
 
 **Por qué npm NO es necesario para instalar el orquestrador** (sí para
 correr operaciones reales): npm es una dependencia RUNTIME de los
@@ -199,7 +202,7 @@ Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
 - [`SECURITY.md`](./SECURITY.md) — how to report vulnerabilities.
 - [`docs/troubleshooting.md`](./docs/troubleshooting.md) — common errors with remediation.
 - [`SPEC.md`](./SPEC.md) — visión, arquitectura 6 capas, MVP ambicioso.
-- [`RELEASE-NOTES-v1.9.0.md`](./RELEASE-NOTES-v1.9.0.md) — última release con decisiones.
+- [`RELEASE-NOTES-v1.20.0.md`](./RELEASE-NOTES-v1.20.0.md) — última release con decisiones.
 - [`docs/architecture.md`](./docs/architecture.md) — arquitectura detallada.
 - [`docs/engines-setup.md`](./docs/engines-setup.md) — instalar engines opcionales.
 - [`docs/connect-target.md`](./docs/connect-target.md) — uso del entry-point tool.
@@ -237,16 +240,17 @@ a probar con `python_report` (built-in), no necesitas instalar nada más.
 # Linux:   apt install nodejs npm
 # Windows: https://nodejs.org/
 
-# Tabular Editor CLI (modeling fallback + BPA)
+# Tabular Editor CLI (BPA)
 # Windows/macOS: https://github.com/TabularEditor/TabularEditor/releases
 # Linux: dotnet tool install --global TabularEditor
-
-# pbip-validator (Microsoft, cuando esté publicado)
-pip install pbip-validator
-
-# DAX Studio (Windows only)
-# https://daxstudio.org/
 ```
+
+Los engines que el orquestrador **despacha** son esos tres. El `health`
+check detecta además otros binarios (`dscmd`, `pbip-validator`), pero
+ninguna tool los usa: instalarlos no habilita ninguna operación. El
+`pbip-validator` de Microsoft no está publicado en PyPI, y la
+validación PBIP que el orquestrador ejecuta es su propio validador
+estructural, que no necesita binario externo.
 
 Ver [`docs/engines-setup.md`](./docs/engines-setup.md) para detalles de
 instalación por engine y troubleshooting.
@@ -261,11 +265,19 @@ Edita la config de tu MCP client (ej. `claude_desktop_config.json`):
     "powerbi-orchestrator-mcp": {
       "command": "powerbi-orchestrator-mcp",
       "args": ["--start"],
-      "env": {"PBI_AUTH_MODE": "interactive"}
+      "env": {
+        "PBI_AUTH_MODE": "interactive",
+        "PBI_WORKSPACE_ROOT": "/ruta/a/tus/pbip"
+      }
     }
   }
 }
 ```
+
+`PBI_WORKSPACE_ROOT` acota las lecturas y las escrituras del
+orquestador a ese directorio. Si no lo pones, se usa el directorio de
+trabajo del proceso. Apunta ahí donde tengas tus `.pbip`: es la raíz
+del workspace desde el punto de vista del agente.
 
 Compatible con **VS Code + Copilot, Claude Desktop, OpenClaw, Hermes,
 Claude Code, Cursor** y cualquier cliente MCP stdio.
@@ -306,22 +318,145 @@ hacer safe_rename, audit, deploy y regression sobre cualquier PBIP local
 (sin engines externos) o cualquier Fabric workspace (con
 `powerbi-modeling-mcp` instalado).
 
-## Estado actual (v1.14.2)
+## Tres flujos completos, de principio a fin
+
+Los tres están en [`examples/`](./examples/), con los JSON de respuesta
+esperados. Aquí va el esqueleto de cada uno.
+
+### 1. Renombrar una columna sin romper nada
+
+El flujo más importante para un analista: cambiar el nombre de una
+columna y que las referencias del modelo **y** del reporte se muevan
+juntas.
+
+```
+connect_target(
+    target_type="pbip_folder",
+    target_ref="/ruta/a/tus/sales.pbip"
+)
+
+plan_change(
+    intent="safe_rename",
+    options={
+        "old_path": "FactSales[UnitPrice]",
+        "new_path": "FactSales[Price]",
+        "scope": "full"
+    }
+)
+
+apply_plan(
+    plan_id="<el que devolvió plan_change>",
+    dry_run=false,
+    confirm_each_step=false
+)
+```
+
+`plan_change` devuelve un plan **versionable** (YAML) que puedes commitear
+a Git antes de aplicarlo. `apply_plan` ejecuta los pasos con rollback
+entre motores, y devuelve `partial` si el rollback no lo revirtió todo.
+Después del rename, el paso de reporte dice **cuántas referencias
+reescribió** — un rename que no encuentra nada en un PBIR real es un
+dato, no un éxito.
+
+→ [`examples/01-safe-rename/`](./examples/01-safe-rename/README.md)
+
+### 2. Publicar en Fabric con el gate delante
+
+El gate evalúa **findings**, no ficheros: primero auditas, y le pasas
+el resultado a `pre_deploy_check` y a `deploy_to_workspace`.
+
+```
+audit_model_and_report(
+    pbip_path="/ruta/a/tus/sales.pbip"
+)
+
+pre_deploy_check(
+    findings_json="<los findings de la auditoría>",
+    profile="strict"
+)
+
+deploy_to_workspace(
+    pbip_path="/ruta/a/tus/sales.pbip",
+    workspace_id="<workspace>",
+    findings_json="<los mismos findings>",
+    gate_profile="strict",
+    dry_run=true          # ← empieza siempre por aquí
+)
+
+run_refresh(
+    workspace_id="<workspace>",
+    dataset_id="<dataset>",
+    dry_run=true
+)
+```
+
+`pre_deploy_check` **falla cerrado**: sin findings no pasa, y una
+severidad que el perfil no conoce bloquea. Un despliegue bloqueado
+igual lista las operaciones que habría hecho, para que el dry run siga
+siendo informativo. `dry_run` viene en `true` por defecto en las dos
+tools que escriben en la nube, así que hay que desactivarlo a
+propósito.
+
+→ [`examples/02-deploy-pbip/`](./examples/02-deploy-pbip/README.md)
+
+### 3. Auditar, arreglar, volver a auditar
+
+```
+audit_model_and_report(
+    pbip_path="/ruta/a/tus/sales.pbip"
+)
+
+apply_theme_and_accessibility_rules(
+    pbip_path="/ruta/a/tus/sales.pbip",
+    palette="okabe_ito",
+    auto_backfill_alt_text=true
+)
+
+add_measure_with_validation(
+    target="/ruta/a/tus/sales.pbip",
+    table="FactSales",
+    measure_name="Revenue",
+    expression="SUM(FactSales[Price])"
+)
+
+audit_model_and_report(
+    pbip_path="/ruta/a/tus/sales.pbip"
+)   # segunda pasada
+```
+
+El bucle es el punto: auditar, corregir, auditar otra vez. La segunda
+pasada es la que dice si el arreglo funcionó.
+
+→ [`examples/03-audit-then-fix/`](./examples/03-audit-then-fix/README.md)
+
+## Estado actual (v1.20.0)
 
 - ✅ 28 tools implementadas (modelado, reportes, nube, auditoría, UX, DAX)
 - ✅ Cross-engine rollback
-- ✅ Audit log con HMAC chain
+- ✅ Audit log encadenado con HMAC, con anchor firmado
 - ✅ PlanBuilder con templates versionables
-- ✅ Engine adapters: `python_report` (built-in), `powerbi-modeling-mcp`,
-  `superbi-mcp`, `te` (Tabular Editor)
-- ✅ Modificaciones y mutaciones atómicas en disco para PBIP en fallback sin motores externos
+- ✅ Motores registrados: `python_report` y `python_modeling` (built-in),
+  `powerbi-modeling-mcp`, `superbi-mcp`, `te` (Tabular Editor, para BPA).
+  Cada paso dice **qué motor lo sirvió**
+- ✅ Scopes por tool (las 28 declaran el suyo) y `Tools.Admin` para las
+  operaciones de gobernanza
+- ✅ Lecturas y escrituras acotadas al workspace (`PBI_WORKSPACE_ROOT`)
+- ✅ Planes con dueño: conocer el `plan_id` no alcanza para leerlos ni
+  borrarlos
 - ✅ Story variance analysis (detección de regresiones visuales)
 - ✅ mypy --strict clean, ruff clean, CI matrix Linux/macOS/Windows
-- ✅ Backlog de hardening cerrado (0 items pendientes)
 - ✅ Publicado en PyPI: https://pypi.org/project/powerbi-orchestrator-mcp/
-- ⏳ Pendiente: tests E2E con binaries reales (`te`, `dscmd`)
 
-Ver [`RELEASE-NOTES-v1.14.2.md`](./RELEASE-NOTES-v1.14.2.md) para detalles completos.
+**Pendiente, y es deliberado:**
+
+- ⏳ Los E2E contra un tenant real siguen siendo manuales
+  (`pilot-validation.yml`, `workflow_dispatch`). Los secrets no existen
+  todavía en el repo, así que automatizarlo sin tenant es teatro.
+- ⏳ La propiedad de planes vive en un SQLite local, no en un IdP.
+- ⏳ El audit log es *fail-open*: una escritura fallida no detiene la
+  mutación, se reporta como aviso en el resultado.
+
+Ver [`RELEASE-NOTES-v1.20.0.md`](./RELEASE-NOTES-v1.20.0.md) para detalles completos.
 
 ## Licencia
 
