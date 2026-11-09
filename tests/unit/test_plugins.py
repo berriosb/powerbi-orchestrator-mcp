@@ -41,6 +41,7 @@ def _write_plugin(
 ) -> Path:
     path = directory / f"{name}.py"
     path.write_text(content, encoding="utf-8")
+    path.chmod(0o600)
     return path
 
 

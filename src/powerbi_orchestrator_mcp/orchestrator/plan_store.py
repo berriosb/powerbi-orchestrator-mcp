@@ -57,6 +57,7 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
             rollback_steps_json TEXT NOT NULL DEFAULT '[]',
             risk_score REAL NOT NULL DEFAULT 0.0,
             estimated_changes_json TEXT NOT NULL DEFAULT '{}',
+            options_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,
             target_id TEXT,
             owner TEXT NOT NULL DEFAULT 'local'
@@ -66,6 +67,8 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(plans)")}
     if "owner" not in columns:
         conn.execute("ALTER TABLE plans ADD COLUMN owner TEXT NOT NULL DEFAULT 'local'")
+    if "options_json" not in columns:
+        conn.execute("ALTER TABLE plans ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_plans_created ON plans(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_plans_owner ON plans(owner)")
     conn.commit()
@@ -82,21 +85,28 @@ def _row_to_plan(row: sqlite3.Row) -> Plan:
 
     from powerbi_orchestrator_mcp.orchestrator.plan_models import (
         EstimatedChanges,
+        PlanOptions,
         PlanStep,
     )
 
     steps_data = json.loads(row["steps_json"])
     rb_data = json.loads(row["rollback_steps_json"])
     est_data = json.loads(row["estimated_changes_json"])
+    row_keys = set(row.keys())
+    opts_raw = row["options_json"] if "options_json" in row_keys and row["options_json"] else "{}"
+    opts_data = json.loads(opts_raw)
     steps = [PlanStep.model_validate(s) for s in steps_data]
     rb_steps = [PlanStep.model_validate(s) for s in rb_data]
+    target = (row["target_id"] or "") if "target_id" in row_keys else ""
     return Plan(
         id=row["plan_id"],
+        target=target,
         yaml=row["plan_yaml"],
         steps=steps,
         rollback_steps=rb_steps,
         risk_score=float(row["risk_score"]),
         estimated_changes=EstimatedChanges.model_validate(est_data),
+        options=PlanOptions.model_validate(opts_data),
     )
 
 
@@ -117,6 +127,7 @@ class PlanStore:
     def put(self, plan: Plan, owner: str | None = None) -> Plan:
         """Insert or replace a plan, recording the identity that owns it."""
         import json
+        from datetime import UTC, datetime
 
         from powerbi_orchestrator_mcp.orchestrator.authorization import (
             LOCAL_IDENTITY,
@@ -126,13 +137,27 @@ class PlanStore:
         resolved_owner = owner or current_identity() or LOCAL_IDENTITY
         conn = self._conn()
         try:
+            existing = conn.execute(
+                "SELECT owner, created_at FROM plans WHERE plan_id = ?",
+                (plan.id,),
+            ).fetchone()
+            if existing is not None and existing[0] != resolved_owner:
+                raise PermissionError(
+                    f"plan {plan.id!r} belongs to another owner and cannot be overwritten"
+                )
+            created_at = (
+                str(existing[1])
+                if existing is not None and existing[1]
+                else datetime.now(UTC).isoformat()
+            )
             conn.execute(
                 """
                 INSERT OR REPLACE INTO plans (
                     plan_id, plan_yaml, steps_json, rollback_steps_json,
-                    risk_score, estimated_changes_json, created_at, owner
+                    risk_score, estimated_changes_json, options_json,
+                    created_at, target_id, owner
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     plan.id,
@@ -141,7 +166,9 @@ class PlanStore:
                     json.dumps([s.model_dump(mode="json") for s in plan.rollback_steps]),
                     plan.risk_score,
                     plan.estimated_changes.model_dump_json(),
-                    plan.id,  # plan_id is a UUID; treat as created_at for ordering
+                    plan.options.model_dump_json(),
+                    created_at,
+                    plan.target or None,
                     resolved_owner,
                 ),
             )
@@ -218,7 +245,7 @@ class PlanStore:
         try:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM plans WHERE owner = ? ORDER BY created_at DESC",
+                "SELECT * FROM plans WHERE owner = ? ORDER BY created_at DESC, rowid DESC",
                 (wanted,),
             ).fetchall()
             return [_row_to_plan(r) for r in rows]
@@ -226,18 +253,16 @@ class PlanStore:
             conn.close()
 
     def count(self, owner: str | None = None) -> int:
-        """Count plans, scoped to the caller when an identity is bound."""
-        from powerbi_orchestrator_mcp.orchestrator.authorization import current_identity
+        """Count plans scoped to the caller (or ``LOCAL_IDENTITY`` in local mode)."""
+        from powerbi_orchestrator_mcp.orchestrator.authorization import (
+            LOCAL_IDENTITY,
+            current_identity,
+        )
 
+        wanted = owner or current_identity() or LOCAL_IDENTITY
         conn = self._conn()
         try:
-            identity = owner or current_identity()
-            if identity is None:
-                row = conn.execute("SELECT COUNT(*) FROM plans").fetchone()
-            else:
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM plans WHERE owner = ?", (identity,)
-                ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM plans WHERE owner = ?", (wanted,)).fetchone()
             return int(row[0]) if row else 0
         finally:
             conn.close()

@@ -58,6 +58,14 @@ class TestTheReadBoundary:
         assert finding.severity == ERROR
         assert READ_OPT_OUT_ENV in str(finding.detail)
 
+    def test_workspace_root_overrides_opt_out(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When PBI_WORKSPACE_ROOT is set, resolve_read_root() bounds reads to it."""
+        monkeypatch.setenv(WORKSPACE_ROOT_ENV, "/srv/pbi")
+        monkeypatch.setenv(READ_OPT_OUT_ENV, "1")
+
+        finding = _by_name()["read_boundary"]
+        assert finding.ok is True
+
 
 class TestTheWorkspaceRoot:
     def test_set_is_reported_as_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:

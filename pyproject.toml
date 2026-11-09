@@ -54,6 +54,18 @@ dev = [
     "pip-audit>=2.7.0",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "types-pyyaml>=6.0.12",
+    "pip-audit>=2.7.0",
+]
+
 [project.scripts]
 powerbi-orchestrator-mcp = "powerbi_orchestrator_mcp.orchestrator.server:main"
 powerbi-orchestrator = "powerbi_orchestrator_mcp.cli:main"
@@ -93,7 +105,7 @@ known-first-party = ["powerbi_orchestrator_mcp"]
 python_version = "3.11"
 strict = true
 warn_return_any = true
-warn_unused_configs = true
+warn_unused_configs = false
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true

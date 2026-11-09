@@ -87,3 +87,101 @@ def test_the_planner_accepts_any_suffix(suffix: str) -> None:
     finally:
         identifiers_mod.new_plan_id = original
     assert identifiers_mod.new_plan_id()
+
+
+class TestRollbackAndPlanOptions:
+    @pytest.mark.asyncio
+    async def test_failed_step_without_rollback_is_not_marked_non_revertible(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.plan_models import PlanStep
+        from powerbi_orchestrator_mcp.orchestrator.rollback import RollbackEngine, StepOutcome
+
+        class _OkExec:
+            engine_name = "modeling"
+
+            async def execute_step(self, step: PlanStep) -> StepOutcome:
+                return StepOutcome(success=True)
+
+        s1 = PlanStep(
+            id="s1",
+            engine="modeling",
+            action="a1",
+            rollback_step=PlanStep(id="s1-rb", engine="modeling", action="a1-rb"),
+        )
+        s2_failed = PlanStep(id="s2", engine="validation", action="validate")
+
+        engine = RollbackEngine(_OkExec())
+        # Even if a caller mistakenly includes s2_failed in executed_steps,
+        # s2_failed must not be listed in non_revertible_steps.
+        res = await engine.execute_plan(executed_steps=[s1, s2_failed], failed_step=s2_failed)
+        assert res.status == "rolled_back"
+        assert res.rolled_back_steps == ["s1"]
+        assert "s2" not in res.non_revertible_steps
+
+    @pytest.mark.asyncio
+    async def test_auto_rollback_false_skips_rollback_and_reports_artifacts_changed(self) -> None:
+        from powerbi_orchestrator_mcp.orchestrator.plan_models import PlanStep
+        from powerbi_orchestrator_mcp.orchestrator.rollback import StepOutcome
+        from powerbi_orchestrator_mcp.orchestrator.server import apply_plan, plan_change
+        from powerbi_orchestrator_mcp.orchestrator.step_executor import (
+            get_default_registry,
+            reset_default_registry,
+        )
+
+        class _MockValidation:
+            engine_name = "validation"
+
+            async def execute_step(self, step: PlanStep) -> StepOutcome:
+                return StepOutcome(success=True, changed_files=["snap.json"])
+
+        class _FailingModeling:
+            engine_name = "modeling"
+
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            async def execute_step(self, step: PlanStep) -> StepOutcome:
+                self.calls.append(step.id)
+                return StepOutcome(success=False, error_message="boom")
+
+        mod_exec = _FailingModeling()
+        try:
+            get_default_registry().register(_MockValidation())
+            get_default_registry().register(mod_exec)
+
+            plan_res = await plan_change(
+                intent="safe_rename",
+                options={"old_path": "T[A]", "new_path": "T[B]", "auto_rollback": False},
+            )
+            res = await apply_plan(plan_id=plan_res.plan_id, dry_run=False)
+            assert res.result == "failed"
+            assert res.rollback_steps_executed == []
+            assert res.artifacts_changed == ["snap.json"]
+            # Only forward step ran; revert step was never called.
+            assert len(mod_exec.calls) == 1
+        finally:
+            reset_default_registry()
+
+
+class TestPlanStoreOwnershipAndScoping:
+    def test_put_rejects_cross_owner_overwrite_and_count_scopes_to_owner(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        from pathlib import Path
+
+        from powerbi_orchestrator_mcp.orchestrator.plan_store import PlanStore
+
+        db_path = (
+            Path(str(tmp_path)) / "plans.db"
+            if not isinstance(tmp_path, Path)
+            else tmp_path / "plans.db"
+        )
+        store = PlanStore(db_path=db_path)
+        plan = PlanBuilder().build_safe_rename(old_path="T[A]", new_path="T[B]")
+
+        store.put(plan, owner="alice")
+        with pytest.raises(PermissionError, match="belongs to another owner"):
+            store.put(plan, owner="bob")
+
+        # Local count (default LOCAL_IDENTITY) does not leak alice's plan count.
+        assert store.count() == 0
+        assert store.count(owner="alice") == 1

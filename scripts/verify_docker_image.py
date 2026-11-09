@@ -28,7 +28,7 @@ import json
 import subprocess
 import sys
 
-INITIALIZE = {
+INITIALIZE: dict[str, object] = {
     "jsonrpc": "2.0",
     "id": 1,
     "method": "initialize",
@@ -38,8 +38,8 @@ INITIALIZE = {
         "clientInfo": {"name": "verify-docker-image", "version": "1"},
     },
 }
-INITIALIZED = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-TOOLS_LIST = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+INITIALIZED: dict[str, object] = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+TOOLS_LIST: dict[str, object] = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
 
 
 def _run(
@@ -77,22 +77,66 @@ def check_cli(image: str) -> bool:
     return True
 
 
-def check_mcp(image: str) -> list[str] | None:
-    messages = "\n".join(json.dumps(m) for m in (INITIALIZE, INITIALIZED, TOOLS_LIST)) + "\n"
-    proc = _run(["docker", "run", "--rm", "-i", image, "--start"], stdin=messages)
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
+def _send_and_wait(
+    proc: subprocess.Popen[str],
+    messages: list[dict[str, object]],
+    expected_id: int,
+) -> dict[str, object] | None:
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+    for msg in messages:
+        proc.stdin.write(json.dumps(msg) + "\n")
+    proc.stdin.flush()
+    while True:
+        line = proc.stdout.readline()
+        if not line:
+            return None
+        stripped = line.strip()
+        if not stripped.startswith("{"):
             continue
         try:
-            payload = json.loads(line)
+            payload = json.loads(stripped)
         except json.JSONDecodeError:
             continue
-        if payload.get("id") == 2 and "result" in payload:
-            return sorted(tool["name"] for tool in payload["result"].get("tools", []))
-    print("[FAIL] mcp.tools_list: the image did not answer tools/list")
-    print((proc.stderr or proc.stdout)[-500:])
-    return None
+        if isinstance(payload, dict) and payload.get("id") == expected_id:
+            return payload
+
+
+def check_mcp(image: str) -> list[str] | None:
+    proc = subprocess.Popen(  # noqa: S603 — controlled docker invocation
+        ["docker", "run", "--rm", "-i", image, "--start"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        init_resp = _send_and_wait(proc, [INITIALIZE], expected_id=1)
+        if init_resp is None or "result" not in init_resp:
+            err = proc.stderr.read() if proc.stderr else ""
+            print("[FAIL] mcp.initialize: the image did not answer initialize")
+            print(err[-500:])
+            return None
+
+        tools_resp = _send_and_wait(proc, [INITIALIZED, TOOLS_LIST], expected_id=2)
+        if tools_resp is not None and "result" in tools_resp:
+            result = tools_resp["result"]
+            if isinstance(result, dict):
+                tools = result.get("tools", [])
+                if isinstance(tools, list):
+                    return sorted(str(tool["name"]) for tool in tools if isinstance(tool, dict))
+        err = proc.stderr.read() if proc.stderr else ""
+        print("[FAIL] mcp.tools_list: the image did not answer tools/list")
+        print(err[-500:])
+        return None
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
 
 
 def main(argv: list[str] | None = None) -> int:

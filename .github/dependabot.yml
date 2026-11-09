@@ -15,25 +15,27 @@ updates:
       runtime-deps:
         patterns:
           - "azure-*"
-          - "mcp"
           - "pydantic*"
           - "httpx"
           - "structlog"
           - "pyyaml"
           - "rich"
+          - "pyjwt*"
       dev-deps:
         patterns:
           - "pytest*"
           - "ruff"
           - "mypy"
           - "types-*"
+          - "pip-audit"
     # Don't open PRs for major version bumps of pinned deps — surface
     # them as issues via the version-update feature instead.
     ignore:
       - dependency-name: "pydantic*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "mcp"
+      - dependency-name: "mcp*"
         update-types: ["version-update:semver-major"]
+        versions: [">= 2.0.0"]
     # Limit to 5 open PRs at a time to avoid PR pile-up.
     open-pull-requests-limit: 5
     # Auto-merge patch updates; let a human review minor/major.

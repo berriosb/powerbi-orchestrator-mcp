@@ -113,7 +113,7 @@ class TestTheRealBinaryRuns:
         """
         monkeypatch.setenv(RULES_FILE_ENV, str(SMOKE_RULES))
         model = _bim_from_fixture(temp_pbip, temp_pbip / "model.bim")
-        runner = BpaRunner(binary=str(engine_te_path), timeout_s=90)
+        runner = BpaRunner(binary=str(engine_te_path), timeout_s=15)
 
         try:
             result = await runner.run(model, ruleset_name="default")
@@ -146,7 +146,7 @@ class TestTheRealBinaryRuns:
         ``EngineError``.
         """
         monkeypatch.setenv(RULES_FILE_ENV, str(SMOKE_RULES))
-        runner = BpaRunner(binary=str(engine_te_path))
+        runner = BpaRunner(binary=str(engine_te_path), timeout_s=15)
 
         with pytest.raises(EngineError) as excinfo:
             await runner.run(

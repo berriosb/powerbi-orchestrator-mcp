@@ -109,14 +109,23 @@ async def _cmd_validate(args: argparse.Namespace) -> int:
 
 async def _cmd_inspect(args: argparse.Namespace) -> int:
     """Print a JSON summary of a PBIP folder structure."""
+    import os
+
     from powerbi_orchestrator_mcp.engines.report_python import (
         PythonReportEngine,
     )
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        _resolve_guarded,
+        validate_safe_pbip_path,
+    )
 
-    pbip_path = Path(args.path)
-    if not pbip_path.exists():
-        print(f"error: PBIP path does not exist: {pbip_path}", file=sys.stderr)
+    resolved_candidate = _resolve_guarded(args.path)
+    if not resolved_candidate.exists():
+        print(f"error: PBIP path does not exist: {args.path}", file=sys.stderr)
         return 2
+    if os.environ.get("PBI_WORKSPACE_ROOT"):
+        validate_safe_pbip_path(args.path)
+    pbip_path = Path(args.path)
 
     report_dir_candidates = list(pbip_path.glob("*.Report"))
     dataset_dir_candidates = list(pbip_path.glob("*.Dataset"))
@@ -180,6 +189,16 @@ def _dummy_conn(pbip_path: Path) -> Any:
 
 def _cmd_init(args: argparse.Namespace) -> int:
     """Create a minimal valid PBIP skeleton."""
+    import os
+
+    from powerbi_orchestrator_mcp.validation.path_safety import (
+        _resolve_guarded,
+        validate_write_path,
+    )
+
+    _resolve_guarded(args.path)
+    if os.environ.get("PBI_WORKSPACE_ROOT"):
+        validate_write_path(args.path)
     pbip_path = Path(args.path)
     if pbip_path.exists() and not args.force:
         print(

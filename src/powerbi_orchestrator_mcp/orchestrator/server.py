@@ -788,6 +788,8 @@ async def _rollback_plan(
     step_by_id = {s.id: s for s in plan.steps}
     executed_plan_steps: list[PlanStep] = []
     for entry in executed_steps:
+        if not entry.get("success"):
+            continue
         ps = step_by_id.get(entry["id"])
         if ps is not None:
             executed_plan_steps.append(ps)
@@ -866,6 +868,12 @@ async def apply_plan(
         confirm_each_step=confirm_each_step,
     )
 
+    changed_so_far = list(
+        dict.fromkeys(
+            f for entry in executed if entry.get("success") for f in entry.get("changed_files", [])
+        )
+    )
+
     if failed_step is not None:
         # A user decline is not a failure: nothing needs unwinding, and
         # running the rollback path here would either report a bogus
@@ -881,7 +889,21 @@ async def apply_plan(
                 result="stopped_by_user",
                 executed_steps=executed,
                 failed_step=failed_step,
-                artifacts_changed=[],
+                artifacts_changed=changed_so_far,
+            )
+        if not plan.options.auto_rollback:
+            PlanExecutionStore().complete(
+                execution.execution_id,
+                result_status="failed",
+                state=PlanExecutionState.PARTIAL,
+            )
+            return ApplyResult(
+                result="failed",
+                executed_steps=executed,
+                failed_step=failed_step,
+                rollback_steps_executed=[],
+                artifacts_changed=changed_so_far,
+                rollback_handle=None,
             )
         try:
             rollback_result = await _rollback_plan(plan, executed, failed_step)
@@ -892,14 +914,41 @@ async def apply_plan(
             if rollback_result.status == "rolled_back":
                 plan_status = "rolled_back"
                 plan_state = PlanExecutionState.ROLLED_BACK
+                remaining_changed = list(
+                    dict.fromkeys(
+                        f
+                        for entry in executed
+                        if entry.get("success")
+                        and entry["id"] in set(rollback_result.non_revertible_steps)
+                        for f in entry.get("changed_files", [])
+                    )
+                )
             elif rollback_result.status == "partial":
                 plan_status = "rollback_partial"
                 plan_state = PlanExecutionState.PARTIAL
+                rolled_set = set(rollback_result.rolled_back_steps)
+                remaining_changed = list(
+                    dict.fromkeys(
+                        f
+                        for entry in executed
+                        if entry.get("success") and entry["id"] not in rolled_set
+                        for f in entry.get("changed_files", [])
+                    )
+                )
             else:
                 # The rollback steps themselves failed. The workspace may
                 # not be in the state it was in before the plan ran.
                 plan_status = "rollback_incomplete"
                 plan_state = PlanExecutionState.PARTIAL
+                rolled_set = set(rollback_result.rolled_back_steps)
+                remaining_changed = list(
+                    dict.fromkeys(
+                        f
+                        for entry in executed
+                        if entry.get("success") and entry["id"] not in rolled_set
+                        for f in entry.get("changed_files", [])
+                    )
+                )
             PlanExecutionStore().complete(
                 execution.execution_id,
                 result_status=plan_status,
@@ -931,7 +980,7 @@ async def apply_plan(
                 executed_steps=executed,
                 failed_step=failed_step,
                 rollback_steps_executed=rollback_entries,
-                artifacts_changed=[],
+                artifacts_changed=remaining_changed,
                 rollback_handle=rollback_handle,
             )
         except NoRollbackAvailableError:
@@ -947,7 +996,7 @@ async def apply_plan(
                 executed_steps=executed,
                 failed_step=failed_step,
                 rollback_steps_executed=[],
-                artifacts_changed=[],
+                artifacts_changed=changed_so_far,
                 rollback_handle=None,
             )
 
@@ -978,7 +1027,7 @@ async def apply_plan(
         executed_steps=executed,
         failed_step=None,
         rollback_steps_executed=[],
-        artifacts_changed=[],
+        artifacts_changed=changed_so_far,
         rollback_handle=None,
     )
 
@@ -2356,6 +2405,18 @@ def _log_startup_warnings() -> None:
         sys.stderr.write(line + "\n")
 
 
+def _reconcile_and_log_orphans() -> None:
+    import sys
+
+    orphans = reconcile_orphan_executions_on_boot()
+    if orphans:
+        ids = ", ".join(o.execution_id for o in orphans)
+        sys.stderr.write(
+            f"[warning] orphan_executions: reconciled {len(orphans)} orphaned "
+            f"plan execution(s) from a previous crash: {ids}\n"
+        )
+
+
 def main() -> None:
     """Run the MCP server.
 
@@ -2380,6 +2441,17 @@ def main() -> None:
     if "--readonly" in sys.argv:
         os.environ["PBI_READONLY"] = "1"
 
+    # Propagate `--transport http` / `--transport=http` into PBI_TRANSPORT
+    # before startup readiness checks run so HTTP deployments started via
+    # CLI flags are not falsely warned about stdio scope vacuity.
+    for idx, arg in enumerate(sys.argv):
+        if arg == "--transport" and idx + 1 < len(sys.argv):
+            os.environ.setdefault("PBI_TRANSPORT", sys.argv[idx + 1].strip().lower())
+            break
+        if arg.startswith("--transport="):
+            os.environ.setdefault("PBI_TRANSPORT", arg.split("=", 1)[1].strip().lower())
+            break
+
     _log_startup_warnings()
 
     # Peek at argv; if --transport is absent, fast-path to stdio
@@ -2395,14 +2467,14 @@ def main() -> None:
         or _env_transport == "http"
     )
     if not _transport_selected:
-        reconcile_orphan_executions_on_boot()
+        _reconcile_and_log_orphans()
         mcp.run(transport="stdio")
         return
 
     transport, http_cfg = parse_transport_args()
 
     if transport == "stdio":
-        reconcile_orphan_executions_on_boot()
+        _reconcile_and_log_orphans()
         mcp.run(transport="stdio")
         return
 
@@ -2425,7 +2497,7 @@ def main() -> None:
     if log_level:
         mcp.settings.log_level = log_level.upper()  # type: ignore[assignment]
     _apply_transport_security(http_cfg)
-    reconcile_orphan_executions_on_boot()
+    _reconcile_and_log_orphans()
 
     import anyio
     import uvicorn
