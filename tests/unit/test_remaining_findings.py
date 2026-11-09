@@ -248,7 +248,10 @@ class TestPluginOptIn:
 
     def test_enabled_plugins_load(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(PLUGINS_ENV_VAR, "1")
-        (tmp_path / "rules.py").write_text("BPA_RULES = []\n", encoding="utf-8")
+        os.chmod(tmp_path, 0o700)
+        plugin_file = tmp_path / "rules.py"
+        plugin_file.write_text("BPA_RULES = []\n", encoding="utf-8")
+        os.chmod(plugin_file, 0o600)
 
         registry = load_plugins(tmp_path)
 
@@ -282,7 +285,9 @@ class TestPluginOptIn:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv(PLUGINS_ENV_VAR, "1")
-        (tmp_path / "rules.py").write_text("BPA_RULES = []\n", encoding="utf-8")
+        plugin_file = tmp_path / "rules.py"
+        plugin_file.write_text("BPA_RULES = []\n", encoding="utf-8")
+        os.chmod(plugin_file, 0o600)
         os.chmod(tmp_path, 0o700)
 
         assert len(load_plugins(tmp_path).loaded) == 1

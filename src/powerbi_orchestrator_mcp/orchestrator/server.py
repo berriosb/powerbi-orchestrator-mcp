@@ -788,7 +788,7 @@ async def _rollback_plan(
     step_by_id = {s.id: s for s in plan.steps}
     executed_plan_steps: list[PlanStep] = []
     for entry in executed_steps:
-        if not entry.get("success"):
+        if not entry.get("success", True):
             continue
         ps = step_by_id.get(entry["id"])
         if ps is not None:
@@ -808,6 +808,170 @@ async def _rollback_plan(
     return await rollback_engine.execute_plan(
         executed_steps=executed_plan_steps,
         failed_step=failed_plan_step,
+    )
+
+
+def _collect_artifacts_changed(
+    executed_steps: list[dict[str, Any]],
+    *,
+    rolled_back_step_ids: set[str] | None = None,
+) -> list[str]:
+    reverted = rolled_back_step_ids or set()
+    artifacts: list[str] = []
+    seen: set[str] = set()
+    for entry in executed_steps:
+        if not entry.get("success"):
+            continue
+        if entry.get("id") in reverted:
+            continue
+        for f in entry.get("changed_files") or []:
+            if isinstance(f, str) and f not in seen:
+                seen.add(f)
+                artifacts.append(f)
+    return artifacts
+
+
+async def _reconcile_orphans_before_apply(
+    ctx: Context[Any, Any, Any] | None,
+    *,
+    dry_run: bool,
+) -> ApplyResult | None:
+    exec_store = PlanExecutionStore()
+    reconcile_orphan_executions_on_boot(store=exec_store)
+    if dry_run:
+        return None
+    orphans = exec_store.list_by_state(PlanExecutionState.ORPHANED)
+    if not orphans:
+        return None
+    orphan_ids = ", ".join(o.execution_id for o in orphans)
+    if ctx is None:
+        return ApplyResult(
+            result="failed",
+            executed_steps=[],
+            failed_step={
+                "id": orphans[0].execution_id,
+                "error_message": (
+                    f"detected {len(orphans)} orphaned execution(s) ({orphan_ids}); "
+                    "interactive MCP context is required to reconcile before applying a plan"
+                ),
+            },
+            rollback_steps_executed=[],
+            artifacts_changed=[],
+            rollback_handle=None,
+        )
+    try:
+        response = await _elicit(
+            ctx,
+            ElicitationRequest(
+                question=(
+                    f"Se detectaron {len(orphans)} ejecuciones abandonadas ({orphan_ids}). "
+                    "¿Qué hacer?"
+                ),
+                choices=[
+                    ElicitationChoice(
+                        label="Reintentar rollback automático",
+                        description="rollback",
+                    ),
+                    ElicitationChoice(
+                        label="Marcar como manuales (yo los reviso)",
+                        description="manual",
+                    ),
+                    ElicitationChoice(
+                        label="Abortar (no ejecutar este apply_plan)",
+                        description="abort",
+                    ),
+                ],
+            ),
+            bypass_rate_limit=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ApplyResult(
+            result="failed",
+            executed_steps=[],
+            failed_step={
+                "id": orphans[0].execution_id,
+                "error_message": f"orphan reconciliation prompt failed ({exc})",
+            },
+            rollback_steps_executed=[],
+            artifacts_changed=[],
+            rollback_handle=None,
+        )
+
+    if not response.accepted:
+        return ApplyResult(
+            result="stopped_by_user",
+            executed_steps=[],
+            failed_step={
+                "id": orphans[0].execution_id,
+                "error_message": "orphan reconciliation declined by user",
+                "stopped_by_user": True,
+            },
+            rollback_steps_executed=[],
+            artifacts_changed=[],
+            rollback_handle=None,
+        )
+
+    choice = str(response.values.get("response", "")).strip().lower()
+    if "manual" in choice:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "orphan_executions_marked_manual: %s",
+            [o.execution_id for o in orphans],
+        )
+        return None
+
+    if "rollback" in choice:
+        for orphan in reversed(orphans):
+            orphan_plan = _owned_plan(orphan.plan_id) or _plan_store.get(orphan.plan_id)
+            if orphan_plan is None or not orphan_plan.steps:
+                exec_store.complete(
+                    orphan.execution_id,
+                    result_status="rollback_incomplete",
+                    state=PlanExecutionState.PARTIAL,
+                )
+                continue
+            idx = (
+                orphan.current_step_index
+                if orphan.current_step_index is not None
+                else len(orphan_plan.steps) - 1
+            )
+            idx = max(0, min(idx, len(orphan_plan.steps) - 1))
+            executed_entries = [{"id": s.id, "success": True} for s in orphan_plan.steps[: idx + 1]]
+            failed_entry = {"id": orphan_plan.steps[idx].id}
+            try:
+                rb_res = await _rollback_plan(orphan_plan, executed_entries, failed_entry)
+                if rb_res.status == "rolled_back":
+                    exec_store.complete(
+                        orphan.execution_id,
+                        result_status="rolled_back",
+                        state=PlanExecutionState.ROLLED_BACK,
+                    )
+                else:
+                    exec_store.complete(
+                        orphan.execution_id,
+                        result_status="rollback_incomplete",
+                        state=PlanExecutionState.PARTIAL,
+                    )
+            except NoRollbackAvailableError:
+                exec_store.complete(
+                    orphan.execution_id,
+                    result_status="rollback_incomplete",
+                    state=PlanExecutionState.PARTIAL,
+                )
+        return None
+
+    return ApplyResult(
+        result="stopped_by_user",
+        executed_steps=[],
+        failed_step={
+            "id": orphans[0].execution_id,
+            "error_message": "aborted due to orphaned execution(s)",
+            "stopped_by_user": True,
+        },
+        rollback_steps_executed=[],
+        artifacts_changed=[],
+        rollback_handle=None,
     )
 
 
@@ -849,6 +1013,10 @@ async def apply_plan(
             rollback_handle=None,
         )
 
+    orphan_outcome = await _reconcile_orphans_before_apply(ctx, dry_run=dry_run)
+    if orphan_outcome is not None:
+        return orphan_outcome
+
     execution = PlanExecution(
         execution_id=new_execution_id(),
         plan_id=plan.id,
@@ -868,12 +1036,6 @@ async def apply_plan(
         confirm_each_step=confirm_each_step,
     )
 
-    changed_so_far = list(
-        dict.fromkeys(
-            f for entry in executed if entry.get("success") for f in entry.get("changed_files", [])
-        )
-    )
-
     if failed_step is not None:
         # A user decline is not a failure: nothing needs unwinding, and
         # running the rollback path here would either report a bogus
@@ -889,9 +1051,9 @@ async def apply_plan(
                 result="stopped_by_user",
                 executed_steps=executed,
                 failed_step=failed_step,
-                artifacts_changed=changed_so_far,
+                artifacts_changed=_collect_artifacts_changed(executed),
             )
-        if not plan.options.auto_rollback:
+        if not plan.auto_rollback:
             PlanExecutionStore().complete(
                 execution.execution_id,
                 result_status="failed",
@@ -902,7 +1064,7 @@ async def apply_plan(
                 executed_steps=executed,
                 failed_step=failed_step,
                 rollback_steps_executed=[],
-                artifacts_changed=changed_so_far,
+                artifacts_changed=_collect_artifacts_changed(executed),
                 rollback_handle=None,
             )
         try:
@@ -914,41 +1076,14 @@ async def apply_plan(
             if rollback_result.status == "rolled_back":
                 plan_status = "rolled_back"
                 plan_state = PlanExecutionState.ROLLED_BACK
-                remaining_changed = list(
-                    dict.fromkeys(
-                        f
-                        for entry in executed
-                        if entry.get("success")
-                        and entry["id"] in set(rollback_result.non_revertible_steps)
-                        for f in entry.get("changed_files", [])
-                    )
-                )
             elif rollback_result.status == "partial":
                 plan_status = "rollback_partial"
                 plan_state = PlanExecutionState.PARTIAL
-                rolled_set = set(rollback_result.rolled_back_steps)
-                remaining_changed = list(
-                    dict.fromkeys(
-                        f
-                        for entry in executed
-                        if entry.get("success") and entry["id"] not in rolled_set
-                        for f in entry.get("changed_files", [])
-                    )
-                )
             else:
                 # The rollback steps themselves failed. The workspace may
                 # not be in the state it was in before the plan ran.
                 plan_status = "rollback_incomplete"
                 plan_state = PlanExecutionState.PARTIAL
-                rolled_set = set(rollback_result.rolled_back_steps)
-                remaining_changed = list(
-                    dict.fromkeys(
-                        f
-                        for entry in executed
-                        if entry.get("success") and entry["id"] not in rolled_set
-                        for f in entry.get("changed_files", [])
-                    )
-                )
             PlanExecutionStore().complete(
                 execution.execution_id,
                 result_status=plan_status,
@@ -980,7 +1115,10 @@ async def apply_plan(
                 executed_steps=executed,
                 failed_step=failed_step,
                 rollback_steps_executed=rollback_entries,
-                artifacts_changed=remaining_changed,
+                artifacts_changed=_collect_artifacts_changed(
+                    executed,
+                    rolled_back_step_ids=set(rollback_result.rolled_back_steps),
+                ),
                 rollback_handle=rollback_handle,
             )
         except NoRollbackAvailableError:
@@ -996,7 +1134,7 @@ async def apply_plan(
                 executed_steps=executed,
                 failed_step=failed_step,
                 rollback_steps_executed=[],
-                artifacts_changed=changed_so_far,
+                artifacts_changed=_collect_artifacts_changed(executed),
                 rollback_handle=None,
             )
 
@@ -1027,7 +1165,7 @@ async def apply_plan(
         executed_steps=executed,
         failed_step=None,
         rollback_steps_executed=[],
-        artifacts_changed=changed_so_far,
+        artifacts_changed=_collect_artifacts_changed(executed),
         rollback_handle=None,
     )
 
@@ -2384,7 +2522,7 @@ def _apply_transport_security(http_cfg: HttpConfig) -> None:
     )
 
 
-def _log_startup_warnings() -> None:
+def _log_startup_warnings(*, transport: str | None = None) -> None:
     """Report the configuration findings that matter, at boot.
 
     A misconfigured deployment should say so when it starts, not when
@@ -2398,23 +2536,11 @@ def _log_startup_warnings() -> None:
         collect_readiness,
     )
 
-    for finding in collect_readiness():
+    for finding in collect_readiness(transport_override=transport):
         if finding.ok:
             continue
         line = f"[{finding.severity}] {finding.name}: {finding.detail}"
         sys.stderr.write(line + "\n")
-
-
-def _reconcile_and_log_orphans() -> None:
-    import sys
-
-    orphans = reconcile_orphan_executions_on_boot()
-    if orphans:
-        ids = ", ".join(o.execution_id for o in orphans)
-        sys.stderr.write(
-            f"[warning] orphan_executions: reconciled {len(orphans)} orphaned "
-            f"plan execution(s) from a previous crash: {ids}\n"
-        )
 
 
 def main() -> None:
@@ -2441,19 +2567,6 @@ def main() -> None:
     if "--readonly" in sys.argv:
         os.environ["PBI_READONLY"] = "1"
 
-    # Propagate `--transport http` / `--transport=http` into PBI_TRANSPORT
-    # before startup readiness checks run so HTTP deployments started via
-    # CLI flags are not falsely warned about stdio scope vacuity.
-    for idx, arg in enumerate(sys.argv):
-        if arg == "--transport" and idx + 1 < len(sys.argv):
-            os.environ.setdefault("PBI_TRANSPORT", sys.argv[idx + 1].strip().lower())
-            break
-        if arg.startswith("--transport="):
-            os.environ.setdefault("PBI_TRANSPORT", arg.split("=", 1)[1].strip().lower())
-            break
-
-    _log_startup_warnings()
-
     # Peek at argv; if --transport is absent, fast-path to stdio
     # without argparse overhead (preserves fast startup for stdio).
     #
@@ -2467,14 +2580,16 @@ def main() -> None:
         or _env_transport == "http"
     )
     if not _transport_selected:
-        _reconcile_and_log_orphans()
+        _log_startup_warnings()
+        reconcile_orphan_executions_on_boot()
         mcp.run(transport="stdio")
         return
 
     transport, http_cfg = parse_transport_args()
+    _log_startup_warnings(transport=transport)
 
     if transport == "stdio":
-        _reconcile_and_log_orphans()
+        reconcile_orphan_executions_on_boot()
         mcp.run(transport="stdio")
         return
 
@@ -2487,6 +2602,8 @@ def main() -> None:
         sys.stderr.write("error: missing HTTP configuration\n")
         raise SystemExit(2)
 
+    os.environ["PBI_TRANSPORT"] = "http"
+
     _validate_request = auth_middleware_factory(http_cfg)
     mcp.settings.host = http_cfg.host
     mcp.settings.port = http_cfg.port
@@ -2497,7 +2614,7 @@ def main() -> None:
     if log_level:
         mcp.settings.log_level = log_level.upper()  # type: ignore[assignment]
     _apply_transport_security(http_cfg)
-    _reconcile_and_log_orphans()
+    reconcile_orphan_executions_on_boot()
 
     import anyio
     import uvicorn

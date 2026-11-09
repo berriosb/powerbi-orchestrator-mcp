@@ -2,7 +2,7 @@
 
 > Estado de implementación vs specs. **Post-Sprint 14 = 31/31 tools**
 > (12 MVP + 3 v1.1 + 8 v2 + 3 v3) per SPEC §6.1+§6.2+§6.3+§7. Latest
-> release [`v1.7.0`](../RELEASE-NOTES-v1.7.0.md); hardening backlog closed.
+> release [`v1.23.0`](./releases/RELEASE-NOTES-v1.23.0.md); hardening backlog closed.
 
 **Leyenda:**
 - ❌ No implementado

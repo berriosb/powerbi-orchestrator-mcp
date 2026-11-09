@@ -73,7 +73,7 @@ def _home_writable() -> tuple[bool, str]:
     return True, f"the orchestrator home is writable ({home})"
 
 
-def collect_readiness() -> list[ReadinessFinding]:
+def collect_readiness(*, transport_override: str | None = None) -> list[ReadinessFinding]:
     """Everything worth knowing about this deployment's configuration."""
     from powerbi_orchestrator_mcp.orchestrator.authorization import readonly_mode
 
@@ -82,9 +82,7 @@ def collect_readiness() -> list[ReadinessFinding]:
     root = os.environ.get(WORKSPACE_ROOT_ENV, "").strip()
 
     # The read boundary. This is the one that decides whether the
-    # deployment can describe itself as bounded. When PBI_WORKSPACE_ROOT
-    # is set, resolve_read_root() enforces that boundary regardless of
-    # PBI_ALLOW_OUTSIDE_WORKSPACE_READ.
+    # deployment can describe itself as bounded.
     if _truthy(os.environ.get(READ_OPT_OUT_ENV)) and not root:
         findings.append(
             ReadinessFinding(
@@ -95,6 +93,17 @@ def collect_readiness() -> list[ReadinessFinding]:
                     f"{READ_OPT_OUT_ENV} is set: reads are not bounded to the "
                     "workspace. A read-scoped caller can reach any path the "
                     "process can reach. Unset it unless that is deliberate."
+                ),
+            )
+        )
+    elif _truthy(os.environ.get(READ_OPT_OUT_ENV)) and root:
+        findings.append(
+            ReadinessFinding(
+                name="read_boundary",
+                ok=True,
+                detail=(
+                    f"reads are bounded to {WORKSPACE_ROOT_ENV} ({root}); "
+                    f"{READ_OPT_OUT_ENV} is ignored while {WORKSPACE_ROOT_ENV} is set."
                 ),
             )
         )
@@ -132,7 +141,7 @@ def collect_readiness() -> list[ReadinessFinding]:
         )
 
     # The transport decides whether the per-tool scopes mean anything.
-    transport = os.environ.get(TRANSPORT_ENV, "").strip().lower() or "stdio"
+    transport = (transport_override or os.environ.get(TRANSPORT_ENV, "")).strip().lower() or "stdio"
     if transport == "http":
         findings.append(
             ReadinessFinding(

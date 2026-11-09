@@ -26,6 +26,7 @@ Concurrency primitives (per Tier-B §6):
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -211,32 +212,47 @@ class TokenBucket:
 # ---------------------------------------------------------------------------
 
 
-def _create_async_client(
+def _sanitize_no_proxy_entry(entry: str) -> str:
+    host = entry.strip()
+    if not host or "://" in host:
+        return host
+    if host.startswith("[") and "]" in host:
+        host = host[1 : host.find("]")]
+    if ":" in host and "/" in host:
+        host = host.split("/", 1)[0]
+    return host
+
+
+def _sanitize_no_proxy_value(raw: str) -> str:
+    return ",".join(
+        sanitized for part in raw.split(",") if (sanitized := _sanitize_no_proxy_entry(part))
+    )
+
+
+def _build_async_client(
     *,
     base_url: str,
     timeout: httpx.Timeout,
-    trust_env: bool = True,
+    trust_env: bool,
 ) -> httpx.AsyncClient:
-    """Build an ``httpx.AsyncClient``, guarding against malformed ``NO_PROXY`` entries.
+    if not trust_env:
+        return httpx.AsyncClient(base_url=base_url, timeout=timeout, trust_env=False)
 
-    ``httpx`` converts a ``::1`` or ``[::1]`` entry in ``NO_PROXY`` into
-    ``URLPattern('all://*[::1]')``, which fails ``urlparse`` with
-    ``InvalidURL("Invalid port: ':1]'")``. Falling back to ``trust_env=False``
-    keeps client construction from crashing in environments with IPv6 loopback
-    in ``NO_PROXY``.
-    """
+    saved: dict[str, str] = {}
+    for key in ("NO_PROXY", "no_proxy"):
+        val = os.environ.get(key)
+        if val is not None:
+            sanitized = _sanitize_no_proxy_value(val)
+            if sanitized != val:
+                saved[key] = val
+                os.environ[key] = sanitized
     try:
-        return httpx.AsyncClient(
-            base_url=base_url,
-            timeout=timeout,
-            trust_env=trust_env,
-        )
+        return httpx.AsyncClient(base_url=base_url, timeout=timeout, trust_env=True)
     except httpx.InvalidURL:
-        return httpx.AsyncClient(
-            base_url=base_url,
-            timeout=timeout,
-            trust_env=False,
-        )
+        return httpx.AsyncClient(base_url=base_url, timeout=timeout, trust_env=False)
+    finally:
+        for key, original in saved.items():
+            os.environ[key] = original
 
 
 class FabricClient:
@@ -274,12 +290,12 @@ class FabricClient:
         self._long_running_bucket = TokenBucket(rpm=long_running_rpm, burst=long_running_rpm)
         self._breaker = CircuitBreaker()
         timeout = httpx.Timeout(self.DEFAULT_TIMEOUT, connect=5.0)
-        self._fabric_client = _create_async_client(
+        self._fabric_client = _build_async_client(
             base_url=fabric_base_url,
             timeout=timeout,
             trust_env=trust_env,
         )
-        self._pbi_client = _create_async_client(
+        self._pbi_client = _build_async_client(
             base_url=pbi_service_base_url,
             timeout=timeout,
             trust_env=trust_env,

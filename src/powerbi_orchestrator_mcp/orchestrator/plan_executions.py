@@ -46,9 +46,21 @@ def _resolve_exec_dir() -> Path:
     return get_orchestrator_home() / "executions"
 
 
-EXEC_DIR = _resolve_exec_dir()
-EXEC_DB = EXEC_DIR / "executions.db"
+_INITIAL_EXEC_DIR = _resolve_exec_dir()
+EXEC_DIR = _INITIAL_EXEC_DIR
+_INITIAL_EXEC_DB = EXEC_DIR / "executions.db"
+EXEC_DB = _INITIAL_EXEC_DB
 SNAPSHOT_GC_DAYS: int = 30
+
+
+def _effective_exec_db(db_path: Path | None = None) -> Path:
+    if db_path is not None:
+        return db_path
+    if EXEC_DB != _INITIAL_EXEC_DB:
+        return EXEC_DB
+    if EXEC_DIR != _INITIAL_EXEC_DIR:
+        return EXEC_DIR / "executions.db"
+    return EXEC_DB
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +116,7 @@ def _ensure_exec_dir() -> Path:
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
-    path = db_path or EXEC_DB
+    path = _effective_exec_db(db_path)
     ensure_private_dir(path.parent)
     conn = sqlite3.connect(str(path))
     restrict_file(path)
@@ -153,7 +165,7 @@ class PlanExecutionStore:
     """SQLite-backed persistence for plan executions."""
 
     def __init__(self, db_path: Path | None = None) -> None:
-        self._db_path = db_path or EXEC_DB
+        self._db_path = _effective_exec_db(db_path)
 
     def _conn(self) -> sqlite3.Connection:
         return _connect(self._db_path)

@@ -24,11 +24,14 @@ Exit code:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import sys
+import threading
+from typing import Any
 
-INITIALIZE: dict[str, object] = {
+INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
     "method": "initialize",
@@ -38,8 +41,8 @@ INITIALIZE: dict[str, object] = {
         "clientInfo": {"name": "verify-docker-image", "version": "1"},
     },
 }
-INITIALIZED: dict[str, object] = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-TOOLS_LIST: dict[str, object] = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+INITIALIZED = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+TOOLS_LIST = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
 
 
 def _run(
@@ -77,66 +80,87 @@ def check_cli(image: str) -> bool:
     return True
 
 
-def _send_and_wait(
-    proc: subprocess.Popen[str],
-    messages: list[dict[str, object]],
-    expected_id: int,
-) -> dict[str, object] | None:
+def _send_jsonrpc(proc: subprocess.Popen[str], message: dict[str, Any]) -> None:
     assert proc.stdin is not None
-    assert proc.stdout is not None
-    for msg in messages:
-        proc.stdin.write(json.dumps(msg) + "\n")
+    proc.stdin.write(json.dumps(message) + "\n")
     proc.stdin.flush()
+
+
+def _read_jsonrpc_response(
+    proc: subprocess.Popen[str], expected_id: int, captured_stdout: list[str]
+) -> dict[str, Any] | None:
+    assert proc.stdout is not None
     while True:
-        line = proc.stdout.readline()
-        if not line:
+        raw_line = proc.stdout.readline()
+        if not raw_line:
             return None
-        stripped = line.strip()
-        if not stripped.startswith("{"):
+        captured_stdout.append(raw_line)
+        line = raw_line.strip()
+        if not line.startswith("{"):
             continue
         try:
-            payload = json.loads(stripped)
+            payload = json.loads(line)
         except json.JSONDecodeError:
             continue
         if isinstance(payload, dict) and payload.get("id") == expected_id:
             return payload
 
 
-def check_mcp(image: str) -> list[str] | None:
-    proc = subprocess.Popen(  # noqa: S603 — controlled docker invocation
+def check_mcp(image: str, *, timeout: int = 180) -> list[str] | None:
+    proc = subprocess.Popen(  # noqa: S603 — the command is built here, not by the caller
         ["docker", "run", "--rm", "-i", image, "--start"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        bufsize=1,
     )
+    captured_stdout: list[str] = []
+    timer = threading.Timer(timeout, proc.kill)
+    timer.start()
     try:
-        init_resp = _send_and_wait(proc, [INITIALIZE], expected_id=1)
+        _send_jsonrpc(proc, INITIALIZE)
+        init_resp = _read_jsonrpc_response(proc, 1, captured_stdout)
         if init_resp is None or "result" not in init_resp:
-            err = proc.stderr.read() if proc.stderr else ""
-            print("[FAIL] mcp.initialize: the image did not answer initialize")
-            print(err[-500:])
+            print("[FAIL] mcp.initialize: the image did not complete initialize handshake")
+            stderr_out = proc.stderr.read() if proc.stderr is not None else ""
+            print((stderr_out or "".join(captured_stdout))[-500:])
             return None
 
-        tools_resp = _send_and_wait(proc, [INITIALIZED, TOOLS_LIST], expected_id=2)
+        _send_jsonrpc(proc, INITIALIZED)
+        _send_jsonrpc(proc, TOOLS_LIST)
+        tools_resp = _read_jsonrpc_response(proc, 2, captured_stdout)
         if tools_resp is not None and "result" in tools_resp:
             result = tools_resp["result"]
             if isinstance(result, dict):
                 tools = result.get("tools", [])
                 if isinstance(tools, list):
-                    return sorted(str(tool["name"]) for tool in tools if isinstance(tool, dict))
-        err = proc.stderr.read() if proc.stderr else ""
+                    return sorted(
+                        str(tool["name"])
+                        for tool in tools
+                        if isinstance(tool, dict) and "name" in tool
+                    )
         print("[FAIL] mcp.tools_list: the image did not answer tools/list")
-        print(err[-500:])
+        stderr_out = proc.stderr.read() if proc.stderr is not None else ""
+        print((stderr_out or "".join(captured_stdout))[-500:])
+        return None
+    except BrokenPipeError:
+        print("[FAIL] mcp.tools_list: container closed stdin early")
+        stderr_out = proc.stderr.read() if proc.stderr is not None else ""
+        print((stderr_out or "".join(captured_stdout))[-500:])
         return None
     finally:
-        if proc.stdin:
-            proc.stdin.close()
-        try:
+        timer.cancel()
+        if proc.stdin is not None:
+            with contextlib.suppress(Exception):
+                proc.stdin.close()
+        if proc.poll() is None:
             proc.terminate()
-            proc.wait(timeout=5)
-        except Exception:
-            proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
 
 
 def main(argv: list[str] | None = None) -> int:

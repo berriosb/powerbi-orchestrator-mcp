@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 EngineLiteral = Literal["modeling", "report", "cloud", "viz", "validation"]
 
@@ -56,7 +56,17 @@ class Plan(BaseModel):
     rollback_steps: list[PlanStep] = Field(default_factory=list)
     risk_score: float = Field(ge=0.0, le=1.0, default=0.0)
     estimated_changes: EstimatedChanges = Field(default_factory=EstimatedChanges)
+    auto_rollback: bool = True
     options: PlanOptions = Field(default_factory=PlanOptions)
+
+    @model_validator(mode="after")
+    def _sync_auto_rollback(self) -> Plan:
+        fields_set = self.model_fields_set
+        if "auto_rollback" in fields_set and "options" not in fields_set:
+            self.options.auto_rollback = self.auto_rollback
+        else:
+            self.auto_rollback = self.options.auto_rollback
+        return self
 
 
 class PlanTemplate(str):
