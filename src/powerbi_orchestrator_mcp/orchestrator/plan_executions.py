@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from powerbi_orchestrator_mcp.orchestrator.identifiers import (
     new_execution_id,
 )
+from powerbi_orchestrator_mcp.orchestrator.paths import ensure_private_dir, restrict_file
 
 # A step that is still running refreshes its heartbeat, so a cutoff
 # only has to be longer than the longest plausible step. 60 seconds was
@@ -99,14 +100,14 @@ class OrphanReconciliation(BaseModel):
 
 
 def _ensure_exec_dir() -> Path:
-    EXEC_DIR.mkdir(parents=True, exist_ok=True)
-    return EXEC_DIR
+    return ensure_private_dir(EXEC_DIR)
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     path = db_path or EXEC_DB
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(path.parent)
     conn = sqlite3.connect(str(path))
+    restrict_file(path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         """

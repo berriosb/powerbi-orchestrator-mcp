@@ -224,6 +224,7 @@ class PlanBuilder:
                 visuals_affected=1,
                 rollback_complexity="moderate",
             ),
+            options=opts,
         )
         plan.yaml = self._serialize(plan)
         self._enforce_risk_threshold(plan, opts)
@@ -280,6 +281,7 @@ class PlanBuilder:
                 visuals_affected=0,
                 rollback_complexity="trivial",
             ),
+            options=opts,
         )
         plan.yaml = self._serialize(plan)
         self._enforce_risk_threshold(plan, opts)
@@ -361,6 +363,7 @@ class PlanBuilder:
                 visuals_affected=0,
                 rollback_complexity="complex",
             ),
+            options=opts,
         )
         plan.yaml = self._serialize(plan)
         self._enforce_risk_threshold(plan, opts)
@@ -416,6 +419,7 @@ class PlanBuilder:
                 visuals_affected=0,
                 rollback_complexity="trivial",
             ),
+            options=opts,
         )
         plan.yaml = self._serialize(plan)
         self._enforce_risk_threshold(plan, opts)

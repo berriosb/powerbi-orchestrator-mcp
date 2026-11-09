@@ -56,6 +56,7 @@ class Plan(BaseModel):
     rollback_steps: list[PlanStep] = Field(default_factory=list)
     risk_score: float = Field(ge=0.0, le=1.0, default=0.0)
     estimated_changes: EstimatedChanges = Field(default_factory=EstimatedChanges)
+    options: PlanOptions = Field(default_factory=PlanOptions)
 
 
 class PlanTemplate(str):

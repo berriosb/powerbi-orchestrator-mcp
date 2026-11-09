@@ -162,16 +162,17 @@ class RollbackEngine:
 
         if failed_step.rollback_step is not None:
             queue.append((failed_step, failed_step.rollback_step))
-            seen.add(failed_step.id)
+        seen.add(failed_step.id)
 
         for step in reversed(executed_steps):
+            if step.id in seen:
+                continue
             if step.rollback_step is None:
                 # The step ran and the plan declared no way to revert it.
                 # Its changes are still in place; report it rather than
                 # dropping it silently.
                 non_revertible.append(step.id)
-                continue
-            if step.id in seen:
+                seen.add(step.id)
                 continue
             queue.append((step, step.rollback_step))
             seen.add(step.id)

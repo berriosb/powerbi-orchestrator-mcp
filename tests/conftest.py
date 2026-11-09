@@ -9,6 +9,7 @@ import pytest
 
 _TEST_HOME = tempfile.mkdtemp(prefix="pbi_orch_test_home_")
 os.environ["PBI_ORCHESTRATOR_HOME"] = _TEST_HOME
+os.umask(0o022)
 
 
 @pytest.fixture(scope="session", autouse=True)

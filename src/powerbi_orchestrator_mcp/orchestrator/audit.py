@@ -179,12 +179,12 @@ def _ensure_audit_dir() -> Path:
     return AUDIT_DIR
 
 
-def _anchor_file() -> Path:
-    return AUDIT_DIR / ".audit_anchor"
+def _anchor_file(audit_dir: Path | None = None) -> Path:
+    return (audit_dir or AUDIT_DIR) / ".audit_anchor"
 
 
-def _read_anchor() -> dict[str, Any] | None:
-    path = _anchor_file()
+def _read_anchor(audit_dir: Path | None = None) -> dict[str, Any] | None:
+    path = _anchor_file(audit_dir)
     if not path.exists():
         return None
     try:
@@ -205,7 +205,14 @@ def _anchor_mac(key: bytes, last_id: int, last_hash: str, count: int) -> str:
     return hmac.new(key, message, hashlib.sha256).hexdigest()
 
 
-def _write_anchor(last_id: int, last_hash: str, count: int, key: bytes) -> None:
+def _write_anchor(
+    last_id: int,
+    last_hash: str,
+    count: int,
+    key: bytes,
+    *,
+    audit_dir: Path | None = None,
+) -> None:
     """Persist the expected chain tail outside the audit database.
 
     ``verify()`` recomputes the chain from genesis, so deleting the newest
@@ -214,6 +221,7 @@ def _write_anchor(last_id: int, last_hash: str, count: int, key: bytes) -> None:
     The anchor is signed with the chain key, so rewriting it needs the key
     too.
     """
+    target_path = _anchor_file(audit_dir)
     payload = json.dumps(
         {
             "last_id": last_id,
@@ -224,9 +232,9 @@ def _write_anchor(last_id: int, last_hash: str, count: int, key: bytes) -> None:
         }
     )
     try:
-        atomic_write_private(_anchor_file(), payload)
+        atomic_write_private(target_path, payload)
     except OSError:
-        log.warning("audit.anchor_write_failed: %s", _anchor_file())
+        log.warning("audit.anchor_write_failed: %s", target_path)
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -396,7 +404,7 @@ class AuditLog:
             with contextlib.suppress(sqlite3.Error):
                 conn.close()
 
-        _write_anchor(new_id, row_hash, new_id, key)
+        _write_anchor(new_id, row_hash, new_id, key, audit_dir=self._db_path.parent)
 
         return AuditEntry(
             id=new_id,
@@ -427,7 +435,7 @@ class AuditLog:
             ).fetchall()
 
             if not rows:
-                anchor = _read_anchor()
+                anchor = _read_anchor(self._db_path.parent)
                 if anchor and int(anchor.get("count", 0)) > 0:
                     return AuditVerifyResult(
                         valid=False,
@@ -482,7 +490,7 @@ class AuditLog:
 
                 prev_hash = stored_hash
 
-            anchor = _read_anchor()
+            anchor = _read_anchor(self._db_path.parent)
             if anchor is not None:
                 anchor_id: Any = anchor.get("last_id")
                 anchor_hash: Any = anchor.get("last_hash")

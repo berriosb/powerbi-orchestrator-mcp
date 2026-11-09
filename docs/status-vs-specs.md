@@ -1,9 +1,9 @@
-# Status vs Specs — Release v1.14.2 (2026-10-07)
+# Status vs Specs — Release v1.23.0
 
 > Snapshot of what the codebase delivers vs what the specs require.
 > Supersedes the post-Sprint 12 / post-Sprint 14 gap analysis.
 
-**TL;DR:** v1.21.0 delivers **31 tools DONE** (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + `powerbi_health` diagnóstico + `execute_dax_query` DAX en vivo), **9/9 acceptance criteria PASS**, **v2 y v3 milestones COMPLETE**, y enterprise hardening listo para producción.
+**TL;DR:** v1.23.0 delivers **31 tools DONE** (11 MVP `@mcp.tool()` + `safe_rename` template + 3 v1.1 + 9 v2 + 3 v3 + 5 extensions: `powerbi_health`, `execute_dax_query`, `simplify_dax_measure`, `abbreviate_names`, `abstract_measures`), **9/9 acceptance criteria PASS**, **v2 y v3 milestones COMPLETE**, y enterprise hardening listo para producción.
 
 ---
 
@@ -62,16 +62,16 @@
 
 **3/3 v3 DONE (Sprint 12).**
 
-## 5. Coverage by layer (Release v1.11.0)
+## 5. Coverage by layer (Release v1.23.0)
 
 ```
                     Total   Done    Status
 ─────────────────────────────────────────────────────
-MVP tools (§6.1):    12      12      ✅ 100%
+MVP tools (§6.1):    11      11      ✅ 100% (+ safe_rename template)
 v1.1 tools (§6.3):   3       3       ✅ 100%
 v2 tools (§6.2):     9       9       ✅ 100% (Sprints 9-11)
 v3 tools (§6.2):     3       3       ✅ 100% (Sprint 12)
-Extensions:          2       2       ✅ 100% (powerbi_health, execute_dax_query)
+Extensions:          5       5       ✅ 100% (powerbi_health, execute_dax_query, simplify_dax_measure, abbreviate_names, abstract_measures)
 ─────────────────────────────────────────────────────
 Tool coverage:       31      31      (100% exposed in FastMCP)
 ```
@@ -100,13 +100,13 @@ Capa 6 (Orquestación): 100% (planner, rollback engine, HMAC audit log)
 | 8 | Test coverage >80% in layers 4 + 6 | ✅ |
 | 9 | `mypy --strict` + `ruff check` clean | ✅ |
 
-## 7. Quality metrics (Release v1.11.0)
+## 7. Quality metrics (Release v1.23.0)
 
 | Metric | Value |
 |--------|-------|
-| Test count | 905+ passed (26 e2e/binary tests gracefully skipped) |
+| Test count | 1400+ passed |
 | Coverage | ~90% |
-| mypy --strict | clean (124 source files) |
+| mypy --strict | clean |
 | ruff | clean |
 | MCP tools registered | 31 tools expuestas en FastMCP |
 | Specs cross-cutting | 4 (transport, publish, e2e, supersede) sincronizados |
@@ -135,7 +135,10 @@ Capa 6 (Orquestación): 100% (planner, rollback engine, HMAC audit log)
 | v1.8.0  | Fabric REST endpoints extendidos |
 | v1.9.0  | Health tool, Plan store SQLite persistente, Dockerfile, onboarding |
 | v1.10.0 | HTTP transport opt-in, Entra ID JWT auth, CI publish workflow, E2E scaffold |
-| **v1.11.0** | Enterprise hardening (TMDL multipart), `execute_dax_query`, contextvars isolation |
+| v1.11.0 | Enterprise hardening (TMDL multipart), `execute_dax_query`, contextvars isolation |
+| v1.12.0 - v1.14.2 | DAX optimizer tools (`simplify_dax_measure`, `abbreviate_names`, `abstract_measures`), MCP server instructions |
+| v1.15.0 - v1.22.0 | Security & boundary hardening: per-tool scopes, workspace read/write containment, HMAC chain anchor, fail-closed audit, readiness checks |
+| **v1.23.0** | Read-only mode (`--readonly` / `PBI_READONLY=1`), scope hierarchy (`ADMIN > WRITE > READ`), bounded plan cache |
 
 ---
 

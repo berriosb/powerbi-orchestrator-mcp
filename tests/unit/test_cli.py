@@ -70,6 +70,11 @@ class TestCliInit:
         assert rc == 0
         assert (target / "exists.pbip").exists()
 
+    def test_refuses_forbidden_system_path(self) -> None:
+        rc, _, stderr = _run_cli("init", "/etc/evil.pbip")
+        assert rc == 2
+        assert "forbidden" in stderr
+
 
 class TestCliInspect:
     def test_inspects_a_real_pbip(self, tmp_path: Path) -> None:
@@ -86,6 +91,11 @@ class TestCliInspect:
         rc, _, stderr = _run_cli("inspect", "/tmp/does-not-exist-xyz")
         assert rc == 2
         assert "does not exist" in stderr
+
+    def test_refuses_forbidden_system_path(self) -> None:
+        rc, _, stderr = _run_cli("inspect", "/etc/passwd")
+        assert rc == 2
+        assert "forbidden" in stderr
 
 
 class TestCliValidate:

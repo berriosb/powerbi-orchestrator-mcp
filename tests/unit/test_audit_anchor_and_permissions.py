@@ -183,3 +183,32 @@ class TestFilePermissions:
 
         assert db_file.exists()
         assert stat.S_IMODE(db_file.stat().st_mode) == 0o600
+
+    def test_exec_db_is_owner_only(self, tmp_path: Path) -> None:
+        from powerbi_orchestrator_mcp.orchestrator import plan_executions as exec_mod
+
+        exec_dir = tmp_path / "executions"
+        db_file = exec_dir / "executions.db"
+        conn = exec_mod._connect(db_file)
+        conn.close()
+
+        assert stat.S_IMODE(exec_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(db_file.stat().st_mode) == 0o600
+
+    def test_custom_db_path_uses_own_anchor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PBI_ORCHESTRATOR_AUDIT_SECRET", "k")
+        db_a = tmp_path / "dir_a" / "audit.db"
+        db_b = tmp_path / "dir_b" / "audit.db"
+        log_a = AuditLog(db_path=db_a)
+        log_b = AuditLog(db_path=db_b)
+
+        log_a.insert(tool_name="t1", tool_args={}, result_status="success")
+        log_b.insert(tool_name="t2", tool_args={}, result_status="success")
+        log_b.insert(tool_name="t3", tool_args={}, result_status="success")
+
+        assert (db_a.parent / ".audit_anchor").exists()
+        assert (db_b.parent / ".audit_anchor").exists()
+        assert log_a.verify().valid is True
+        assert log_b.verify().valid is True

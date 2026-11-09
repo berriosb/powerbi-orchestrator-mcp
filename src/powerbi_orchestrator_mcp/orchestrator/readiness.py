@@ -79,9 +79,13 @@ def collect_readiness() -> list[ReadinessFinding]:
 
     findings: list[ReadinessFinding] = []
 
+    root = os.environ.get(WORKSPACE_ROOT_ENV, "").strip()
+
     # The read boundary. This is the one that decides whether the
-    # deployment can describe itself as bounded.
-    if _truthy(os.environ.get(READ_OPT_OUT_ENV)):
+    # deployment can describe itself as bounded. When PBI_WORKSPACE_ROOT
+    # is set, resolve_read_root() enforces that boundary regardless of
+    # PBI_ALLOW_OUTSIDE_WORKSPACE_READ.
+    if _truthy(os.environ.get(READ_OPT_OUT_ENV)) and not root:
         findings.append(
             ReadinessFinding(
                 name="read_boundary",
@@ -104,7 +108,6 @@ def collect_readiness() -> list[ReadinessFinding]:
         )
 
     # Where that root is.
-    root = os.environ.get(WORKSPACE_ROOT_ENV, "").strip()
     if root:
         findings.append(
             ReadinessFinding(

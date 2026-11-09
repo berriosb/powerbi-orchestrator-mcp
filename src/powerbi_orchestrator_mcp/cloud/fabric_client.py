@@ -211,6 +211,34 @@ class TokenBucket:
 # ---------------------------------------------------------------------------
 
 
+def _create_async_client(
+    *,
+    base_url: str,
+    timeout: httpx.Timeout,
+    trust_env: bool = True,
+) -> httpx.AsyncClient:
+    """Build an ``httpx.AsyncClient``, guarding against malformed ``NO_PROXY`` entries.
+
+    ``httpx`` converts a ``::1`` or ``[::1]`` entry in ``NO_PROXY`` into
+    ``URLPattern('all://*[::1]')``, which fails ``urlparse`` with
+    ``InvalidURL("Invalid port: ':1]'")``. Falling back to ``trust_env=False``
+    keeps client construction from crashing in environments with IPv6 loopback
+    in ``NO_PROXY``.
+    """
+    try:
+        return httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout,
+            trust_env=trust_env,
+        )
+    except httpx.InvalidURL:
+        return httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout,
+            trust_env=False,
+        )
+
+
 class FabricClient:
     """Async REST client for Microsoft Fabric / Power BI Service.
 
@@ -239,18 +267,22 @@ class FabricClient:
         long_running_rpm: int = 5,
         fabric_base_url: str = BASE_URL,
         pbi_service_base_url: str = PBI_SERVICE_BASE_URL,
+        trust_env: bool = True,
     ) -> None:
         self._credential = credential
         self._bucket = TokenBucket(rpm=rpm, burst=burst)
         self._long_running_bucket = TokenBucket(rpm=long_running_rpm, burst=long_running_rpm)
         self._breaker = CircuitBreaker()
-        self._fabric_client = httpx.AsyncClient(
+        timeout = httpx.Timeout(self.DEFAULT_TIMEOUT, connect=5.0)
+        self._fabric_client = _create_async_client(
             base_url=fabric_base_url,
-            timeout=httpx.Timeout(self.DEFAULT_TIMEOUT, connect=5.0),
+            timeout=timeout,
+            trust_env=trust_env,
         )
-        self._pbi_client = httpx.AsyncClient(
+        self._pbi_client = _create_async_client(
             base_url=pbi_service_base_url,
-            timeout=httpx.Timeout(self.DEFAULT_TIMEOUT, connect=5.0),
+            timeout=timeout,
+            trust_env=trust_env,
         )
 
     async def aclose(self) -> None:
