@@ -23,7 +23,7 @@ Every tool also **reports what it actually did**: a check that could not
 run says so instead of returning a green result, a rollback that only
 partly succeeded is reported as partial, and a step says which engine
 served it.
-See [release notes](./RELEASE-NOTES-v1.23.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./docs/releases/RELEASE-NOTES-v1.23.0.md) · [changelog](./CHANGELOG.md).
 
 ---
 
@@ -196,7 +196,7 @@ publica solo en PyPI.
 ## Qué es
 
 Un servidor [Model Context Protocol](https://modelcontextprotocol.io)
-(stdio y Streamable HTTP) que expone **31 herramientas de alto nivel** para que un agente
+(stdio) que expone **31 herramientas de alto nivel** para que un agente
 IA pueda trabajar end-to-end con Power BI:
 
 - Diseñar y validar modelos semánticos (TMDL/TOM).
@@ -226,7 +226,7 @@ Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
 - [`SECURITY.md`](./SECURITY.md) — how to report vulnerabilities.
 - [`docs/troubleshooting.md`](./docs/troubleshooting.md) — common errors with remediation.
 - [`SPEC.md`](./SPEC.md) — visión, arquitectura 6 capas, MVP ambicioso.
-- [`RELEASE-NOTES-v1.23.0.md`](./RELEASE-NOTES-v1.23.0.md) — última release con decisiones.
+- [`docs/releases/RELEASE-NOTES-v1.23.0.md`](./docs/releases/RELEASE-NOTES-v1.23.0.md) — última release con decisiones.
 - [`docs/architecture.md`](./docs/architecture.md) — arquitectura detallada.
 - [`docs/engines-setup.md`](./docs/engines-setup.md) — instalar engines opcionales.
 - [`docs/connect-target.md`](./docs/connect-target.md) — uso del entry-point tool.
@@ -456,7 +456,7 @@ pasada es la que dice si el arreglo funcionó.
 
 → [`examples/03-audit-then-fix/`](./examples/03-audit-then-fix/README.md)
 
-## Estado actual (v1.22.0)
+## Estado actual (v1.23.0)
 
 - ✅ 31 tools implementadas (modelado, refactoring, reportes, nube, auditoría, UX, DAX)
 - ✅ Cross-engine rollback
@@ -484,8 +484,8 @@ pasada es la que dice si el arreglo funcionó.
   detiene la mutación, se reporta como aviso en el resultado. Con
   `PBI_AUDIT_FAIL_CLOSED=1` deja de serlo.
 
-Ver [`RELEASE-NOTES-v1.23.0.md`](./RELEASE-NOTES-v1.23.0.md) para el detalle de
-la línea 1.2x y [`CHANGELOG.md`](./CHANGELOG.md) para los cambios de la 1.23.0.
+Ver [`docs/releases/RELEASE-NOTES-v1.23.0.md`](./docs/releases/RELEASE-NOTES-v1.23.0.md) para el detalle de
+la última release y [`CHANGELOG.md`](./CHANGELOG.md) para el historial completo.
 
 ## Licencia
 

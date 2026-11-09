@@ -42,6 +42,7 @@ from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
 from powerbi_orchestrator_mcp.tools.powerbi_health import powerbi_health
 from powerbi_orchestrator_mcp.validation.model_metadata import MetadataError
 from powerbi_orchestrator_mcp.validation.path_safety import (
+    _resolve_guarded,
     validate_safe_pbip_path,
     validate_write_path,
 )
@@ -57,11 +58,12 @@ async def _cmd_validate(args: argparse.Namespace) -> int:
 
     Exits 0 if the score meets ``--min-score``, 1 otherwise.
     """
-    pbip_path = Path(args.path)
-    if not pbip_path.exists():
-        print(f"error: PBIP path does not exist: {pbip_path}", file=sys.stderr)
+    resolved_candidate = _resolve_guarded(args.path)
+    if not resolved_candidate.exists():
+        print(f"error: PBIP path does not exist: {args.path}", file=sys.stderr)
         return 2
-    validate_safe_pbip_path(str(pbip_path))
+    validate_safe_pbip_path(args.path)
+    pbip_path = Path(args.path)
 
     checks = AuditCheck(
         bpa=not args.skip_bpa,
@@ -118,11 +120,12 @@ async def _cmd_inspect(args: argparse.Namespace) -> int:
         PythonReportEngine,
     )
 
-    pbip_path = Path(args.path)
-    if not pbip_path.exists():
-        print(f"error: PBIP path does not exist: {pbip_path}", file=sys.stderr)
+    resolved_candidate = _resolve_guarded(args.path)
+    if not resolved_candidate.exists():
+        print(f"error: PBIP path does not exist: {args.path}", file=sys.stderr)
         return 2
-    validate_safe_pbip_path(str(pbip_path))
+    validate_safe_pbip_path(args.path)
+    pbip_path = Path(args.path)
 
     report_dir_candidates = list(pbip_path.glob("*.Report"))
     dataset_dir_candidates = list(pbip_path.glob("*.Dataset"))

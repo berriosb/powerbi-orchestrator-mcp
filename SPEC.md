@@ -5,7 +5,7 @@
 > [`docs/architecture.md`](./docs/architecture.md) y los specs modulares en
 > [`specs/`](./specs/README.md).
 
-**Status:** v1.21.0 (2026-10-20). 31 tools implementadas en FastMCP (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + 2 runtime extensions + 3 refactoring). Ver [`RELEASE-NOTES-v1.11.0.md`](./RELEASE-NOTES-v1.11.0.md) y [`CHANGELOG.md`](./CHANGELOG.md).
+**Status:** v1.23.0 (2026-10-21). 31 tools implementadas en FastMCP (12 MVP + 3 v1.1 + 9 v2 + 3 v3 + 2 runtime extensions + 3 refactoring). Ver [`docs/releases/RELEASE-NOTES-v1.23.0.md`](./docs/releases/RELEASE-NOTES-v1.23.0.md) y [`CHANGELOG.md`](./CHANGELOG.md).
 **Fecha:** 2026-08-21 (spec original); v1.11.0 released 2026-10-01
 **Owner:** Bastian Berrios (@berriosb)
 **Licencia:** MIT

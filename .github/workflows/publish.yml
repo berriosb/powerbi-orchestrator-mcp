@@ -192,7 +192,7 @@ jobs:
 
   # -------------------------------------------------------------------------
   # 4. Create GitHub Release with attached artifacts + release notes from
-  #    RELEASE-NOTES-vX.Y.Z.md (if present in the repo).
+  #    docs/releases/RELEASE-NOTES-vX.Y.Z.md (if present in the repo).
   # -------------------------------------------------------------------------
   github-release:
     name: github-release
@@ -209,7 +209,7 @@ jobs:
           name: dist
           path: .
 
-      - name: Extract release notes from RELEASE-NOTES-vX.Y.Z.md
+      - name: Extract release notes from docs/releases/RELEASE-NOTES-vX.Y.Z.md
         shell: bash
         run: |
           VERSION="${{ github.ref_name }}"
@@ -217,7 +217,10 @@ jobs:
             VERSION="${{ inputs.version }}"
           fi
           VERSION="${VERSION#v}"
-          NOTES_FILE="RELEASE-NOTES-v${VERSION}.md"
+          NOTES_FILE="docs/releases/RELEASE-NOTES-v${VERSION}.md"
+          if [ ! -f "$NOTES_FILE" ] && [ -f "RELEASE-NOTES-v${VERSION}.md" ]; then
+            NOTES_FILE="RELEASE-NOTES-v${VERSION}.md"
+          fi
           if [ -f "$NOTES_FILE" ]; then
             # Strip the leading H1 (already in the Release title).
             tail -n +3 "$NOTES_FILE" > /tmp/release-body.md

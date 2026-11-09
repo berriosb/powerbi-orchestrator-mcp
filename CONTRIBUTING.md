@@ -88,11 +88,10 @@ All three commands must exit 0 before submitting a PR.
 │   ├── unit/              # 823 unit tests (mocks + fakes)
 │   └── integration/       # 1 multi-module E2E test (PythonReportEngine + mocked modeling)
 ├── examples/              # Reproducible workflows for end users (added in v1.9.0)
-├── docs/                  # Architecture, MVP status, troubleshooting
+├── docs/                  # Architecture, MVP status, troubleshooting, releases/
 ├── specs/                 # Modular per-tool / per-capability specifications
 ├── scripts/               # verify_mcp_server.py, future helpers
-├── pyproject.toml         # Build + lint + test config
-└── RELEASE-NOTES-vX.Y.Z.md # Per-release changelog with decisions
+└── pyproject.toml         # Build + lint + test config
 ```
 
 ---
@@ -176,7 +175,7 @@ repos:
 4. **Export** from `tools/__init__.py` so the orchestrator can find it.
 5. **Test** in `tests/unit/test_your_tool.py`. Aim for 90%+ coverage.
 6. **Update** `MVP-STATUS.md`, `CHANGELOG.md`, and the relevant
-   `RELEASE-NOTES-vX.Y.Z.md`.
+   `docs/releases/RELEASE-NOTES-vX.Y.Z.md`.
 
 A minimal tool looks like:
 
@@ -236,8 +235,7 @@ For real-binary integration tests (CI runner with the binary installed):
 
 2. **Bump** in `pyproject.toml` (`[project] version = "..."`).
 
-3. **Update** `CHANGELOG.md` and create `RELEASE-NOTES-vX.Y.Z.md` at
-   the repo root.
+3. **Update** `CHANGELOG.md` and create `docs/releases/RELEASE-NOTES-vX.Y.Z.md`.
 
 4. **Tag** the release commit:
    ```bash

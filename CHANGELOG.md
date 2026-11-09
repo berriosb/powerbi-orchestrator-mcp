@@ -5,8 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 > **Note:** Per-release notes (with full PR lists, decisions, and rationale)
-> live in the [`RELEASE-NOTES-vX.Y.Z.md`](./RELEASE-NOTES-vX.Y.Z.md) files
-> at the repo root. This file is a condensed digest for quick lookup.
+> live in the [`docs/releases/RELEASE-NOTES-vX.Y.Z.md`](./docs/releases/) files.
+> This file is a condensed digest for quick lookup.
 
 ## [1.23.0] — 2026-10-21
 
@@ -686,7 +686,7 @@ and `mypy --strict` clean; coverage 88 %.
   tenant JWKS. New module `orchestrator/transport.py` exposes
   `validate_entra_token`, `parse_transport_args`, and
   `auth_middleware_factory`. Backward-compatible: stdio default
-  unchanged. See [`RELEASE-NOTES-v1.10.0.md`](./RELEASE-NOTES-v1.10.0.md)
+  unchanged. See [`docs/releases/RELEASE-NOTES-v1.10.0.md`](./docs/releases/RELEASE-NOTES-v1.10.0.md)
   and `specs/architecture/07-http-transport.md`.
 - **Dependency:** `pyjwt[crypto]>=2.8.0` (~50KB) required by the HTTP
   transport auth path.
@@ -744,7 +744,7 @@ and `mypy --strict` clean; coverage 88 %.
 - Doc-only patch release. No code changes. No new tools. No dependency
   bumps. Re-install is a no-op at the binary level (same wheel content
   modulo the README). Safe to upgrade in place.
-- See [`RELEASE-NOTES-v1.9.1.md`](./RELEASE-NOTES-v1.9.1.md).
+- See [`docs/releases/RELEASE-NOTES-v1.9.1.md`](./docs/releases/RELEASE-NOTES-v1.9.1.md).
 
 ---
 
@@ -756,7 +756,7 @@ and `mypy --strict` clean; coverage 88 %.
   - **Phase 1 (distribution + onboarding)**: `examples/` directory with 3 reproducible workflows (`01-safe-rename`, `02-deploy-pbip`, `03-audit-then-fix`); `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md` at repo root; `docs/troubleshooting.md` with common errors and remediation.
   - **Phase 2 (reliability + observability)**: `powerbi_health` MCP tool (engine status, plan store stats, audit log size); SQLite-backed `PlanExecutionStore` (replaces in-memory dict, survives restarts); structured logging via `structlog` for `apply_plan` + `_request` paths.
 
-See [`RELEASE-NOTES-v1.9.0.md`](./RELEASE-NOTES-v1.9.0.md) for full details, decisions, and rationale.
+See [`docs/releases/RELEASE-NOTES-v1.9.0.md`](./docs/releases/RELEASE-NOTES-v1.9.0.md) for full details, decisions, and rationale.
 
 ---
 
