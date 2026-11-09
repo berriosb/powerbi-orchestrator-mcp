@@ -122,14 +122,14 @@ class _FakeEngine:
 
 class TestStepsReportTheirEngine:
     @pytest.mark.asyncio
-    async def test_the_modeling_step_says_which_engine_served_it(self) -> None:
+    async def test_the_modeling_step_says_which_engine_served_it(self, tmp_path: Path) -> None:
         engine = _FakeEngine()
         executor = ModelingStepExecutor(engine=engine)
         step = PlanStep(
             id="p1:s1",
             engine="modeling",
             action="column.update",
-            args={"old_path": "T[A]", "new_name": "B"},
+            args={"old_path": "T[A]", "new_name": "B", "pbip_path": str(tmp_path)},
         )
 
         outcome = await executor.execute_step(step)
@@ -163,7 +163,7 @@ class TestStepsReportTheirEngine:
 
     @pytest.mark.asyncio
     async def test_the_builtin_engine_is_flagged_as_degraded(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A step served by the built-in adapter says so."""
         import powerbi_orchestrator_mcp.orchestrator.step_executor as step_executor
@@ -181,7 +181,7 @@ class TestStepsReportTheirEngine:
             id="p1:s1",
             engine="modeling",
             action="column.update",
-            args={"old_path": "T[A]", "new_name": "B"},
+            args={"old_path": "T[A]", "new_name": "B", "pbip_path": str(tmp_path)},
         )
 
         outcome = await executor.execute_step(step)

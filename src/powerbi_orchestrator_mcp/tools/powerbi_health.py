@@ -153,9 +153,8 @@ async def powerbi_health(
         checks.append(HealthCheck(name="plugins", ok=ok, detail=detail))
 
     # Execution store.
-    if not EXEC_DB.exists():
-        exec_count = 0
-    else:
+    exec_count = 0
+    if EXEC_DB.exists():
         try:
             # Cheap: select COUNT(*) via direct SQL (no Pydantic roundtrip).
             import sqlite3

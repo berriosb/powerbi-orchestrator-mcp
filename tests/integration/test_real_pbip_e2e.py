@@ -435,6 +435,11 @@ class TestCliOnRealFixture:
     def test_cli_init_then_inspect(self, tmp_path: Path) -> None:
         # Init.
         target = tmp_path / "new.pbip"
+        sub_env = {
+            "PYTHONPATH": "src",
+            "PATH": "/usr/bin",
+            "PBI_WORKSPACE_ROOT": str(tmp_path),
+        }
         result = subprocess.run(
             [
                 sys.executable,
@@ -445,7 +450,7 @@ class TestCliOnRealFixture:
             ],
             capture_output=True,
             text=True,
-            env={"PYTHONPATH": "src", "PATH": "/usr/bin"},
+            env=sub_env,
             check=False,
         )
         assert result.returncode == 0
@@ -464,7 +469,7 @@ class TestCliOnRealFixture:
             ],
             capture_output=True,
             text=True,
-            env={"PYTHONPATH": "src", "PATH": "/usr/bin"},
+            env=sub_env,
             check=False,
         )
         assert result.returncode == 0
