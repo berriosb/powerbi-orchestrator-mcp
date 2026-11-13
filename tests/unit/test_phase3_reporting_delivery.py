@@ -323,6 +323,80 @@ async def test_draft_report_summary_formats_empty_and_missing_kpis() -> None:
     assert partial.unverified_numbers == []
     assert partial.missing_required_kpis == ["pendientes_vencidos"]
 
+    # Spanish single-dot thousands ($4.000 / 450.000) vs genuine decimal 0.125 and English 4.000
+    from powerbi_orchestrator_mcp.tools.compute_process_kpis import (
+        ComputedKpiValue,
+        ComputeProcessKpisResult,
+    )
+
+    kpis_single_dot = ComputeProcessKpisResult(
+        as_of_date="2026-03-10",
+        source_hash_sha256="1" * 64,
+        row_count_evaluated=3,
+        kpis=[
+            ComputedKpiValue(
+                kpi_id="monto_4k",
+                name="Monto",
+                area="finanzas",
+                value=4000.0,
+                formatted_value="$4,000 CLP",
+                unit="CLP",
+                formula_used="sum",
+                status="ok",
+            ),
+            ComputedKpiValue(
+                kpi_id="tasa",
+                name="Tasa",
+                area="ops",
+                value=0.125,
+                formatted_value="0.125",
+                unit="ratio",
+                formula_used="ratio",
+                status="ok",
+            ),
+        ],
+    )
+    es_single = await draft_report_summary(
+        computed_kpis=kpis_single_dot,
+        language="es",
+        candidate_narrative="El monto fue $4.000 CLP con tasa 0.125.",
+    )
+    assert es_single.numbers_verified is True
+    assert es_single.missing_required_kpis == []
+
+    # Writing "$4.000" when the true KPI is 4.0 must fail verification (4000 != 4)
+    mismatch_4k = await draft_report_summary(
+        computed_kpis=kpis_single_dot,
+        language="es",
+        allowed_extra_numbers=[4.0],
+        candidate_narrative="Monto $4.000 CLP y valor 4.000",
+    )
+    assert mismatch_4k.numbers_verified is True
+    # Now replace KPI 4000 with 4 -> "$4.000 CLP" must be rejected as unverified
+    kpis_four_only = kpis_single_dot.model_copy(
+        update={
+            "kpis": [
+                ComputedKpiValue(
+                    kpi_id="solo_4",
+                    name="Solo Cuatro",
+                    area="ops",
+                    value=4.0,
+                    formatted_value="4",
+                    unit="CLP",
+                    formula_used="count",
+                    status="ok",
+                )
+            ]
+        }
+    )
+    rejected = await draft_report_summary(
+        computed_kpis=kpis_four_only,
+        language="es",
+        candidate_narrative="Se pagaron $4.000 CLP.",
+    )
+    assert rejected.numbers_verified is False
+    assert rejected.unverified_numbers == ["$4.000"]
+
 
 async def test_send_report_email_smtp_graph_errors_and_validation(
     monkeypatch: pytest.MonkeyPatch,

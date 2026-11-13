@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 
 from powerbi_orchestrator_mcp.tools.compute_process_kpis import ComputeProcessKpisResult
 
-# Matches numeric tokens like 92.5%, $1,250,000, 1.250,50, 43, -2.5.
-_NUMBER_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])[-+]?\$?\d[\d.,]*%?(?![A-Za-z0-9_])")
+# Matches numeric tokens like 92.5%, $1,250,000, 1.250,50, 43, -2.5 without eating trailing sentence punctuation.
+_NUMBER_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])[-+]?\$?\d(?:[\d.,]*\d)?%?(?![A-Za-z0-9_])")
 
 
 class DraftReportSummaryInput(BaseModel):
@@ -40,7 +40,9 @@ class DraftReportSummaryResult(BaseModel):
     missing_required_kpis: list[str] = Field(default_factory=list)
 
 
-def _normalize_number_token(token: str) -> float | None:
+def _normalize_number_token(token: str, *, language: str = "es") -> float | None:
+    has_currency = "$" in token
+    has_percent = "%" in token
     cleaned = token.strip().lstrip("$").rstrip("%").strip()
     if not cleaned:
         return None
@@ -59,7 +61,17 @@ def _normalize_number_token(token: str) -> float | None:
             cleaned = cleaned.replace(",", ".")
     elif "." in cleaned:
         parts = cleaned.split(".")
-        if len(parts) > 2 and all(len(p) == 3 for p in parts[1:]):
+        is_dot_thousands = (
+            all(len(p) == 3 and p.isdigit() for p in parts[1:]) and parts[0].lstrip("-+").isdigit()
+        )
+        if is_dot_thousands and (
+            len(parts) > 2
+            or (
+                len(parts) == 2
+                and parts[0].lstrip("-+") != "0"
+                and (has_currency or (language == "es" and not has_percent))
+            )
+        ):
             cleaned = "".join(parts)
     try:
         return float(cleaned)
@@ -149,7 +161,7 @@ async def draft_report_summary(
     cited_values: list[float] = []
 
     for tok in tokens:
-        parsed = _normalize_number_token(tok)
+        parsed = _normalize_number_token(tok, language=language)
         if parsed is None:
             continue
         cited_values.append(parsed)
