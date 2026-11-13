@@ -23,7 +23,7 @@ import re
 from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import BaseModel, Field
@@ -35,12 +35,23 @@ from powerbi_orchestrator_mcp.cloud.auth import (
     resolve_auth_mode,
 )
 from powerbi_orchestrator_mcp.cloud.fabric_client import FabricClient
+from powerbi_orchestrator_mcp.cloud.tool_adapters import AsyncFabricBridge
 
 if TYPE_CHECKING:
     from powerbi_orchestrator_mcp.orchestrator.transport import HttpConfig
 from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog
-from powerbi_orchestrator_mcp.orchestrator.audit_guard import audited
-from powerbi_orchestrator_mcp.orchestrator.authorization import requires_scope
+from powerbi_orchestrator_mcp.orchestrator.audit_guard import (
+    AuditUnavailableError,
+    _fail_closed,
+    audited,
+)
+from powerbi_orchestrator_mcp.orchestrator.authorization import (
+    SCOPE_WRITE,
+    ReadOnlyModeError,
+    readonly_mode,
+    require_capability_scope,
+    requires_scope,
+)
 from powerbi_orchestrator_mcp.orchestrator.context import (
     EngineStatus,
     SessionContext,
@@ -107,14 +118,23 @@ from powerbi_orchestrator_mcp.tools.audit_model_and_report import (
 from powerbi_orchestrator_mcp.tools.audit_report_ux_and_storytelling import (
     audit_report_ux_and_storytelling as _audit_ux,
 )
+from powerbi_orchestrator_mcp.tools.check_report_data_consistency import (
+    check_report_data_consistency as _check_report_data_consistency,
+)
 from powerbi_orchestrator_mcp.tools.commit_workspace_to_git import (
-    commit_workspace_to_git as _commit_ws,
+    commit_workspace_to_git_async as _commit_ws_async,
+)
+from powerbi_orchestrator_mcp.tools.compute_process_kpis import (
+    compute_process_kpis as _compute_process_kpis,
 )
 from powerbi_orchestrator_mcp.tools.create_report_from_dataset import (
     create_report_from_dataset as _create_report,
 )
 from powerbi_orchestrator_mcp.tools.create_semantic_model_from_schema import (
-    create_semantic_model_from_schema as _create_model,
+    create_semantic_model_from_schema_async as _create_model_async,
+)
+from powerbi_orchestrator_mcp.tools.define_kpi_catalog import (
+    define_kpi_catalog as _define_kpi_catalog,
 )
 from powerbi_orchestrator_mcp.tools.deploy_to_workspace import (
     deploy_to_workspace as _deploy,
@@ -123,11 +143,20 @@ from powerbi_orchestrator_mcp.tools.design_report_page_from_requirements import 
     design_report_page_from_requirements as _design_page,
 )
 from powerbi_orchestrator_mcp.tools.diff_models import diff_models as _diff
+from powerbi_orchestrator_mcp.tools.draft_report_summary import (
+    draft_report_summary as _draft_report_summary,
+)
 from powerbi_orchestrator_mcp.tools.edit_report_visual import (
     edit_report_visual as _edit_visual,
 )
+from powerbi_orchestrator_mcp.tools.export_kpi_report_bundle import (
+    export_kpi_report_bundle as _export_kpi_report_bundle,
+)
 from powerbi_orchestrator_mcp.tools.generate_data_dictionary import (
     generate_data_dictionary as _data_dict,
+)
+from powerbi_orchestrator_mcp.tools.ingest_source_table import (
+    ingest_source_table as _ingest_source_table,
 )
 from powerbi_orchestrator_mcp.tools.optimize_report_performance import (
     optimize_report_performance as _optimize_perf,
@@ -139,7 +168,10 @@ from powerbi_orchestrator_mcp.tools.pre_deploy_check import (
     pre_deploy_check as _pre_deploy,
 )
 from powerbi_orchestrator_mcp.tools.promote_in_pipeline import (
-    promote_in_pipeline as _promote,
+    QualityGate as _PipelineQualityGate,
+)
+from powerbi_orchestrator_mcp.tools.promote_in_pipeline import (
+    promote_in_pipeline_async as _promote_async,
 )
 from powerbi_orchestrator_mcp.tools.refactor_to_calculation_groups import (
     RefactorResult,
@@ -157,17 +189,20 @@ from powerbi_orchestrator_mcp.tools.screenshot_report_pages import (
 from powerbi_orchestrator_mcp.tools.select_visuals_for_kpis import (
     select_visuals_for_kpis as _select_visuals,
 )
+from powerbi_orchestrator_mcp.tools.send_report_email import (
+    send_report_email as _send_report_email,
+)
 from powerbi_orchestrator_mcp.tools.set_sensitivity_labels import (
-    set_sensitivity_labels as _set_labels,
+    set_sensitivity_labels_async as _set_labels_async,
 )
 from powerbi_orchestrator_mcp.tools.setup_rls_and_roles import (
-    setup_rls_and_roles as _setup_rls,
+    setup_rls_and_roles_async as _setup_rls_async,
 )
 from powerbi_orchestrator_mcp.tools.simplify_dax_measure import (
     simplify_dax_measure as _simplify_dax,
 )
 from powerbi_orchestrator_mcp.tools.sync_git_to_workspace import (
-    sync_git_to_workspace as _sync_git,
+    sync_git_to_workspace_async as _sync_git_async,
 )
 
 # ---------------------------------------------------------------------------
@@ -1144,11 +1179,8 @@ async def apply_plan(
         state=PlanExecutionState.COMPLETED,
     )
 
-    # Best-effort audit log entry — failures are non-fatal because the
-    # plan ran successfully; the audit log is for forensics, not control.
-    import contextlib
-
-    with contextlib.suppress(Exception):
+    # Audit log entry — fail closed when PBI_AUDIT_FAIL_CLOSED / PBI_STRICT_COMPLIANCE is set.
+    try:
         AuditLog().insert(
             tool_name="apply_plan",
             tool_args={"plan_id": plan.id, "dry_run": dry_run},
@@ -1159,6 +1191,9 @@ async def apply_plan(
                 "step_count": len(executed),
             },
         )
+    except Exception as exc:
+        if _fail_closed():
+            raise AuditUnavailableError(f"apply_plan audit_log_write_failed: {exc}") from exc
 
     return ApplyResult(
         result="success",
@@ -1638,6 +1673,12 @@ async def generate_data_dictionary(
     Returns:
         Dict with data dictionary markdown content, table count, measure count, and output path.
     """
+    if output_path:
+        if readonly_mode():
+            raise ReadOnlyModeError(
+                "Refusing 'generate_data_dictionary' with output_path: server is in read-only mode."
+            )
+        require_capability_scope(SCOPE_WRITE, reason="generate_data_dictionary(output_path=...)")
     result = _data_dict(
         pbip_path=pbip_path,
         output_path=output_path,
@@ -2204,6 +2245,10 @@ async def screenshot_report_pages(
     Returns:
         Dict with output image paths, warnings, and rendering metadata.
     """
+    if readonly_mode():
+        raise ReadOnlyModeError(
+            "screenshot_report_pages writes rendered artifacts and is disabled while PBI_READONLY is set."
+        )
     result = await asyncio.to_thread(
         _screenshot,
         pbip_path=pbip_path,
@@ -2250,7 +2295,7 @@ async def create_semantic_model_from_schema(
         if spec_json is not None and isinstance(spec_json, (dict, list))
         else spec_json
     )
-    result = _create_model(
+    result = await _create_model_async(
         spec_yaml=spec_yaml,
         spec_json=spec_json_payload,
         output_pbip_path=output_pbip_path,
@@ -2268,12 +2313,18 @@ async def setup_rls_and_roles(
     spec_json: Any = None,
     dry_run: bool = True,
     rollback_on_test_failure: bool = True,
+    workspace_id: str | None = None,
+    dataset_id: str | None = None,
+    auth_mode: str | None = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+    fabric_client: Any = None,
 ) -> dict[str, Any]:
     """Configure Row-Level Security (RLS) roles and validation rules in a TMDL model.
 
     Use this tool when the user asks to:
     - Set up, add, or configure RLS roles and DAX table filter expressions.
-    - Test and validate security rules against sample queries.
+    - Test and validate security rules against sample queries (optional live dataset).
 
     Args:
         target: Target PBIP directory or TMDL path.
@@ -2281,6 +2332,12 @@ async def setup_rls_and_roles(
         spec_json: JSON specification (either as a string or a structured object/dict).
         dry_run: If True, validate role specification without writing to disk.
         rollback_on_test_failure: Whether to revert modifications if test queries fail.
+        workspace_id: Optional Power BI workspace ID for live RLS EffectiveIdentity checks.
+        dataset_id: Optional Power BI dataset ID for live RLS checks.
+        auth_mode: Optional auth mode ("interactive", "service_principal", "managed_identity").
+        tenant_id: Optional Azure AD tenant ID.
+        client_id: Optional Azure AD client ID.
+        fabric_client: Optional injected FabricClient (for testing).
 
     Returns:
         Dict with roles created, test query outcomes, and rollback status if applicable.
@@ -2290,13 +2347,44 @@ async def setup_rls_and_roles(
         if spec_json is not None and isinstance(spec_json, (dict, list))
         else spec_json
     )
-    result = _setup_rls(
-        target=target,
-        spec_yaml=spec_yaml,
-        spec_json=spec_json_payload,
-        dry_run=dry_run,
-        rollback_on_test_failure=rollback_on_test_failure,
-    )
+    client: Any = None
+    close_client = False
+    test_engine: Any = None
+    if workspace_id and dataset_id:
+        if fabric_client is not None:
+            client = fabric_client
+        else:
+            config = AuthConfig.from_env_or_args(
+                mode=auth_mode,
+                tenant_id=tenant_id,
+                client_id=client_id,
+            )
+            client = FabricClient(FabricCredential(config))
+            close_client = True
+        bridge = AsyncFabricBridge(client)
+
+        async def _live_rls_test(*, role_name: str, dax: str) -> Any:
+            return await bridge.execute_rls_test_query(
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                role_user=role_name,
+                dax=dax,
+            )
+
+        test_engine = _live_rls_test
+
+    try:
+        result = await _setup_rls_async(
+            target=target,
+            spec_yaml=spec_yaml,
+            spec_json=spec_json_payload,
+            dry_run=dry_run,
+            rollback_on_test_failure=rollback_on_test_failure,
+            test_engine=test_engine,
+        )
+    finally:
+        if close_client and client is not None and hasattr(client, "aclose"):
+            await client.aclose()
     return result.model_dump(mode="json")
 
 
@@ -2308,7 +2396,14 @@ async def promote_in_pipeline(
     source_stage: str = "dev",
     target_stage: str = "test",
     items: list[str] | None = None,
+    quality_gates_json: Any = "[]",
+    pbip_path: str | None = None,
+    baseline_path: str | None = None,
+    auth_mode: str | None = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
     dry_run: bool = True,
+    fabric_client: Any = None,
 ) -> dict[str, Any]:
     """Promote artifacts across Microsoft Fabric Deployment Pipeline stages.
 
@@ -2321,20 +2416,54 @@ async def promote_in_pipeline(
         source_stage: Source stage ("dev", "test", "prod").
         target_stage: Target stage ("test", "prod").
         items: Optional list of specific item IDs to promote. Promotes all if omitted.
+        quality_gates_json: Optional list/JSON of quality gates to run before promotion.
+        pbip_path: Optional PBIP directory for audit quality gate.
+        baseline_path: Optional DAX regression baseline JSON for regression quality gate.
+        auth_mode: Optional auth mode ("interactive", "service_principal", "managed_identity").
+        tenant_id: Optional Azure AD tenant ID.
+        client_id: Optional Azure AD client ID.
         dry_run: If True (DEFAULT), validate stages and gate checks without
             triggering actual promotion. Pass dry_run=False explicitly to
             promote for real — this moves live artifacts between stages.
+        fabric_client: Optional injected bridge/client (for testing).
 
     Returns:
         Dict with promotion status, gate outcomes, and affected items.
     """
-    result = _promote(
-        pipeline_id=pipeline_id,
-        source_stage=source_stage,
-        target_stage=target_stage,
-        items=items,
-        dry_run=dry_run,
+    raw_gates = _parse_json_arg(quality_gates_json, default=[])
+    parsed_gates = (
+        [_PipelineQualityGate.model_validate(g) for g in raw_gates]
+        if isinstance(raw_gates, list)
+        else []
     )
+    client: Any = None
+    close_client = False
+    bridge: Any = fabric_client
+    if not dry_run and bridge is None:
+        config = AuthConfig.from_env_or_args(
+            mode=auth_mode,
+            tenant_id=tenant_id,
+            client_id=client_id,
+        )
+        client = FabricClient(FabricCredential(config))
+        close_client = True
+        bridge = AsyncFabricBridge(client)
+
+    try:
+        result = await _promote_async(
+            pipeline_id=pipeline_id,
+            source_stage=source_stage,
+            target_stage=target_stage,
+            items=items,
+            quality_gates=parsed_gates,
+            pbip_path=pbip_path,
+            baseline_path=baseline_path,
+            dry_run=dry_run,
+            fabric_client=bridge,
+        )
+    finally:
+        if close_client and client is not None and hasattr(client, "aclose"):
+            await client.aclose()
     return result.model_dump(mode="json")
 
 
@@ -2352,7 +2481,11 @@ async def commit_workspace_to_git(
     branch: str | None = None,
     commit_message: str | None = None,
     exclude_items: list[str] | None = None,
+    auth_mode: str | None = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
     dry_run: bool = True,
+    fabric_client: Any = None,
 ) -> dict[str, Any]:
     """Export and commit a Fabric workspace into a local Git repository.
 
@@ -2366,19 +2499,41 @@ async def commit_workspace_to_git(
         branch: Git branch to commit into.
         commit_message: Commit message describing the snapshot.
         exclude_items: Optional list of item IDs to exclude.
+        auth_mode: Optional auth mode ("interactive", "service_principal", "managed_identity").
+        tenant_id: Optional Azure AD tenant ID.
+        client_id: Optional Azure AD client ID.
         dry_run: If True, inspect items without creating git commits.
+        fabric_client: Optional injected bridge/client (for testing).
 
     Returns:
         Dict with committed items, commit SHA, and repository status.
     """
-    result = _commit_ws(
-        workspace_id=workspace_id,
-        output_repo_path=output_repo_path,
-        branch=branch,
-        commit_message=commit_message,
-        exclude_items=exclude_items,
-        dry_run=dry_run,
-    )
+    client: Any = None
+    close_client = False
+    bridge: Any = fabric_client
+    if not dry_run and bridge is None:
+        config = AuthConfig.from_env_or_args(
+            mode=auth_mode,
+            tenant_id=tenant_id,
+            client_id=client_id,
+        )
+        client = FabricClient(FabricCredential(config))
+        close_client = True
+        bridge = AsyncFabricBridge(client)
+
+    try:
+        result = await _commit_ws_async(
+            workspace_id=workspace_id,
+            output_repo_path=output_repo_path,
+            branch=branch,
+            commit_message=commit_message,
+            exclude_items=exclude_items,
+            dry_run=dry_run,
+            fabric_client=bridge,
+        )
+    finally:
+        if close_client and client is not None and hasattr(client, "aclose"):
+            await client.aclose()
     return result.model_dump(mode="json")
 
 
@@ -2390,7 +2545,11 @@ async def sync_git_to_workspace(
     workspace_id: str,
     branch_or_commit: str = "HEAD",
     conflict_resolution: str = "manual",
+    auth_mode: str | None = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
     dry_run: bool = True,
+    fabric_client: Any = None,
 ) -> dict[str, Any]:
     """Deploy a local Git repository with PBIP projects to a Fabric workspace.
 
@@ -2403,18 +2562,40 @@ async def sync_git_to_workspace(
         workspace_id: Target Fabric workspace ID (UUID).
         branch_or_commit: Git ref to sync (default: "HEAD").
         conflict_resolution: Conflict handling strategy ("manual", etc.).
+        auth_mode: Optional auth mode ("interactive", "service_principal", "managed_identity").
+        tenant_id: Optional Azure AD tenant ID.
+        client_id: Optional Azure AD client ID.
         dry_run: If True, calculate changes without publishing.
+        fabric_client: Optional injected bridge/client (for testing).
 
     Returns:
         Dict with synchronized items, skipped items, and deployment results.
     """
-    result = _sync_git(
-        repo_path=repo_path,
-        workspace_id=workspace_id,
-        branch_or_commit=branch_or_commit,
-        conflict_resolution=conflict_resolution,
-        dry_run=dry_run,
-    )
+    client: Any = None
+    close_client = False
+    bridge: Any = fabric_client
+    if not dry_run and bridge is None:
+        config = AuthConfig.from_env_or_args(
+            mode=auth_mode,
+            tenant_id=tenant_id,
+            client_id=client_id,
+        )
+        client = FabricClient(FabricCredential(config))
+        close_client = True
+        bridge = AsyncFabricBridge(client)
+
+    try:
+        result = await _sync_git_async(
+            repo_path=repo_path,
+            workspace_id=workspace_id,
+            branch_or_commit=branch_or_commit,
+            conflict_resolution=conflict_resolution,
+            dry_run=dry_run,
+            fabric_client=bridge,
+        )
+    finally:
+        if close_client and client is not None and hasattr(client, "aclose"):
+            await client.aclose()
     return result.model_dump(mode="json")
 
 
@@ -2427,7 +2608,11 @@ async def set_sensitivity_labels(
     label_name: str,
     admin_scopes: list[str] | None = None,
     redact_names: bool = True,
+    auth_mode: str | None = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
     dry_run: bool = True,
+    fabric_admin_client: Any = None,
 ) -> dict[str, Any]:
     """Apply Microsoft Purview information protection sensitivity labels to items.
 
@@ -2441,19 +2626,68 @@ async def set_sensitivity_labels(
         label_name: Display name of the sensitivity label.
         admin_scopes: Optional list of administrative authorization scopes.
         redact_names: Whether to redact item names in returned logs for security.
+        auth_mode: Optional auth mode ("interactive", "service_principal", "managed_identity").
+        tenant_id: Optional Azure AD tenant ID.
+        client_id: Optional Azure AD client ID.
         dry_run: If True, validate permissions without applying labels.
+        fabric_admin_client: Optional injected admin bridge/client (for testing).
 
     Returns:
         Dict with updated items, failed items, and compliance status.
     """
-    result = _set_labels(
-        items=items,
-        label_id=label_id,
-        label_name=label_name,
-        admin_scopes=admin_scopes,
-        redact_names=redact_names,
-        dry_run=dry_run,
+    client: Any = None
+    close_client = False
+    bridge: Any = fabric_admin_client
+    if not dry_run and bridge is None:
+        config = AuthConfig.from_env_or_args(
+            mode=auth_mode,
+            tenant_id=tenant_id,
+            client_id=client_id,
+        )
+        client = FabricClient(FabricCredential(config))
+        close_client = True
+        bridge = AsyncFabricBridge(client)
+
+    class _LabelAdminWrapper:
+        def __init__(
+            self, target_bridge: AsyncFabricBridge, target_items: list[dict[str, str]]
+        ) -> None:
+            self._bridge = target_bridge
+            self._items = target_items
+
+        async def admin_bulk_set_labels(
+            self,
+            *,
+            tenant_id: str | None,  # noqa: ARG002
+            token: str | None,  # noqa: ARG002
+            label_id: str,
+            item_ids: list[str],
+        ) -> dict[str, Any]:
+            id_set = set(item_ids)
+            filtered = [it for it in self._items if (it.get("item_id") or it.get("id")) in id_set]
+            return await self._bridge.admin_bulk_set_labels(
+                items=filtered,
+                label_id=label_id,
+            )
+
+    admin_proxy: Any = (
+        _LabelAdminWrapper(bridge, items) if isinstance(bridge, AsyncFabricBridge) else bridge
     )
+
+    try:
+        result = await _set_labels_async(
+            items=list(items),
+            label_id=label_id,
+            label_name=label_name,
+            tenant_id=tenant_id,
+            admin_scopes=admin_scopes,
+            redact_names=redact_names,
+            dry_run=dry_run,
+            fabric_admin_client=admin_proxy,
+        )
+    finally:
+        if close_client and client is not None and hasattr(client, "aclose"):
+            await client.aclose()
     return result.model_dump(mode="json")
 
 
@@ -2483,6 +2717,361 @@ async def powerbi_health(
     return await _powerbi_health(
         include_engine_details=include_engine_details,
     )
+
+
+# ---------------------------------------------------------------------------
+# Operational KPIs, Ingestion & Verified Reporting Delivery
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+@requires_scope("define_kpi_catalog")
+@audited("define_kpi_catalog")
+async def define_kpi_catalog(
+    catalog_path: str,
+    kpis: Any = None,
+    version: str = "1.0.0",
+    approver: str | None = None,
+    merge: bool = True,
+    include_process_preset: bool = False,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Create, merge, and validate a versioned YAML KPI catalog.
+
+    Args:
+        catalog_path: Target YAML path inside PBI_WORKSPACE_ROOT.
+        kpis: Optional list (or JSON string) of KPI definition objects.
+        version: Catalog semantic version string.
+        approver: Optional human approver / owner tag.
+        merge: Merge incoming KPIs into existing catalog when True.
+        include_process_preset: Seed the 7 built-in operational/process KPIs.
+        dry_run: Preview diff/validation without writing to disk (default True).
+
+    Returns:
+        Dict with validation result, catalog SHA-256, and unified YAML diff.
+    """
+    parsed_kpis = _parse_json_arg(kpis, default=None) if kpis is not None else None
+    result = await _define_kpi_catalog(
+        catalog_path=catalog_path,
+        kpis=parsed_kpis,
+        version=version,
+        approver=approver,
+        merge=merge,
+        include_process_preset=include_process_preset,
+        dry_run=dry_run,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+@requires_scope("ingest_source_table")
+@audited("ingest_source_table")
+async def ingest_source_table(
+    source_path: str,
+    target_pbip_dir: str,
+    table_name: str,
+    expected_schema: Any,
+    sheet_name: str | None = None,
+    key_columns: list[str] | None = None,
+    allow_extra_columns: bool = True,
+    max_rows: int = 100_000,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Validate and stage an Excel/CSV source table into a PBIP semantic model.
+
+    Args:
+        source_path: Path to source .xlsx/.xlsm/.csv file inside PBI_WORKSPACE_ROOT.
+        target_pbip_dir: Path to target PBIP workspace directory.
+        table_name: Validated target Power BI table identifier.
+        expected_schema: Dict (or JSON string) mapping column names to expected types.
+        sheet_name: Optional Excel worksheet name.
+        key_columns: Optional key columns checked for nulls and duplicates.
+        allow_extra_columns: Permit unmapped source columns when True.
+        max_rows: Safety row cap per file (capped at 100,000).
+        dry_run: Validate only without writing TMDL/staged CSV files (default True).
+
+    Returns:
+        Dict with schema/key validation findings, row counts, and staged artifacts.
+    """
+    parsed_schema = _parse_json_arg(expected_schema, default={})
+    schema_dict = cast(dict[str, Any], parsed_schema if isinstance(parsed_schema, dict) else {})
+    result = await _ingest_source_table(
+        source_path=source_path,
+        target_pbip_dir=target_pbip_dir,
+        table_name=table_name,
+        expected_schema=schema_dict,
+        sheet_name=sheet_name,
+        key_columns=key_columns,
+        allow_extra_columns=allow_extra_columns,
+        max_rows=max_rows,
+        dry_run=dry_run,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+@requires_scope("compute_process_kpis")
+async def compute_process_kpis(
+    source_path: str | None = None,
+    sheet_name: str | None = None,
+    workspace_id: str | None = None,
+    dataset_id: str | None = None,
+    catalog_path: str | None = None,
+    kpi_ids: list[str] | None = None,
+    as_of_date: str | None = None,
+    area_filter: str | None = None,
+    dax_table_name: str = "Control",
+    impersonated_user_name: str | None = None,
+    fabric_client: Any = None,
+    auth_mode: str | None = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+) -> dict[str, Any]:
+    """Deterministically compute process KPIs from Excel/CSV or Power BI dataset.
+
+    Args:
+        source_path: Optional Excel/CSV file path inside PBI_WORKSPACE_ROOT.
+        sheet_name: Optional Excel sheet name.
+        workspace_id: Optional Power BI / Fabric workspace GUID for DAX queries.
+        dataset_id: Optional Power BI / Fabric dataset GUID.
+        catalog_path: Optional YAML KPI catalog path (defaults to built-in preset).
+        kpi_ids: Optional subset of KPI IDs to compute.
+        as_of_date: Optional ISO date YYYY-MM-DD for overdue/cycle calculations.
+        area_filter: Optional area filter (operaciones, proyectos, compras, hsec, etc.).
+        dax_table_name: Fallback table name when executing DAX expressions.
+        impersonated_user_name: Optional RLS effective username (requires write scope).
+        fabric_client: Optional injected FabricClient for testing.
+        auth_mode: Optional auth mode override.
+        tenant_id: Optional Entra ID tenant.
+        client_id: Optional Entra ID client ID.
+
+    Returns:
+        Dict with deterministic KPI values, Decimal precision metadata, and warnings.
+    """
+    if impersonated_user_name:
+        require_capability_scope(
+            SCOPE_WRITE,
+            reason=f"compute_process_kpis(impersonated_user_name={impersonated_user_name!r})",
+        )
+    result = await _compute_process_kpis(
+        source_path=source_path,
+        sheet_name=sheet_name,
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
+        catalog_path=catalog_path,
+        kpi_ids=kpi_ids,
+        as_of_date=as_of_date,
+        area_filter=area_filter,
+        dax_table_name=dax_table_name,
+        impersonated_user_name=impersonated_user_name,
+        fabric_client=fabric_client,
+        auth_mode=auth_mode,
+        tenant_id=tenant_id,
+        client_id=client_id,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+@requires_scope("export_kpi_report_bundle")
+@audited("export_kpi_report_bundle")
+async def export_kpi_report_bundle(
+    computed_kpis: Any,
+    output_dir: str,
+    report_title: str = "Reporte de Control y KPIs",
+    summary_text: str | None = None,
+    detail_rows_path: str | None = None,
+    detail_sheet_name: str | None = None,
+    formats: list[Literal["xlsx", "pdf"]] | None = None,
+    include_pii_columns: bool = False,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Render deterministic KPIs into printable PDF and styled Excel files.
+
+    Args:
+        computed_kpis: ComputeProcessKpisResult dict (or JSON string).
+        output_dir: Destination folder inside PBI_WORKSPACE_ROOT.
+        report_title: Printable report header/title.
+        summary_text: Optional verified executive summary text to embed in PDF/XLSX.
+        detail_rows_path: Optional source Excel/CSV to include as bounded detail tab.
+        detail_sheet_name: Optional worksheet name for detail_rows_path.
+        formats: Output formats subset of ["xlsx", "pdf"].
+        include_pii_columns: Preserve PII-named columns in detail tab when True (default False).
+        dry_run: Plan artifact paths without writing files when True (default True).
+
+    Returns:
+        Dict with generated file paths, SHA-256 checksums, stripped PII columns, and status.
+    """
+    parsed_kpis = _parse_json_arg(computed_kpis, default={})
+    kpis_dict = cast(dict[str, Any], parsed_kpis if isinstance(parsed_kpis, dict) else {})
+    result = await _export_kpi_report_bundle(
+        computed_kpis=kpis_dict,
+        output_dir=output_dir,
+        report_title=report_title,
+        summary_text=summary_text,
+        detail_rows_path=detail_rows_path,
+        detail_sheet_name=detail_sheet_name,
+        formats=formats,
+        include_pii_columns=include_pii_columns,
+        dry_run=dry_run,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+@requires_scope("draft_report_summary")
+async def draft_report_summary(
+    computed_kpis: Any,
+    audience: Literal["operations", "contract_admin", "external_client"] = "operations",
+    cadence: Literal["daily", "weekly", "monthly"] = "daily",
+    candidate_narrative: str | None = None,
+    language: Literal["es", "en"] = "es",
+    allowed_extra_numbers: list[float] | None = None,
+) -> dict[str, Any]:
+    """Build bounded executive summary prompt and verify cited KPI figures.
+
+    Args:
+        computed_kpis: ComputeProcessKpisResult dict (or JSON string).
+        audience: Target reader profile ("operations", "contract_admin", "external_client").
+        cadence: Reporting cadence ("daily", "weekly", "monthly").
+        candidate_narrative: Optional LLM-drafted prose to verify against KPI numbers.
+        language: Prompt language ("es" or "en").
+        allowed_extra_numbers: Explicit whitelist for non-KPI reference figures (e.g. years).
+
+    Returns:
+        Dict with bounded prompt bundle, verification flag, and any unverified numeric tokens.
+    """
+    parsed_kpis = _parse_json_arg(computed_kpis, default={})
+    kpis_dict = cast(dict[str, Any], parsed_kpis if isinstance(parsed_kpis, dict) else {})
+    result = await _draft_report_summary(
+        computed_kpis=kpis_dict,
+        audience=audience,
+        cadence=cadence,
+        candidate_narrative=candidate_narrative,
+        language=language,
+        allowed_extra_numbers=allowed_extra_numbers,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+@requires_scope("send_report_email")
+@audited("send_report_email")
+async def send_report_email(
+    recipients_to: list[str],
+    subject: str,
+    body_markdown: str,
+    recipients_cc: list[str] | None = None,
+    attachment_paths: list[str] | None = None,
+    audience_profile: Literal["internal_ops", "internal_admin", "external_client"] = "internal_ops",
+    report_cadence: Literal["daily", "weekly", "monthly"] = "daily",
+    confirm_external_send: bool = False,
+    transport: Literal["auto", "graph", "smtp"] = "auto",
+    sender_address: str | None = None,
+    dry_run: bool = True,
+    max_attachment_bytes: int = 10 * 1024 * 1024,
+    graph_client: Any = None,
+    smtp_sender: Any = None,
+) -> dict[str, Any]:
+    """Validate recipients/attachments and send a report bundle via Graph or SMTP.
+
+    Args:
+        recipients_to: Primary recipient email addresses (logged redacted as SHA-256 hashes).
+        subject: Email subject line.
+        body_markdown: Email body content (markdown/plain text).
+        recipients_cc: Optional CC recipient email addresses.
+        attachment_paths: Optional attachment paths inside PBI_WORKSPACE_ROOT.
+        audience_profile: Target audience profile ("internal_ops", "internal_admin", "external_client").
+        report_cadence: Report cadence ("daily", "weekly", "monthly").
+        confirm_external_send: Explicit confirmation required before external client sends.
+        transport: Delivery transport ("auto", "graph", "smtp").
+        sender_address: Sender address / UPN override.
+        dry_run: Validate domains, external gate, and attachment sizes without sending (default True).
+        max_attachment_bytes: Maximum allowed total attachment size in bytes.
+        graph_client: Optional injected Graph client for testing.
+        smtp_sender: Optional injected SMTP callable for testing.
+
+    Returns:
+        Dict with delivery status, transport used, redacted recipient hashes, and block reasons.
+    """
+    result = await _send_report_email(
+        recipients_to=recipients_to,
+        subject=subject,
+        body_markdown=body_markdown,
+        recipients_cc=recipients_cc,
+        attachment_paths=attachment_paths,
+        audience_profile=audience_profile,
+        report_cadence=report_cadence,
+        confirm_external_send=confirm_external_send,
+        transport=transport,
+        sender_address=sender_address,
+        dry_run=dry_run,
+        max_attachment_bytes=max_attachment_bytes,
+        graph_client=graph_client,
+        smtp_sender=smtp_sender,
+    )
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+@requires_scope("check_report_data_consistency")
+async def check_report_data_consistency(
+    workspace_id: str,
+    dataset_id: str,
+    source_path: str | None = None,
+    sheet_name: str | None = None,
+    catalog_path: str | None = None,
+    expected_kpis: Any = None,
+    tolerance_pct: float = 0.001,
+    as_of_date: str | None = None,
+    query_executor: Any = None,
+    fabric_client: Any = None,
+    auth_mode: str | None = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+) -> dict[str, Any]:
+    """Reconcile expected or source-file KPIs against a live Power BI dataset.
+
+    Args:
+        workspace_id: Power BI / Fabric workspace GUID.
+        dataset_id: Power BI / Fabric dataset GUID.
+        source_path: Optional Excel/CSV source file for independent baseline calculation.
+        sheet_name: Optional Excel worksheet name.
+        catalog_path: Optional YAML KPI catalog path.
+        expected_kpis: Optional dict (or JSON string) of explicit expected KPI numbers.
+        tolerance_pct: Allowed relative discrepancy ratio before flagging mismatch (default 0.001).
+        as_of_date: Optional ISO date YYYY-MM-DD for source baseline calculation.
+        query_executor: Optional injected DAX query executor callable for testing.
+        fabric_client: Optional injected FabricClient for testing.
+        auth_mode: Optional auth mode override.
+        tenant_id: Optional Entra ID tenant.
+        client_id: Optional Entra ID client ID.
+
+    Returns:
+        Dict with overall consistency flag and per-KPI source vs dataset discrepancy details.
+    """
+    parsed_expected = (
+        _parse_json_arg(expected_kpis, default=None) if expected_kpis is not None else None
+    )
+    expected_dict = (
+        cast(dict[str, float], parsed_expected) if isinstance(parsed_expected, dict) else None
+    )
+    result = await _check_report_data_consistency(
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
+        source_path=source_path,
+        sheet_name=sheet_name,
+        catalog_path=catalog_path,
+        expected_kpis=expected_dict,
+        tolerance_pct=tolerance_pct,
+        as_of_date=as_of_date,
+        query_executor=query_executor,
+        fabric_client=fabric_client,
+        auth_mode=auth_mode,
+        tenant_id=tenant_id,
+        client_id=client_id,
+    )
+    return result.model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------

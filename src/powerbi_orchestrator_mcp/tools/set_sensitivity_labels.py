@@ -343,10 +343,113 @@ def set_sensitivity_labels(
     )
 
 
+async def set_sensitivity_labels_async(
+    items: list[LabelTarget] | list[dict[str, str]] | None,
+    label_id: str,
+    label_name: str,
+    tenant_id: str | None = None,
+    admin_scopes: list[str] | None = None,
+    redact_names: bool = True,
+    dry_run: bool = True,
+    fabric_admin_client: Any = None,
+    admin_token: str | None = None,
+    audit_logger: Any = None,
+) -> SetSensitivityLabelsResult:
+    """Async wrapper supporting awaitable ``fabric_admin_client.admin_bulk_set_labels``."""
+    import inspect
+
+    if dry_run or fabric_admin_client is None:
+        return set_sensitivity_labels(
+            items=items,
+            label_id=label_id,
+            label_name=label_name,
+            tenant_id=tenant_id,
+            admin_scopes=admin_scopes,
+            redact_names=redact_names,
+            dry_run=dry_run,
+            fabric_admin_client=None,
+            admin_token=admin_token,
+            audit_logger=audit_logger,
+        )
+
+    captured_call: list[dict[str, Any]] = []
+
+    class _PreChecker:
+        def admin_bulk_set_labels(
+            self,
+            *,
+            tenant_id: str | None,
+            token: str | None,
+            label_id: str,
+            item_ids: list[str],
+        ) -> dict[str, Any]:
+            captured_call.append(
+                {
+                    "tenant_id": tenant_id,
+                    "token": token,
+                    "label_id": label_id,
+                    "item_ids": item_ids,
+                }
+            )
+            return {}
+
+    pre_res = set_sensitivity_labels(
+        items=items,
+        label_id=label_id,
+        label_name=label_name,
+        tenant_id=tenant_id,
+        admin_scopes=admin_scopes,
+        redact_names=redact_names,
+        dry_run=dry_run,
+        fabric_admin_client=_PreChecker(),
+        admin_token=admin_token,
+        audit_logger=audit_logger,
+    )
+    if not captured_call:
+        return pre_res
+
+    req = captured_call[0]
+    try:
+        maybe = fabric_admin_client.admin_bulk_set_labels(**req)
+        real_resp = await maybe if inspect.isawaitable(maybe) else maybe
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        if "403" in msg or "Forbidden" in msg:
+            return SetSensitivityLabelsResult(
+                dry_run=dry_run,
+                warnings=[
+                    "403 Forbidden from /admin/informationprotection/setLabels: "
+                    "grant Tenant.ReadWrite.All / *.Admin.* scope to the SPN"
+                ],
+            )
+        return SetSensitivityLabelsResult(
+            dry_run=dry_run,
+            warnings=[f"bulk_set_labels failed: {exc}"],
+        )
+
+    class _SyncRespClient:
+        def admin_bulk_set_labels(self, **_kw: Any) -> dict[str, Any]:
+            return real_resp if isinstance(real_resp, dict) else {}
+
+    return set_sensitivity_labels(
+        items=items,
+        label_id=label_id,
+        label_name=label_name,
+        tenant_id=tenant_id,
+        admin_scopes=admin_scopes,
+        redact_names=redact_names,
+        dry_run=dry_run,
+        fabric_admin_client=_SyncRespClient(),
+        admin_token=admin_token,
+        audit_logger=audit_logger,
+    )
+
+
 __all__ = [
     "LabelTarget",
     "LabeledItem",
     "SetSensitivityLabels",
     "SetSensitivityLabelsResult",
     "set_sensitivity_labels",
+    "set_sensitivity_labels_async",
 ]

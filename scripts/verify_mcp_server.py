@@ -79,6 +79,13 @@ EXPECTED_TOOLS = {
     "simplify_dax_measure",
     "abstract_measures",
     "abbreviate_names",
+    "define_kpi_catalog",
+    "ingest_source_table",
+    "compute_process_kpis",
+    "export_kpi_report_bundle",
+    "draft_report_summary",
+    "send_report_email",
+    "check_report_data_consistency",
 }
 MCP_PROTOCOL_VERSION = "2024-11-05"
 

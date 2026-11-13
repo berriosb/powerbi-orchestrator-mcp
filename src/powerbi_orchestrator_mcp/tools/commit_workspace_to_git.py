@@ -352,11 +352,64 @@ def commit_workspace_to_git(
     )
 
 
+async def commit_workspace_to_git_async(
+    workspace_id: str,
+    output_repo_path: str,
+    branch: str | None = None,
+    commit_message: str | None = None,
+    exclude_items: list[str] | None = None,
+    dry_run: bool = True,
+    fabric_client: Any = None,
+    large_file_bytes: int = _LARGE_FILE_BYTES_DEFAULT,
+) -> CommitWorkspaceToGitResult:
+    """Async wrapper supporting awaitable ``fabric_client.snapshot_workspace``."""
+    import inspect
+
+    if fabric_client is None:
+        return commit_workspace_to_git(
+            workspace_id=workspace_id,
+            output_repo_path=output_repo_path,
+            branch=branch,
+            commit_message=commit_message,
+            exclude_items=exclude_items,
+            dry_run=dry_run,
+            fabric_client=None,
+            large_file_bytes=large_file_bytes,
+        )
+
+    class _PreFetchedClient:
+        def __init__(self, snap: dict[str, dict[str, Any]] | BaseException) -> None:
+            self._snap = snap
+
+        def snapshot_workspace(self, _ws_id: str) -> dict[str, dict[str, Any]]:
+            if isinstance(self._snap, BaseException):
+                raise self._snap
+            return self._snap
+
+    try:
+        maybe = fabric_client.snapshot_workspace(workspace_id)
+        snap = await maybe if inspect.isawaitable(maybe) else maybe
+    except Exception as exc:  # noqa: BLE001
+        snap = exc
+
+    return commit_workspace_to_git(
+        workspace_id=workspace_id,
+        output_repo_path=output_repo_path,
+        branch=branch,
+        commit_message=commit_message,
+        exclude_items=exclude_items,
+        dry_run=dry_run,
+        fabric_client=_PreFetchedClient(snap),
+        large_file_bytes=large_file_bytes,
+    )
+
+
 __all__ = [
     "CommitWorkspaceToGit",
     "CommitWorkspaceToGitResult",
     "CommittedItem",
     "commit_workspace_to_git",
+    "commit_workspace_to_git_async",
 ]
 
 

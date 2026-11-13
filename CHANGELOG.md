@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`docs/releases/RELEASE-NOTES-vX.Y.Z.md`](./docs/releases/) files.
 > This file is a condensed digest for quick lookup.
 
+## [1.24.0] — 2026-11-13
+
+### Added
+- **Process KPI Catalog & Tabular Ingestion (`define_kpi_catalog`, `ingest_source_table`, `compute_process_kpis`).** Repository-backed YAML KPI catalog with built-in operational/process presets, bounded CSV/XLSX validation and staging with spreadsheet formula neutralization and PII column stripping, and deterministic `Decimal`/DAX KPI computation (`impersonated_user_name` requires `Tools.Write`).
+- **Verified Executive Reporting & Delivery (`export_kpi_report_bundle`, `draft_report_summary`, `send_report_email`, `check_report_data_consistency`).** Pure-Python Excel (`openpyxl`) + PDF (`reportlab`) report generation, numeric verification guardrail for LLM-drafted summaries, domain-allowlisted Microsoft Graph/SMTP email delivery with SHA-256 recipient hashing and external-send confirmation, and source-vs-dataset DAX reconciliation.
+- **Compliance Preset & Audit Export (`PBI_STRICT_COMPLIANCE`, `cli.py audit-export`).** Opt-in strict compliance readiness preset (while keeping default PyPI backward compatibility) and CLI export command writing `audit-export-manifest.json` with SHA-256 checksums.
+- **Async Cloud Bridge (`AsyncFabricBridge`).** Bridges high-level workspace, pipeline, Git, RLS, and labeling tools cleanly onto async `FabricClient` inside FastMCP without nested `asyncio.run()`.
+
+### Fixed
+- **Fabric & Power BI REST endpoints and 202 LRO handling.** Updated `RefreshOrchestrator` fallback URLs to `/groups/.../datasets/.../refreshes`, updated `deploy_to_workspace` item type from `PowerBIDataset` to `SemanticModel` with LRO `poll_operation` + `list_items` ID resolution, and added LRO/pipeline/Git/Admin label methods to `FabricClient`.
+- **Read-only guards on file-writing read tools.** Enforced `PBI_READONLY=1` on `screenshot_report_pages` and `generate_data_dictionary(output_path=...)` (plus `Tools.Write` requirement on `generate_data_dictionary(output_path=...)`).
+
 ## [1.23.1] — 2026-11-09
 
 ### Security & Persistence

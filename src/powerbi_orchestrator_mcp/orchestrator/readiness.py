@@ -27,6 +27,9 @@ ERROR = "error"
 READ_OPT_OUT_ENV = "PBI_ALLOW_OUTSIDE_WORKSPACE_READ"
 AUDIT_FAIL_CLOSED_ENV = "PBI_AUDIT_FAIL_CLOSED"
 AUDIT_SECRET_ENV = "PBI_ORCHESTRATOR_AUDIT_SECRET"
+STRICT_COMPLIANCE_ENV = "PBI_STRICT_COMPLIANCE"
+COMMERCIAL_MODE_ENV = "PBI_COMMERCIAL_MODE"
+EMAIL_ALLOWED_DOMAINS_ENV = "PBI_EMAIL_ALLOWED_DOMAINS"
 WORKSPACE_ROOT_ENV = "PBI_WORKSPACE_ROOT"
 BPA_RULES_ENV = "PBI_TE_BPA_RULES"
 TRANSPORT_ENV = "PBI_TRANSPORT"
@@ -168,14 +171,15 @@ def collect_readiness(*, transport_override: str | None = None) -> list[Readines
         )
 
     # The audit trail: is it a precondition or a report?
-    if _truthy(os.environ.get(AUDIT_FAIL_CLOSED_ENV)):
+    strict_compliance = _truthy(os.environ.get(STRICT_COMPLIANCE_ENV))
+    if _truthy(os.environ.get(AUDIT_FAIL_CLOSED_ENV)) or strict_compliance:
         findings.append(
             ReadinessFinding(
                 name="audit_fail_closed",
                 ok=True,
                 detail=(
-                    f"{AUDIT_FAIL_CLOSED_ENV} is set: a mutation that cannot be "
-                    "recorded does not happen."
+                    f"{AUDIT_FAIL_CLOSED_ENV} / {STRICT_COMPLIANCE_ENV} is set: a mutation "
+                    "that cannot be recorded does not happen."
                 ),
             )
         )
@@ -285,6 +289,42 @@ def collect_readiness(*, transport_override: str | None = None) -> list[Readines
         )
     )
 
+    # Strict compliance preset (enterprise / ISO / commercial single-node).
+    if strict_compliance:
+        missing_strict: list[str] = []
+        if not root:
+            missing_strict.append(WORKSPACE_ROOT_ENV)
+        if not os.environ.get(AUDIT_SECRET_ENV, "").strip():
+            missing_strict.append(AUDIT_SECRET_ENV)
+        if not _truthy(os.environ.get(COMMERCIAL_MODE_ENV)):
+            missing_strict.append(COMMERCIAL_MODE_ENV)
+        if not os.environ.get(EMAIL_ALLOWED_DOMAINS_ENV, "").strip():
+            missing_strict.append(EMAIL_ALLOWED_DOMAINS_ENV)
+        findings.append(
+            ReadinessFinding(
+                name="strict_compliance",
+                ok=not missing_strict,
+                severity=INFO if not missing_strict else WARNING,
+                detail=(
+                    f"{STRICT_COMPLIANCE_ENV} is active and all compliance settings are present."
+                    if not missing_strict
+                    else f"{STRICT_COMPLIANCE_ENV} is active; missing recommended settings: "
+                    + ", ".join(missing_strict)
+                ),
+            )
+        )
+    else:
+        findings.append(
+            ReadinessFinding(
+                name="strict_compliance",
+                ok=True,
+                detail=(
+                    f"{STRICT_COMPLIANCE_ENV} is not set (standard compatibility profile). "
+                    f"Set {STRICT_COMPLIANCE_ENV}=1 to enforce fail-closed audit logging."
+                ),
+            )
+        )
+
     return findings
 
 
@@ -297,10 +337,13 @@ __all__ = [
     "AUDIT_FAIL_CLOSED_ENV",
     "BPA_RULES_ENV",
     "AUDIT_SECRET_ENV",
+    "COMMERCIAL_MODE_ENV",
+    "EMAIL_ALLOWED_DOMAINS_ENV",
     "ERROR",
     "INFO",
     "READ_OPT_OUT_ENV",
     "ReadinessFinding",
+    "STRICT_COMPLIANCE_ENV",
     "WARNING",
     "WORKSPACE_ROOT_ENV",
     "collect_readiness",

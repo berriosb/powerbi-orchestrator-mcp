@@ -522,11 +522,110 @@ def sync_git_to_workspace(
     )
 
 
+async def sync_git_to_workspace_async(
+    repo_path: str,
+    workspace_id: str,
+    branch_or_commit: str = "HEAD",
+    conflict_resolution: str = "manual",
+    pre_deploy_profile: str | None = None,
+    pre_deploy_findings: list[dict[str, str]] | None = None,
+    fabric_client: Any = None,
+    dry_run: bool = True,
+) -> SyncGitToWorkspaceResult:
+    """Async wrapper supporting awaitable ``list_workspace_items`` and ``apply_pbip``."""
+    import inspect
+
+    if fabric_client is None:
+        return sync_git_to_workspace(
+            repo_path=repo_path,
+            workspace_id=workspace_id,
+            branch_or_commit=branch_or_commit,
+            conflict_resolution=conflict_resolution,
+            pre_deploy_profile=pre_deploy_profile,
+            pre_deploy_findings=pre_deploy_findings,
+            fabric_client=None,
+            dry_run=dry_run,
+        )
+
+    maybe_items = fabric_client.list_workspace_items(workspace_id)
+    prefetched_items: list[dict[str, Any]] | BaseException
+    try:
+        prefetched_items = await maybe_items if inspect.isawaitable(maybe_items) else maybe_items
+    except Exception as exc:  # noqa: BLE001
+        prefetched_items = exc
+
+    pending_applies: list[dict[str, Any]] = []
+
+    class _SyncPlanProxy:
+        def list_workspace_items(self, _ws: str) -> list[dict[str, Any]]:
+            if isinstance(prefetched_items, BaseException):
+                raise prefetched_items
+            return prefetched_items
+
+        def apply_pbip(
+            self,
+            *,
+            workspace_id: str,
+            item_type: str,
+            item_name: str,
+            blob: str,
+        ) -> None:
+            pending_applies.append(
+                {
+                    "workspace_id": workspace_id,
+                    "item_type": item_type,
+                    "item_name": item_name,
+                    "blob": blob,
+                }
+            )
+
+    res = sync_git_to_workspace(
+        repo_path=repo_path,
+        workspace_id=workspace_id,
+        branch_or_commit=branch_or_commit,
+        conflict_resolution=conflict_resolution,
+        pre_deploy_profile=pre_deploy_profile,
+        pre_deploy_findings=pre_deploy_findings,
+        fabric_client=_SyncPlanProxy(),
+        dry_run=dry_run,
+    )
+
+    if not dry_run and pending_applies:
+        remaining_deployed: list[DeployedItem] = []
+        failed_names: dict[tuple[str, str], str] = {}
+        for req in pending_applies:
+            try:
+                maybe_res = fabric_client.apply_pbip(**req)
+                if inspect.isawaitable(maybe_res):
+                    await maybe_res
+            except Exception as exc:  # noqa: BLE001
+                failed_names[(req["item_type"], req["item_name"])] = str(exc)
+        for item in res.items_deployed:
+            err = failed_names.get((item.item_type, item.item_name))
+            if err is not None:
+                res.items_skipped.append(
+                    DeployedItem(
+                        item_id=item.item_id,
+                        item_name=item.item_name,
+                        item_type=item.item_type,
+                        path=item.path,
+                        status="failed",
+                        reason=err,
+                    )
+                )
+            else:
+                remaining_deployed.append(item)
+        res.items_deployed = remaining_deployed
+
+    return res
+
+
 __all__ = [
     "DeployedItem",
     "SyncGitToWorkspace",
     "SyncGitToWorkspaceResult",
     "sync_git_to_workspace",
+    "sync_git_to_workspace_async",
 ]
 
 

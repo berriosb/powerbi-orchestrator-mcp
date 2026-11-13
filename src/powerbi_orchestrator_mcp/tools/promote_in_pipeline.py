@@ -158,9 +158,20 @@ def _run_pre_deploy_check(
     )
 
 
-def _run_audit_score(gate: QualityGate, *, pbip_path: str | None) -> GateExecuted:
+def _run_coro_safely(coro: Any) -> Any:
+    """Run an awaitable from synchronous code, even inside an active event loop."""
     import asyncio
+    from concurrent.futures import ThreadPoolExecutor
 
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+async def _run_audit_score_async(gate: QualityGate, *, pbip_path: str | None) -> GateExecuted:
     if not pbip_path:
         return GateExecuted(
             type="audit_model_and_report",
@@ -172,7 +183,7 @@ def _run_audit_score(gate: QualityGate, *, pbip_path: str | None) -> GateExecute
     )
 
     try:
-        result = asyncio.run(audit_model_and_report(pbip_path=pbip_path))
+        result = await audit_model_and_report(pbip_path=pbip_path)
     except Exception as exc:  # noqa: BLE001
         return GateExecuted(
             type="audit_model_and_report",
@@ -189,14 +200,16 @@ def _run_audit_score(gate: QualityGate, *, pbip_path: str | None) -> GateExecute
     )
 
 
-def _run_regression(
+def _run_audit_score(gate: QualityGate, *, pbip_path: str | None) -> GateExecuted:
+    return _run_coro_safely(_run_audit_score_async(gate, pbip_path=pbip_path))  # type: ignore[no-any-return]
+
+
+async def _run_regression_async(
     gate: QualityGate,
     *,
     pbip_path: str | None,  # noqa: ARG001
     baseline_path: str | None,
 ) -> GateExecuted:
-    import asyncio
-
     if not baseline_path:
         return GateExecuted(
             type="run_dax_regression",
@@ -208,11 +221,9 @@ def _run_regression(
     )
 
     try:
-        result = asyncio.run(
-            run_dax_regression(
-                baseline_path=baseline_path,
-                tolerance_pct=gate.threshold if gate.threshold is not None else 0.1,
-            )
+        result = await run_dax_regression(
+            baseline_path=baseline_path,
+            tolerance_pct=gate.threshold if gate.threshold is not None else 0.1,
         )
     except Exception as exc:  # noqa: BLE001
         return GateExecuted(
@@ -239,6 +250,22 @@ def _run_regression(
         type="run_dax_regression",
         passed=bool(result.passed),
         detail=detail,
+    )
+
+
+def _run_regression(
+    gate: QualityGate,
+    *,
+    pbip_path: str | None,
+    baseline_path: str | None,
+) -> GateExecuted:
+    from typing import cast
+
+    return cast(
+        GateExecuted,
+        _run_coro_safely(
+            _run_regression_async(gate, pbip_path=pbip_path, baseline_path=baseline_path)
+        ),
     )
 
 
@@ -398,6 +425,147 @@ def promote_in_pipeline(
     )
 
 
+async def promote_in_pipeline_async(
+    pipeline_id: str,
+    source_stage: str = "dev",
+    target_stage: str = "test",
+    items: list[str] | None = None,
+    quality_gates: list[QualityGate] | None = None,
+    notify_on_failure: bool = True,  # noqa: ARG001
+    dry_run: bool = True,
+    fabric_client: Any = None,
+    custom_gates: list[tuple[str, Callable[[], bool]]] | None = None,
+    audit_logger: Any = None,
+    pbip_path: str | None = None,
+    baseline_path: str | None = None,
+    pre_deploy_findings: list[dict[str, str]] | None = None,
+) -> PromoteInPipelineResult:
+    """Async version of ``promote_in_pipeline`` awaiting async gates and Fabric calls."""
+    import inspect
+
+    warnings: list[str] = []
+    if source_stage not in _VALID_STAGES or target_stage not in _VALID_STAGES:
+        return PromoteInPipelineResult(
+            dry_run=dry_run,
+            warnings=[f"invalid stages (source={source_stage}, target={target_stage})"],
+        )
+    if source_stage == target_stage:
+        return PromoteInPipelineResult(
+            dry_run=dry_run,
+            warnings=[f"source and target must differ ({source_stage}={target_stage})"],
+        )
+
+    candidate_items = list(items) if items else []
+    if not candidate_items and fabric_client is not None:
+        try:
+            maybe_listed = fabric_client.list_pipeline_items(pipeline_id, source_stage)
+            listed = await maybe_listed if inspect.isawaitable(maybe_listed) else maybe_listed
+            if isinstance(listed, list):
+                candidate_items = [str(i) for i in listed]
+            else:
+                warnings.append(
+                    f"list_pipeline_items returned {type(listed).__name__}, expected list"
+                )
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"could not list pipeline items: {exc}")
+    if not candidate_items and not dry_run:
+        warnings.append("no items to promote (pipeline may be empty or fabric_client absent)")
+
+    gate_results: list[GateExecuted] = []
+    failed: GateExecuted | None = None
+    for gate in quality_gates or []:
+        if gate.type == "pre_deploy_check":
+            res = _run_pre_deploy_check(gate, findings=pre_deploy_findings)
+        elif gate.type == "audit_model_and_report":
+            res = await _run_audit_score_async(gate, pbip_path=pbip_path)
+        elif gate.type == "run_dax_regression":
+            res = await _run_regression_async(
+                gate, pbip_path=pbip_path, baseline_path=baseline_path
+            )
+        else:
+            continue
+        gate_results.append(res)
+        if not res.passed and gate.blocking:
+            failed = res
+            break
+
+    if failed is None:
+        for name, fn in custom_gates or []:
+            res = _run_custom_gate(name, fn)
+            gate_results.append(res)
+            if not res.passed:
+                failed = res
+                break
+
+    if failed is not None:
+        if audit_logger is not None:
+            try:
+                audit_logger(
+                    action="promote_failed",
+                    pipeline_id=pipeline_id,
+                    source_stage=source_stage,
+                    target_stage=target_stage,
+                    failed_gate=failed.type,
+                )
+            except Exception:  # noqa: BLE001
+                warnings.append("audit_logger raised; ignored")
+        return PromoteInPipelineResult(
+            promoted_items=[],
+            gates_executed=gate_results,
+            failed_gate=failed,
+            rollback_performed=False,
+            dry_run=dry_run,
+            warnings=warnings,
+        )
+
+    promoted: list[PromotedItem] = []
+    promotion_id: str | None = None
+    if not dry_run:
+        promotion_id = _next_promotion_id()
+        for item_id in candidate_items:
+            try:
+                if fabric_client is not None:
+                    maybe_dep = fabric_client.deploy_pipeline_item(
+                        pipeline_id=pipeline_id,
+                        source_stage=source_stage,
+                        target_stage=target_stage,
+                        item_id=item_id,
+                    )
+                    if inspect.isawaitable(maybe_dep):
+                        await maybe_dep
+                promoted.append(
+                    PromotedItem(item_id=item_id, from_stage=source_stage, to_stage=target_stage)
+                )
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"failed to promote {item_id}: {exc}")
+    else:
+        promotion_id = f"dry_{pipeline_id[:8]}"
+        for item_id in candidate_items:
+            promoted.append(
+                PromotedItem(item_id=item_id, from_stage=source_stage, to_stage=target_stage)
+            )
+
+    if audit_logger is not None:
+        try:
+            audit_logger(
+                action="promoted",
+                pipeline_id=pipeline_id,
+                source_stage=source_stage,
+                target_stage=target_stage,
+                items=[p.item_id for p in promoted],
+            )
+        except Exception:  # noqa: BLE001
+            warnings.append("audit_logger raised; ignored")
+
+    return PromoteInPipelineResult(
+        promoted_items=promoted,
+        gates_executed=gate_results,
+        promotion_id=promotion_id,
+        dry_run=dry_run,
+        warnings=warnings,
+    )
+
+
 __all__ = [
     "GateExecuted",
     "PromoteInPipeline",
@@ -405,6 +573,7 @@ __all__ = [
     "PromotedItem",
     "QualityGate",
     "promote_in_pipeline",
+    "promote_in_pipeline_async",
 ]
 
 

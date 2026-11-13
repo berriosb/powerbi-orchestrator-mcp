@@ -93,7 +93,7 @@ class TestDeployGate:
         result = await deploy_to_workspace(str(tmp_path / "model.pbip"), "ws-1", dry_run=True)
 
         assert result.planned_actions
-        assert any("create PowerBIDataset" in a for a in result.planned_actions)
+        assert any("create SemanticModel" in a for a in result.planned_actions)
 
     @pytest.mark.asyncio
     async def test_deploy_with_clean_findings_clears_the_gate(self, tmp_path: Path) -> None:
