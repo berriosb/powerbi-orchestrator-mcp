@@ -292,3 +292,286 @@ def test_all_seven_new_tools_registered_in_fastmcp() -> None:
     }
     assert expected_new <= tool_names
     assert len(tool_names) >= 38
+
+
+async def test_draft_report_summary_formats_empty_and_missing_kpis() -> None:
+    """Cover candidate_narrative=None, dict input, CLP/decimal formats, and missing_required_kpis."""
+    kpis_dict = _sample_kpis().model_dump(mode="json")
+
+    prompt_only = await draft_report_summary(
+        computed_kpis=kpis_dict,
+        audience="external_client",
+        cadence="monthly",
+        candidate_narrative=None,
+    )
+    assert prompt_only.numbers_verified is False
+    assert prompt_only.verified_narrative is None
+    assert "Mandante Externo" in prompt_only.prompt_bundle
+    assert set(prompt_only.missing_required_kpis) == {
+        "piezas_firmadas",
+        "pendientes_vencidos",
+        "montos_por_cobrar",
+    }
+
+    # Narrative cites European-formatted CLP + comma decimal + English mixed separators
+    partial = await draft_report_summary(
+        computed_kpis=kpis_dict,
+        language="es",
+        candidate_narrative="Se aprobaron 43,00 piezas por $1.250.000 CLP (1,250,000.00).",
+    )
+    assert partial.numbers_verified is True
+    assert partial.unverified_numbers == []
+    assert partial.missing_required_kpis == ["pendientes_vencidos"]
+
+
+async def test_send_report_email_smtp_graph_errors_and_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Cover validation edges, SMTP transport (mocked smtplib & smtp_sender), Graph 4xx, and _scrub_emails."""
+    import smtplib
+
+    attachment = tmp_path / "resumen.xlsx"
+    attachment.write_bytes(b"xlsx-bytes")
+    dir_not_file = tmp_path / "subdir"
+    dir_not_file.mkdir()
+
+    # Non-existent attachment rejected by path safety
+    with pytest.raises(FileNotFoundError):
+        await send_report_email(
+            recipients_to=["ops@quadlogic.cl"],
+            subject="Diario",
+            body_markdown="Hola",
+            attachment_paths=[str(tmp_path / "no_existe.pdf")],
+            dry_run=True,
+        )
+
+    # Empty recipients, invalid address, and directory path as attachment all blocked
+    invalid = await send_report_email(
+        recipients_to=[],
+        recipients_cc=["not-an-email"],
+        subject="Diario",
+        body_markdown="Hola",
+        attachment_paths=[str(dir_not_file)],
+        dry_run=True,
+    )
+    assert invalid.status == "blocked"
+    reasons = "\n".join(invalid.blocked_reasons)
+    assert "recipients_to cannot be empty" in reasons
+    assert "invalid recipient address" in reasons
+    assert "attachment not found" in reasons
+
+    # Live send without allowed domains & without valid sender blocked
+    monkeypatch.delenv("PBI_EMAIL_ALLOWED_DOMAINS", raising=False)
+    monkeypatch.delenv("PBI_EMAIL_SENDER", raising=False)
+    no_domains = await send_report_email(
+        recipients_to=["ops@quadlogic.cl"],
+        subject="Diario",
+        body_markdown="Hola",
+        dry_run=False,
+    )
+    assert no_domains.status == "blocked"
+    assert any("PBI_EMAIL_ALLOWED_DOMAINS" in r for r in no_domains.blocked_reasons)
+
+    monkeypatch.setenv("PBI_EMAIL_ALLOWED_DOMAINS", "quadlogic.cl")
+    monkeypatch.setenv("PBI_INTERNAL_EMAIL_DOMAINS", "quadlogic.cl")
+    no_sender = await send_report_email(
+        recipients_to=["ops@quadlogic.cl"],
+        subject="Diario",
+        body_markdown="Hola",
+        dry_run=False,
+        sender_address="invalid-sender",
+    )
+    assert no_sender.status == "blocked"
+    assert any("PBI_EMAIL_SENDER" in r for r in no_sender.blocked_reasons)
+
+    # Injected smtp_sender callable path
+    captured_smtp: list[dict[str, Any]] = []
+
+    def _custom_smtp(**kwargs: Any) -> str:
+        captured_smtp.append(kwargs)
+        return "smtp-custom-1"
+
+    ok_custom_smtp = await send_report_email(
+        recipients_to=["ops@quadlogic.cl"],
+        subject="Diario",
+        body_markdown="Todo ok",
+        sender_address="bot@quadlogic.cl",
+        transport="smtp",
+        dry_run=False,
+        smtp_sender=_custom_smtp,
+    )
+    assert ok_custom_smtp.status == "sent"
+    assert ok_custom_smtp.transport_used == "smtp"
+    assert ok_custom_smtp.message_id == "smtp-custom-1"
+    assert len(captured_smtp) == 1
+
+    # Built-in _send_via_smtp exercised via mocked smtplib.SMTP
+    smtp_events: list[str] = []
+
+    class _FakeSMTP:
+        def __init__(self, host: str, port: int, timeout: int = 20) -> None:
+            smtp_events.append(f"init:{host}:{port}:{timeout}")
+
+        def __enter__(self) -> _FakeSMTP:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            smtp_events.append("close")
+
+        def ehlo(self) -> None:
+            smtp_events.append("ehlo")
+
+        def has_extn(self, name: str) -> bool:
+            return name.lower() == "starttls"
+
+        def starttls(self) -> None:
+            smtp_events.append("starttls")
+
+        def login(self, user: str, _pw: str) -> None:
+            smtp_events.append(f"login:{user}")
+
+        def send_message(self, msg: Any) -> None:
+            smtp_events.append(f"send:{msg['Subject']}")
+
+    monkeypatch.setenv("PBI_SMTP_HOST", "smtp.quadlogic.cl")
+    monkeypatch.setenv("PBI_SMTP_PORT", "587")
+    monkeypatch.setenv("PBI_SMTP_USER", "bot@quadlogic.cl")
+    monkeypatch.setenv("PBI_SMTP_PASSWORD", "secret")
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+
+    ok_real_smtp = await send_report_email(
+        recipients_to=["ops@quadlogic.cl"],
+        recipients_cc=["ctrl@quadlogic.cl"],
+        subject="Reporte SMTP",
+        body_markdown="Cuerpo",
+        attachment_paths=[str(attachment)],
+        sender_address="bot@quadlogic.cl",
+        transport="smtp",
+        dry_run=False,
+    )
+    assert ok_real_smtp.status == "sent"
+    assert "starttls" in smtp_events
+    assert "login:bot@quadlogic.cl" in smtp_events
+    assert "send:Reporte SMTP" in smtp_events
+
+    # Graph error >= 400 scrubs any recipient email before surfacing failure
+    class _GraphErrorStub:
+        async def post(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("relay rejected ops@quadlogic.cl with 403")
+
+    monkeypatch.setenv("PBI_GRAPH_ACCESS_TOKEN", "dummy-token")
+    failed_graph = await send_report_email(
+        recipients_to=["ops@quadlogic.cl"],
+        subject="Fallo Graph",
+        body_markdown="Cuerpo",
+        sender_address="bot@quadlogic.cl",
+        transport="graph",
+        dry_run=False,
+        graph_client=_GraphErrorStub(),
+    )
+    assert failed_graph.status == "failed"
+    assert "ops@quadlogic.cl" not in json.dumps(failed_graph.model_dump(mode="json"))
+    assert "<email_hash:" in failed_graph.blocked_reasons[0]
+
+
+async def test_check_report_data_consistency_source_path_history_and_errors(
+    tmp_path: Path,
+) -> None:
+    """Cover source_path auto-expected KPIs, refresh history warnings, Fabric JSON shape, and DAX errors."""
+    csv_path = tmp_path / "control.csv"
+    csv_path.write_text("id,estado\n1,firmada\n2,pendiente\n", encoding="utf-8")
+
+    cat_path = tmp_path / "consistency_cat.yaml"
+    await define_kpi_catalog(
+        catalog_path=str(cat_path),
+        kpis=[
+            {
+                "id": "piezas_firmadas",
+                "name": "Piezas Firmadas",
+                "area": "operaciones",
+                "unit": "piezas",
+                "formula_dax": 'COUNTROWS(FILTER(Control, Control[estado] = "firmada"))',
+                "python_rule": "count_where",
+                "rule_params": {"column": "estado", "equals": ["firmada"]},
+                "owner": "Procesos",
+                "source_table": "control",
+                "periodicity": "daily",
+            },
+            {
+                "id": "sin_dax",
+                "name": "Sin DAX",
+                "area": "operaciones",
+                "unit": "piezas",
+                "formula_dax": None,
+                "python_rule": "count_where",
+                "rule_params": {"column": "estado", "not_null": True},
+                "owner": "Procesos",
+                "source_table": "control",
+                "periodicity": "daily",
+            },
+        ],
+        dry_run=False,
+    )
+
+    # Empty expected_kpis & no source_path fails cleanly
+    empty_check = await check_report_data_consistency(workspace_id="ws-1", dataset_id="ds-1")
+    assert empty_check.consistent is False
+    assert empty_check.checks_run == 0
+
+    class _FabricStub:
+        def __init__(self, *, raise_dax: bool = False, null_val: bool = False) -> None:
+            self._raise_dax = raise_dax
+            self._null_val = null_val
+
+        async def get_refresh_history(
+            self, _ws: str, _ds: str, *, top: int = 1
+        ) -> list[dict[str, Any]]:
+            del top
+            return [{"status": "Failed", "endTime": "2026-03-10T08:00:00Z"}]
+
+        async def execute_queries(
+            self, _ws: str, _ds: str, *, queries: list[dict[str, Any]]
+        ) -> dict[str, Any]:
+            del queries
+            if self._raise_dax:
+                raise RuntimeError("DAX timeout")
+            if self._null_val:
+                return {"results": [{"tables": [{"rows": [{"[val]": None}]}]}]}
+            return {"results": [{"tables": [{"rows": [{"[val]": 1.0}]}]}]}
+
+    # Matching Fabric JSON shape + Failed refresh warning + skipped sin_dax warning
+    ok = await check_report_data_consistency(
+        workspace_id="ws-1",
+        dataset_id="ds-1",
+        source_path=str(csv_path),
+        catalog_path=str(cat_path),
+        fabric_client=_FabricStub(),
+    )
+    assert ok.consistent is True
+    assert ok.checks_run == 1
+    assert ok.dataset_last_refresh == "2026-03-10T08:00:00Z"
+    assert any("Failed" in w for w in ok.warnings)
+    assert any("skipping sin_dax" in w for w in ok.warnings)
+
+    # Non-numeric scalar mismatch
+    bad_scalar = await check_report_data_consistency(
+        workspace_id="ws-1",
+        dataset_id="ds-1",
+        expected_kpis={"piezas_firmadas": 1.0},
+        catalog_path=str(cat_path),
+        fabric_client=_FabricStub(null_val=True),
+    )
+    assert bad_scalar.consistent is False
+    assert "no numeric scalar" in bad_scalar.mismatches[0].reason
+
+    # DAX execution error mismatch
+    bad_dax = await check_report_data_consistency(
+        workspace_id="ws-1",
+        dataset_id="ds-1",
+        expected_kpis={"piezas_firmadas": 1.0},
+        catalog_path=str(cat_path),
+        fabric_client=_FabricStub(raise_dax=True),
+    )
+    assert bad_dax.consistent is False
+    assert "dax query failed" in bad_dax.mismatches[0].reason

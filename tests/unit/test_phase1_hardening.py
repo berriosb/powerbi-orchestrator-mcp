@@ -209,6 +209,104 @@ async def test_async_fabric_bridge_snapshot_and_deploy() -> None:
     client.deploy_pipeline.assert_awaited_once()
 
 
+async def test_async_fabric_bridge_full_adapter_coverage() -> None:
+    """Exercise remaining AsyncFabricBridge paths: apply_pbip, stages, labels, RLS."""
+    client = MagicMock(spec=FabricClient)
+    client.list_items = AsyncMock(
+        return_value=[
+            {"id": "dash-1", "name": "ExecDash", "type": "Dashboard"},
+            {"id": "sm-1", "displayName": "OpsModel", "type": "SemanticModel"},
+        ]
+    )
+
+    async def _get_def(_ws: str, item_id: str) -> dict[str, Any]:
+        if item_id == "dash-1":
+            raise RuntimeError("dashboards do not expose definition")
+        return {"parts": [{"path": "model.bim", "payload": "e30=", "payloadType": "InlineBase64"}]}
+
+    client.get_item_definition = AsyncMock(side_effect=_get_def)
+    client.update_item_definition = AsyncMock(return_value={"status": "Updated"})
+    client.create_item = AsyncMock(return_value={"id": "new-sm", "status": "Created"})
+    client.list_pipeline_stages = AsyncMock(
+        return_value=[
+            {"order": 1, "id": "stg-test", "workspaceId": "ws-test"},
+            {"order": 0, "id": "stg-dev", "workspaceId": "ws-dev"},
+        ]
+    )
+    client.admin_set_labels = AsyncMock(return_value={"labels": "applied"})
+    client.execute_queries = AsyncMock(
+        return_value={"results": [{"tables": [{"rows": [{"c": 7}]}]}]}
+    )
+
+    bridge = AsyncFabricBridge(client)
+
+    snap = await bridge.snapshot_workspace("ws-1")
+    assert set(snap) == {"dash-1", "sm-1"}
+    assert "definition" not in json.loads(snap["dash-1"]["blob"])
+    assert "definition" in json.loads(snap["sm-1"]["blob"])
+
+    # Update existing item via definition wrapper JSON
+    upd = await bridge.apply_pbip(
+        workspace_id="ws-1",
+        item_type="SemanticModel",
+        item_name="OpsModel",
+        blob=json.dumps({"definition": {"parts": []}}),
+    )
+    assert upd["status"] == "Updated"
+    client.update_item_definition.assert_awaited_once()
+
+    # Create new item mapping Dataset -> SemanticModel via raw non-JSON blob
+    crt = await bridge.apply_pbip(
+        workspace_id="ws-1",
+        item_type="Dataset",
+        item_name="BrandNewModel",
+        blob='{"version": 1}',
+    )
+    assert crt["id"] == "new-sm"
+    assert client.create_item.call_args.kwargs["item_type"] == "SemanticModel"
+
+    # list_pipeline_items valid stage + out-of-range stage
+    pipe_items = await bridge.list_pipeline_items("pipe-1", "dev")
+    assert pipe_items == ["dash-1", "sm-1"]
+    assert await bridge.list_pipeline_items("pipe-1", "prod") == []
+
+    # admin_bulk_set_labels buckets across types and skips missing id
+    labeled = await bridge.admin_bulk_set_labels(
+        items=[
+            {"id": "sm-1", "type": "SemanticModel"},
+            {"item_id": "rep-1", "item_type": "PowerBIReport"},
+            {"item_id": "df-1", "item_type": "DataflowGen2"},
+            {"item_id": "", "item_type": "Report"},
+        ],
+        label_id="lbl-confidential",
+    )
+    assert labeled == {"labels": "applied"}
+    artifacts_arg = client.admin_set_labels.call_args.args[0]
+    assert artifacts_arg == {
+        "datasets": [{"id": "sm-1"}],
+        "reports": [{"id": "rep-1"}],
+        "dataflows": [{"id": "df-1"}],
+    }
+
+    # execute_rls_test_query extracts rows and falls back to raw response when empty
+    rows = await bridge.execute_rls_test_query(
+        workspace_id="ws-1",
+        dataset_id="sm-1",
+        role_user="user@quadlogic.cl",
+        dax="EVALUATE {1}",
+    )
+    assert rows == [{"c": 7}]
+
+    client.execute_queries = AsyncMock(return_value={"results": []})
+    raw_fallback = await bridge.execute_rls_test_query(
+        workspace_id="ws-1",
+        dataset_id="sm-1",
+        role_user="user@quadlogic.cl",
+        dax="EVALUATE {1}",
+    )
+    assert raw_fallback == {"results": []}
+
+
 async def test_readonly_and_scope_guards_on_screenshot_and_data_dictionary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
