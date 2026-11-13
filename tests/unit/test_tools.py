@@ -614,7 +614,7 @@ class TestDeployToWorkspace:
         assert result.item_id == "item-real-1"
         assert result.schedule_ok is True
         assert result.refresh_id == "rf-99"
-        assert captured["create"]["type"] == "PowerBIDataset"
+        assert captured["create"]["type"] == "SemanticModel"
         # refresh_daily_hour=7 → times[0] == "07:00"
         assert captured["schedule"]["schedule"]["value"]["times"] == ["07:00"]
         assert captured["schedule"]["schedule"]["enabled"] is True

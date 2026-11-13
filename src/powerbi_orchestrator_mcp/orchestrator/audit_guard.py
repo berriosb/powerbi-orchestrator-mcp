@@ -32,9 +32,11 @@ AUDIT_WARNING_KEY = "_audit_warning"
 
 # Set to 1 to refuse a state-changing call whose attempt could not be
 # recorded. Off by default: the local audit log is a forensic trail,
-# and a full disk would otherwise block every mutation. With it on, the
-# audit log is a precondition, not a report.
+# and a full disk would otherwise block every mutation. With it on (or
+# when PBI_STRICT_COMPLIANCE=1 is enabled), the audit log is a
+# precondition, not a report.
 AUDIT_FAIL_CLOSED_ENV = "PBI_AUDIT_FAIL_CLOSED"
+STRICT_COMPLIANCE_ENV = "PBI_STRICT_COMPLIANCE"
 
 # The status of the record written before the tool body runs.
 RESULT_ATTEMPTED = "attempted"
@@ -96,8 +98,12 @@ def _summarize(result: Any) -> dict[str, Any]:
 
 
 def _fail_closed() -> bool:
-    """True when the operator asked for fail-closed auditing."""
-    return os.environ.get(AUDIT_FAIL_CLOSED_ENV, "").strip().lower() in ("1", "true", "yes")
+    """True when fail-closed auditing or strict compliance preset is enabled."""
+    truthy = ("1", "true", "yes")
+    return (
+        os.environ.get(AUDIT_FAIL_CLOSED_ENV, "").strip().lower() in truthy
+        or os.environ.get(STRICT_COMPLIANCE_ENV, "").strip().lower() in truthy
+    )
 
 
 def audited(

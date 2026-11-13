@@ -175,9 +175,12 @@ class RefreshOrchestrator:
         from powerbi_orchestrator_mcp.cloud.fabric_client import _path_segment
 
         try:
+            if hasattr(self._client, "get_refresh_history"):
+                return await self._client.get_refresh_history(workspace_id, dataset_id)
             resp = await self._client.get(
-                f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
-                f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/refreshes"
+                f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
+                f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/refreshes",
+                service="pbi",
             )
             return resp.get("value", [])  # type: ignore[no-any-return]
         except FabricAPIError:
@@ -189,8 +192,11 @@ class RefreshOrchestrator:
         from powerbi_orchestrator_mcp.cloud.fabric_client import _path_segment
 
         with contextlib.suppress(FabricAPIError):
+            if hasattr(self._client, "cancel_refresh"):
+                await self._client.cancel_refresh(workspace_id, dataset_id)
+                return
             await self._client.post(
-                f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
+                f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
                 f"/datasets/{_path_segment(dataset_id, 'dataset_id')}"
                 f"/refreshes/{_path_segment(refresh_id, 'refresh_id')}/cancel"
             )

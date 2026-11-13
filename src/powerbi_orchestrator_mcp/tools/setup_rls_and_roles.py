@@ -437,6 +437,62 @@ def setup_rls_and_roles(
     )
 
 
+async def setup_rls_and_roles_async(
+    target: str,
+    spec_yaml: str | None = None,
+    spec_json: Any = None,
+    dry_run: bool = True,
+    rollback_on_test_failure: bool = True,
+    test_engine: Any = None,
+) -> SetupRlsAndRolesResult:
+    """Async wrapper supporting awaitable ``test_engine(role_name=..., dax=...)``."""
+    import inspect
+
+    if test_engine is None:
+        return setup_rls_and_roles(
+            target=target,
+            spec_yaml=spec_yaml,
+            spec_json=spec_json,
+            dry_run=dry_run,
+            rollback_on_test_failure=rollback_on_test_failure,
+            test_engine=None,
+        )
+
+    try:
+        specs = _parse_spec(spec_yaml, spec_json)
+    except (ValueError, Exception) as exc:  # noqa: BLE001
+        return SetupRlsAndRolesResult(
+            dry_run=dry_run,
+            warnings=[f"spec parse failed: {exc}"],
+        )
+
+    cached: dict[tuple[str, str], Any] = {}
+    for role in specs:
+        for q in role.test_queries:
+            try:
+                maybe = test_engine(role_name=role.role_name, dax=q.dax)
+                cached[(role.role_name, q.dax)] = (
+                    await maybe if inspect.isawaitable(maybe) else maybe
+                )
+            except Exception as exc:  # noqa: BLE001
+                cached[(role.role_name, q.dax)] = exc
+
+    def _sync_replay(*, role_name: str, dax: str) -> Any:
+        val = cached[(role_name, dax)]
+        if isinstance(val, BaseException):
+            raise val
+        return val
+
+    return setup_rls_and_roles(
+        target=target,
+        spec_yaml=spec_yaml,
+        spec_json=spec_json,
+        dry_run=dry_run,
+        rollback_on_test_failure=rollback_on_test_failure,
+        test_engine=_sync_replay,
+    )
+
+
 __all__ = [
     "RoleCreated",
     "RoleMember",
@@ -448,4 +504,5 @@ __all__ = [
     "merge_roles_into_tmdl",
     "render_tmdl_role",
     "setup_rls_and_roles",
+    "setup_rls_and_roles_async",
 ]

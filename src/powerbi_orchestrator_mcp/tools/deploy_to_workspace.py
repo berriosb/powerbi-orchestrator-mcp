@@ -135,7 +135,7 @@ async def deploy_to_workspace(
     # returns nothing but an error is not informative.
     planned_dataset_id = Path(pbip_path).stem
     planned_actions = [
-        f"create PowerBIDataset '{planned_dataset_id}' in workspace {workspace_id}",
+        f"create SemanticModel '{planned_dataset_id}' in workspace {workspace_id}",
         f"set daily refresh schedule at {max(0, min(23, int(refresh_daily_hour))):02d}:00 UTC",
         f"trigger full refresh on dataset '{planned_dataset_id}'",
     ]
@@ -182,7 +182,7 @@ async def deploy_to_workspace(
         tmdl_definition = _extract_tmdl_definition(pbip_path)
         create_kwargs: dict[str, Any] = {
             "display_name": display_name,
-            "item_type": "PowerBIDataset",
+            "item_type": "SemanticModel",
         }
         if tmdl_definition is not None:
             create_kwargs["definition"] = tmdl_definition
@@ -192,6 +192,23 @@ async def deploy_to_workspace(
                 workspace_id,
                 **create_kwargs,
             )
+            op_id = create_resp.get("operation_id")
+            if not (create_resp.get("id") or create_resp.get("objectId")) and op_id:
+                if hasattr(client, "poll_operation"):
+                    polled = await client.poll_operation(str(op_id))
+                    if polled.get("id") or polled.get("itemId"):
+                        create_resp = {
+                            **create_resp,
+                            "id": polled.get("id") or polled.get("itemId"),
+                        }
+                if not (create_resp.get("id") or create_resp.get("objectId")) and hasattr(
+                    client, "list_items"
+                ):
+                    listed = await client.list_items(workspace_id, item_type="SemanticModel")
+                    for candidate in listed:
+                        if candidate.get("displayName") == display_name and candidate.get("id"):
+                            create_resp = {**create_resp, "id": candidate["id"]}
+                            break
             result.publish_ok = True
             result.item_id = create_resp.get("id") or create_resp.get("objectId")
             if not result.item_id:

@@ -567,15 +567,21 @@ def create_semantic_model_from_schema(
     # to the deterministic string-template renderer.
     if modeling_engine is not None and hasattr(modeling_engine, "apply_model_spec"):
         import asyncio
+        from concurrent.futures import ThreadPoolExecutor
 
+        coro = modeling_engine.apply_model_spec(
+            pbip_path=output_pbip_path,
+            tmdl_body=tmdl,
+            model_name=spec.name,
+        )
         try:
-            apply_result = asyncio.run(
-                modeling_engine.apply_model_spec(
-                    pbip_path=output_pbip_path,
-                    tmdl_body=tmdl,
-                    model_name=spec.name,
-                )
-            )
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                apply_result = asyncio.run(coro)
+            else:
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    apply_result = pool.submit(asyncio.run, coro).result()
         except Exception as exc:  # noqa: BLE001
             return CreateSemanticModelResult(
                 validation_passed=False,
@@ -591,6 +597,73 @@ def create_semantic_model_from_schema(
     else:
         _write_pbip(pbip, spec.name, tmdl)
     return result
+
+
+async def create_semantic_model_from_schema_async(
+    spec_yaml: str | None = None,
+    spec_json: Any = None,
+    output_pbip_path: str = "",
+    dry_run: bool = True,
+    modeling_engine: Any = None,
+) -> CreateSemanticModelResult:
+    """Async entrypoint that awaits ``modeling_engine.apply_model_spec`` on the active loop."""
+    if modeling_engine is None or dry_run:
+        return create_semantic_model_from_schema(
+            spec_yaml=spec_yaml,
+            spec_json=spec_json,
+            output_pbip_path=output_pbip_path,
+            dry_run=dry_run,
+            modeling_engine=None,
+        )
+    # Run validation & dry-run computation first, then apply via async engine.
+    validated = create_semantic_model_from_schema(
+        spec_yaml=spec_yaml,
+        spec_json=spec_json,
+        output_pbip_path=output_pbip_path,
+        dry_run=True,
+        modeling_engine=None,
+    )
+    if not validated.validation_passed:
+        return CreateSemanticModelResult(
+            validation_passed=False,
+            dry_run=dry_run,
+            warnings=validated.warnings,
+        )
+    if not output_pbip_path:
+        return CreateSemanticModelResult(
+            validation_passed=False,
+            dry_run=dry_run,
+            warnings=["dry_run=False requires output_pbip_path"],
+        )
+    validate_write_path(output_pbip_path)
+    raw = (
+        yaml.safe_load(spec_yaml)
+        if spec_yaml is not None
+        else (json.loads(spec_json) if isinstance(spec_json, str) else spec_json)
+    )
+    spec = ModelSpec.model_validate(raw)
+    tmdl = render_tmdl(spec)
+    if hasattr(modeling_engine, "apply_model_spec"):
+        try:
+            apply_result = await modeling_engine.apply_model_spec(
+                pbip_path=output_pbip_path,
+                tmdl_body=tmdl,
+                model_name=spec.name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return CreateSemanticModelResult(
+                validation_passed=False,
+                dry_run=dry_run,
+                warnings=[f"modeling_engine.apply_model_spec failed: {exc}"],
+            )
+        if not apply_result.success:
+            return CreateSemanticModelResult(
+                validation_passed=False,
+                dry_run=dry_run,
+                warnings=[apply_result.error_message or "modeling_engine reported failure"],
+            )
+    validated.dry_run = False
+    return validated
 
 
 __all__ = [

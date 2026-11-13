@@ -280,6 +280,45 @@ def _cmd_audit_verify(_args: argparse.Namespace) -> int:
         return int(exc.code or 1)
 
 
+def _cmd_audit_export(args: argparse.Namespace) -> int:
+    """Export audit.db, .audit_anchor, and plans.db with a SHA-256 manifest."""
+    import hashlib
+    import shutil
+    from datetime import UTC, datetime
+
+    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
+
+    dest = validate_write_path(args.dest, must_exist=False)
+    dest.mkdir(parents=True, exist_ok=True)
+    home = get_orchestrator_home()
+
+    candidates = ["audit.db", "audit.db-wal", "audit.db-shm", ".audit_anchor", "plans.db"]
+    if args.include_key:
+        candidates.append(".audit_key")
+
+    copied: dict[str, dict[str, Any]] = {}
+    for name in candidates:
+        src = home / name
+        if not src.exists() or not src.is_file():
+            continue
+        out_file = dest / name
+        shutil.copy2(src, out_file)
+        digest = hashlib.sha256(out_file.read_bytes()).hexdigest()
+        copied[name] = {"bytes": out_file.stat().st_size, "sha256": digest}
+
+    manifest = {
+        "exported_at": datetime.now(UTC).isoformat(),
+        "version": __version__,
+        "source_home": str(home),
+        "include_key": bool(args.include_key),
+        "files": copied,
+    }
+    manifest_path = dest / "audit-export-manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _print_json(manifest)
+    return 0
+
+
 async def _cmd_health(_args: argparse.Namespace) -> int:
     """Print powerbi_health diagnostics as JSON."""
     result = await powerbi_health()
@@ -360,6 +399,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Verify the HMAC chain on the audit log.",
     )
     p_audit.set_defaults(func=_cmd_audit_verify)
+
+    # audit-export
+    p_export = sub.add_parser(
+        "audit-export",
+        help="Back up audit.db, .audit_anchor, and plans.db with a SHA-256 manifest.",
+    )
+    p_export.add_argument("dest", help="Destination directory inside PBI_WORKSPACE_ROOT.")
+    p_export.add_argument(
+        "--include-key",
+        action="store_true",
+        help="Also copy local .audit_key (store backups encrypted!).",
+    )
+    p_export.set_defaults(func=_cmd_audit_export)
 
     # health
     p_health = sub.add_parser(

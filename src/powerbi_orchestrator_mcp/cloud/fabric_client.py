@@ -419,6 +419,21 @@ class FabricClient:
                     response_body=_summarize_response_body(response.text),
                 )
 
+            if response.status_code == 202:
+                body = response.json() if response.content else {}
+                if not isinstance(body, dict):
+                    body = {"value": body}
+                operation_id = response.headers.get("x-ms-operation-id") or response.headers.get(
+                    "Operation-Id"
+                )
+                location = response.headers.get("Location")
+                return {
+                    **body,
+                    "status": body.get("status", "Accepted"),
+                    "operation_id": operation_id,
+                    "location": location,
+                }
+
             return response.json() if response.content else {}
 
         raise FabricAPIError(
@@ -479,8 +494,8 @@ class FabricClient:
     ) -> list[dict[str, Any]]:
         """List Fabric items in a workspace, optionally filtered by type.
 
-        Per spec §2.3. ``item_type`` e.g. ``"PowerBIDataset"``,
-        ``"PowerBIReport"``, ``"Lakehouse"``.
+        Per spec §2.3. ``item_type`` e.g. ``"SemanticModel"``,
+        ``"Report"``, ``"Lakehouse"``.
         """
         params: dict[str, Any] | None = {"type": item_type} if item_type else None
         resp = await self.get(
@@ -504,13 +519,13 @@ class FabricClient:
         item_type: str,
         definition: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Create a Fabric item (e.g. PowerBIDataset) in a workspace.
+        """Create a Fabric item (e.g. SemanticModel) in a workspace.
 
         Used by ``deploy_to_workspace`` after the pre-deploy gate passes.
-        ``definition`` is optional; for PowerBIDataset the orchestrator
-        typically passes a minimal ``defaultDatasetStorageFormat`` payload
-        and lets Power BI Desktop / superbi-mcp populate the TMDL/PBIR
-        schema afterwards. Returns the created item (with ``id``).
+        ``definition`` is optional; for SemanticModel the orchestrator
+        passes inline Base64 TMDL parts or leaves it empty for desktop
+        population. Returns the created item (with ``id``) or an LRO
+        envelope (``status='Accepted'``, ``operation_id``) on HTTP 202.
         """
         body: dict[str, Any] = {
             "displayName": display_name,
@@ -679,6 +694,141 @@ class FabricClient:
             f"/groups/{_path_segment(workspace_id, 'workspace_id')}"
             f"/datasets/{_path_segment(dataset_id, 'dataset_id')}/queries",
             json=payload,
+            service="pbi",
+        )
+
+    async def poll_operation(
+        self,
+        operation_id: str,
+        *,
+        timeout_s: float = 120.0,
+        poll_interval_s: float = 2.0,
+    ) -> dict[str, Any]:
+        """Poll a Fabric long-running operation until completion or timeout."""
+        op = _path_segment(operation_id, "operation_id")
+        deadline = time.monotonic() + timeout_s
+        while True:
+            resp = await self.get(f"/operations/{op}", service="fabric")
+            status = str(resp.get("status", "")).lower()
+            if status in {"succeeded", "completed", "failed", "cancelled", "canceled"}:
+                if status in {"failed", "cancelled", "canceled"}:
+                    raise FabricAPIError(
+                        f"Fabric operation {op} {status}: {resp.get('error', '')}",
+                        status_code=500,
+                        response_body=str(resp),
+                    )
+                try:
+                    return await self.get(f"/operations/{op}/result", service="fabric")
+                except FabricAPIError:
+                    return resp
+            if time.monotonic() >= deadline:
+                return resp
+            await asyncio.sleep(poll_interval_s)
+
+    async def list_pipeline_stages(self, pipeline_id: str) -> list[dict[str, Any]]:
+        """List stages of a Fabric deployment pipeline."""
+        resp = await self.get(
+            f"/deploymentPipelines/{_path_segment(pipeline_id, 'pipeline_id')}/stages",
+            service="fabric",
+        )
+        return resp.get("value", [])  # type: ignore[no-any-return]
+
+    async def deploy_pipeline(
+        self,
+        pipeline_id: str,
+        *,
+        source_stage_id: str,
+        target_stage_id: str,
+        items: list[dict[str, str]] | None = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Deploy items between stages in a Fabric deployment pipeline."""
+        body: dict[str, Any] = {
+            "sourceStageId": _path_segment(source_stage_id, "source_stage_id"),
+            "targetStageId": _path_segment(target_stage_id, "target_stage_id"),
+        }
+        if items:
+            body["items"] = items
+        if note:
+            body["note"] = {"content": note}
+        return await self.post(
+            f"/deploymentPipelines/{_path_segment(pipeline_id, 'pipeline_id')}/deploy",
+            json=body,
+            long_running=True,
+            service="fabric",
+        )
+
+    async def get_item_definition(self, workspace_id: str, item_id: str) -> dict[str, Any]:
+        """Fetch the definition payload of a Fabric workspace item."""
+        resp = await self.post(
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/items/{_path_segment(item_id, 'item_id')}/getDefinition",
+            long_running=True,
+            service="fabric",
+        )
+        if resp.get("operation_id") and "definition" not in resp:
+            return await self.poll_operation(str(resp["operation_id"]))
+        return resp
+
+    async def update_item_definition(
+        self,
+        workspace_id: str,
+        item_id: str,
+        *,
+        definition: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Update an existing Fabric item definition (inline parts)."""
+        resp = await self.post(
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}"
+            f"/items/{_path_segment(item_id, 'item_id')}/updateDefinition",
+            json={"definition": definition},
+            long_running=True,
+            service="fabric",
+        )
+        if resp.get("operation_id") and str(resp.get("status", "")).lower() == "accepted":
+            return await self.poll_operation(str(resp["operation_id"]))
+        return resp
+
+    async def update_from_git(
+        self,
+        workspace_id: str,
+        *,
+        remote_commit_hash: str,
+        conflict_resolution_policy: str = "PreferWorkspace",
+        allow_override: bool = True,
+    ) -> dict[str, Any]:
+        """Trigger Fabric Git updateFromGit on a workspace."""
+        body = {
+            "remoteCommitHash": remote_commit_hash,
+            "conflictResolution": {
+                "conflictResolutionType": "Workspace",
+                "conflictResolutionPolicy": conflict_resolution_policy,
+            },
+            "options": {"allowOverrideItems": allow_override},
+        }
+        return await self.post(
+            f"/workspaces/{_path_segment(workspace_id, 'workspace_id')}/git/updateFromGit",
+            json=body,
+            long_running=True,
+            service="fabric",
+        )
+
+    async def admin_set_labels(
+        self,
+        artifacts: dict[str, list[dict[str, str]]],
+        label_id: str,
+        *,
+        assignment_method: str = "Standard",
+    ) -> dict[str, Any]:
+        """Set Microsoft Purview sensitivity labels via Power BI Admin REST API."""
+        body = {
+            "artifacts": artifacts,
+            "labelId": _path_segment(label_id, "label_id"),
+            "assignmentMethod": assignment_method,
+        }
+        return await self.post(
+            "/admin/informationprotection/setLabels",
+            json=body,
             service="pbi",
         )
 
