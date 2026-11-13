@@ -31,7 +31,10 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from powerbi_orchestrator_mcp.validation.path_safety import validate_write_path
+from powerbi_orchestrator_mcp.validation.path_safety import (
+    validate_safe_pbip_path,
+    validate_write_path,
+)
 
 # ---------------------------------------------------------------------------
 # Spec Pydantic models
@@ -126,6 +129,8 @@ class TableSpec(BaseModel):
     is_date_table: bool = False
     date_column: str | None = None
     description: str | None = None
+    partition_m: str | None = None
+    schema_artifact_path: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -233,6 +238,7 @@ class CreateSemanticModelResult(BaseModel):
     tables_created: list[TableCreated] = Field(default_factory=list)
     relationships_created: list[RelationshipCreated] = Field(default_factory=list)
     hierarchies_created: list[str] = Field(default_factory=list)
+    partitions_attached: int = 0
     validation_passed: bool = False
     lint_findings: list[dict[str, str]] = Field(default_factory=list)
     dry_run: bool = True
@@ -294,8 +300,56 @@ def _render_table(table: TableSpec) -> str:
         if m.description:
             parts.append(f"        description: {json.dumps(m.description)}")
 
+    if table.partition_m and table.partition_m.strip():
+        parts.append(f"    partition {_quote_identifier(table.name)} = m")
+        parts.append("        mode: import")
+        parts.append("        source =")
+        for line in table.partition_m.replace("\r\n", "\n").splitlines():
+            parts.append(f"                {line}" if line else "")
+
     parts.append("")  # blank line after table
     return "\n".join(parts)
+
+
+_INGEST_TYPE_TO_TMDL: dict[str, str] = {
+    "string": "string",
+    "int": "int64",
+    "float": "decimal",
+    "date": "dateTime",
+    "bool": "boolean",
+}
+
+
+def _hydrate_spec_from_ingest_artifacts(spec: ModelSpec, warnings: list[str]) -> ModelSpec:
+    """Resolve ``schema_artifact_path`` metadata from ``ingest_source_table``."""
+    updated_tables: list[TableSpec] = []
+    changed = False
+    for table in spec.tables:
+        if not table.schema_artifact_path:
+            updated_tables.append(table)
+            continue
+        artifact_path = validate_safe_pbip_path(table.schema_artifact_path, must_be_dir=False)
+        raw = json.loads(artifact_path.read_text(encoding="utf-8"))
+        patch: dict[str, Any] = {}
+        if not table.partition_m and isinstance(raw.get("power_query_m"), str):
+            patch["partition_m"] = raw["power_query_m"]
+        if not table.columns and isinstance(raw.get("expected_schema"), dict):
+            key_cols = set(raw.get("key_columns") or [])
+            patch["columns"] = [
+                ColumnSpec(
+                    name=str(col_name),
+                    type=_INGEST_TYPE_TO_TMDL.get(str(dtype), "string"),
+                    is_key=(str(col_name) in key_cols),
+                )
+                for col_name, dtype in raw["expected_schema"].items()
+            ]
+        if patch:
+            changed = True
+            updated_tables.append(table.model_copy(update=patch))
+        else:
+            warnings.append(f"schema_artifact_path for table {table.name!r} yielded no new fields")
+            updated_tables.append(table)
+    return spec.model_copy(update={"tables": updated_tables}) if changed else spec
 
 
 def _render_relationship(rel: RelationshipSpec) -> str:
@@ -502,8 +556,8 @@ def create_semantic_model_from_schema(
     """
     warnings: list[str] = []
     try:
-        spec = _parse_spec(spec_yaml, spec_json)
-    except (ValueError, ValidationError) as exc:
+        spec = _hydrate_spec_from_ingest_artifacts(_parse_spec(spec_yaml, spec_json), warnings)
+    except (ValueError, ValidationError, FileNotFoundError, OSError, json.JSONDecodeError) as exc:
         return CreateSemanticModelResult(
             validation_passed=False,
             dry_run=dry_run,
@@ -521,6 +575,7 @@ def create_semantic_model_from_schema(
         )
 
     lint = _lint_dax(spec)
+    partitions_attached = sum(1 for t in spec.tables if t.partition_m and t.partition_m.strip())
 
     result = CreateSemanticModelResult(
         pbip_path=output_pbip_path,
@@ -543,6 +598,7 @@ def create_semantic_model_from_schema(
             for r in spec.relationships
         ],
         hierarchies_created=[h.name for h in spec.hierarchies],
+        partitions_attached=partitions_attached,
         validation_passed=True,
         lint_findings=lint,
         dry_run=dry_run,

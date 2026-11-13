@@ -282,40 +282,50 @@ def _cmd_audit_verify(_args: argparse.Namespace) -> int:
 
 def _cmd_audit_export(args: argparse.Namespace) -> int:
     """Export audit.db, .audit_anchor, and plans.db with a SHA-256 manifest."""
-    import hashlib
-    import shutil
-    from datetime import UTC, datetime
+    from powerbi_orchestrator_mcp.orchestrator.iso_handoff import export_audit_bundle
 
-    from powerbi_orchestrator_mcp.orchestrator.paths import get_orchestrator_home
-
-    dest = validate_write_path(args.dest, must_exist=False)
-    dest.mkdir(parents=True, exist_ok=True)
-    home = get_orchestrator_home()
-
-    candidates = ["audit.db", "audit.db-wal", "audit.db-shm", ".audit_anchor", "plans.db"]
-    if args.include_key:
-        candidates.append(".audit_key")
-
-    copied: dict[str, dict[str, Any]] = {}
-    for name in candidates:
-        src = home / name
-        if not src.exists() or not src.is_file():
-            continue
-        out_file = dest / name
-        shutil.copy2(src, out_file)
-        digest = hashlib.sha256(out_file.read_bytes()).hexdigest()
-        copied[name] = {"bytes": out_file.stat().st_size, "sha256": digest}
-
-    manifest = {
-        "exported_at": datetime.now(UTC).isoformat(),
-        "version": __version__,
-        "source_home": str(home),
-        "include_key": bool(args.include_key),
-        "files": copied,
-    }
-    manifest_path = dest / "audit-export-manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest = export_audit_bundle(
+        args.dest,
+        include_key=bool(args.include_key),
+        rotate=bool(getattr(args, "rotate", False)),
+        retention_days=getattr(args, "retention_days", None),
+    )
     _print_json(manifest)
+    return 0
+
+
+async def _cmd_run_report(args: argparse.Namespace) -> int:
+    """Execute a headless Flow B report job from YAML/JSON config."""
+    from powerbi_orchestrator_mcp.orchestrator.report_runner import (
+        load_report_job_spec,
+        run_scheduled_report,
+    )
+
+    job = load_report_job_spec(args.config)
+    res = await run_scheduled_report(
+        job,
+        as_of_date_override=getattr(args, "as_of_date", None),
+        output_dir_override=getattr(args, "output_dir", None),
+        live=bool(getattr(args, "live", False)),
+    )
+    _print_json(res.model_dump(mode="json"))
+    return 0 if res.status == "ok" else 1
+
+
+def _cmd_export_handoff(args: argparse.Namespace) -> int:
+    """Generate ISO 9001/14001/45001 §7.5 handover markdown + document register."""
+    from powerbi_orchestrator_mcp.orchestrator.iso_handoff import generate_iso_handoff
+
+    result = generate_iso_handoff(
+        args.output_dir,
+        solution_name=args.solution_name,
+        owner=args.owner,
+        approver=args.approver,
+        catalog_path=getattr(args, "catalog_path", None),
+        pbip_path=getattr(args, "pbip_path", None),
+        version=args.doc_version,
+    )
+    _print_json(result)
     return 0
 
 
@@ -411,7 +421,53 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also copy local .audit_key (store backups encrypted!).",
     )
+    p_export.add_argument(
+        "--rotate",
+        action="store_true",
+        help="Verify chain, archive current audit.db, and start a linked rollover chain.",
+    )
+    p_export.add_argument(
+        "--retention-days",
+        type=int,
+        default=None,
+        help="Prune audit-archive-* directories older than N days inside dest.",
+    )
     p_export.set_defaults(func=_cmd_audit_export)
+
+    # run-report
+    p_report = sub.add_parser(
+        "run-report",
+        help="Run a headless KPI + bundle + consistency + email job from YAML/JSON config.",
+    )
+    p_report.add_argument("--config", required=True, help="Path to YAML/JSON report job config.")
+    p_report.add_argument("--as-of-date", default=None, help="Override cutoff date (YYYY-MM-DD).")
+    p_report.add_argument("--output-dir", default=None, help="Override output directory.")
+    p_report.add_argument(
+        "--live",
+        action="store_true",
+        help="Allow live email sending (defaults to dry_run=True when omitted).",
+    )
+    p_report.set_defaults(func=_cmd_run_report)
+
+    # export-handoff
+    p_handoff = sub.add_parser(
+        "export-handoff",
+        help="Generate ISO 9001/14001/45001 §7.5 handover sheet and document control matrix.",
+    )
+    p_handoff.add_argument("output_dir", help="Destination directory inside PBI_WORKSPACE_ROOT.")
+    p_handoff.add_argument(
+        "--solution-name", required=True, help="Name of the documented solution."
+    )
+    p_handoff.add_argument("--owner", required=True, help="Operational owner role/name.")
+    p_handoff.add_argument(
+        "--approver",
+        default="Jefatura de Procesos",
+        help="Approver role/name for ISO §7.5 control.",
+    )
+    p_handoff.add_argument("--catalog-path", default=None, help="Optional YAML KPI catalog path.")
+    p_handoff.add_argument("--pbip-path", default=None, help="Optional PBIP directory path.")
+    p_handoff.add_argument("--doc-version", default="1.0.0", help="Document version tag.")
+    p_handoff.set_defaults(func=_cmd_export_handoff)
 
     # health
     p_health = sub.add_parser(
@@ -427,6 +483,18 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_coro(coro: Any) -> Any:
+    """Run an async CLI handler synchronously, even if an event loop is active."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint. Returns the process exit code."""
     parser = _build_parser()
@@ -435,15 +503,11 @@ def main(argv: list[str] | None = None) -> int:
     func = args.func
     try:
         if asyncio.iscoroutinefunction(func):
-            return int(asyncio.run(func(args)))
+            return int(_run_coro(func(args)))
         result = func(args)
-    except ValueError as exc:
+    except (ValueError, MetadataError, FileNotFoundError, RuntimeError) as exc:
         # A path the workspace boundary refuses, an unknown profile, a
-        # malformed argument: the operator gave the command something
-        # it cannot work with. That is a message, not a traceback.
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    except MetadataError as exc:
+        # malformed argument, or a refused audit rotation: report cleanly.
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return int(result) if result is not None else 0
