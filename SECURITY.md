@@ -10,12 +10,14 @@
 
 | Version | Supported           |
 |---------|---------------------|
-| 1.23.x  | ✅ active           |
-| 1.22.x  | ✅ active           |
-| 1.21.x  | ✅ active           |
-| 1.20.x  | ✅ active           |
-| 1.18.x  | ✅ critical security fixes |
-| 1.17.x  | ✅ critical security fixes |
+| 1.25.x  | ✅ active           |
+| 1.24.x  | ✅ active           |
+| 1.23.x  | ✅ critical security fixes |
+| 1.22.x  | ⚠️ security fixes only |
+| 1.21.x  | ⚠️ security fixes only |
+| 1.20.x  | ❌ end of life      |
+| 1.18.x  | ❌ end of life      |
+| 1.17.x  | ❌ end of life      |
 | < 1.17  | ❌ upgrade required |
 
 We follow semver. Patch releases get critical security fixes; the current
@@ -159,8 +161,8 @@ We aim to:
 
 | Feature | Where |
 |---|---|
-| Token-bucket rate limiting (per client instance, not per tenant) | `cloud/fabric_client.py` |
-| Circuit breaker (opens after 5 consecutive 5xx; per client instance) | `cloud/fabric_client.py` |
+| Token-bucket rate limiting (shared per credential scope `(mode, tenant_id, client_id)`) | `cloud/fabric_client.py` |
+| Circuit breaker (opens after 5 consecutive 5xx; shared per credential scope) | `cloud/fabric_client.py` |
 | Least-privilege token scopes (read vs write) | `cloud/fabric_client.py`, `cloud/auth.py` |
 | HMAC-chained audit log (tamper-evident) | `orchestrator/audit.py` |
 | Actor recorded per audit entry (`principal` column, in the chain) | `orchestrator/audit.py`, `orchestrator/audit_guard.py` |
@@ -216,8 +218,15 @@ Stated explicitly so nobody assumes a control that is not there:
   reliable over NFS. A multi-node deployment needs a different plan store
   backend, which the orchestrator does not have yet.
 
-- There is **no `--readonly` flag**. Write tools are made safe by
-  `dry_run=True` defaults and per-tool scopes, not by a global mode switch.
+- **Read-only deployments MUST pass `--readonly` or `PBI_READONLY=1`**.
+  This refuses all state-changing tools (including `Tools.Admin` callers),
+  `generate_data_dictionary(output_path=...)`, and `screenshot_report_pages`.
+- **Single-replica state model**: plan, session, and HMAC audit stores use
+  local SQLite WAL files inside `PBI_ORCHESTRATOR_HOME`; run HTTP mode as a
+  single writer replica backed by dedicated persistent block storage (not shared NFS).
+- **Unauthenticated HTTP health probes**: in `--transport http` mode, `GET /healthz`
+  (liveness) and `GET /readyz` (readiness, returning only failing check names) bypass
+  Entra ID bearer authentication so orchestrators can probe the process safely.
 - There is **no code-signing or signature check for plugins**. Plugin loading
   is opt-in via `PBI_ENABLE_PLUGINS`, refuses directories that are group- or
   world-writable, and refuses symlinked plugin files, but a plugin that an

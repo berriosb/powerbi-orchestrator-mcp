@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import datetime as dt
 import hashlib
 import json
 import shutil
+import sqlite3
+import threading
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import openpyxl
 import yaml
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None  # type: ignore[assignment]
 
 from powerbi_orchestrator_mcp import __version__
 from powerbi_orchestrator_mcp.orchestrator.audit import AuditLog
@@ -38,6 +48,48 @@ _HOME_BACKUP_CANDIDATES: list[tuple[str, str]] = [
 ]
 
 
+_ROTATE_THREAD_LOCK = threading.Lock()
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def _is_sqlite_file(path: Path) -> bool:
+    if path.suffix != ".db" or not path.is_file():
+        return False
+    try:
+        with path.open("rb") as fh:
+            return fh.read(len(_SQLITE_MAGIC)) == _SQLITE_MAGIC
+    except OSError:
+        return False
+
+
+def _copy_backup_file(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if _is_sqlite_file(src):
+        if dst.exists():
+            dst.unlink()
+        with (
+            contextlib.closing(sqlite3.connect(str(src))) as src_conn,
+            contextlib.closing(sqlite3.connect(str(dst))) as dst_conn,
+        ):
+            src_conn.backup(dst_conn)
+        return
+    shutil.copy2(src, dst)
+
+
+@contextlib.contextmanager
+def _audit_rotation_lock(lock_dir: Path) -> Iterator[None]:
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / ".audit_rotate.lock"
+    with _ROTATE_THREAD_LOCK, lock_path.open("a+b") as lock_fh:
+        if fcntl is not None:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+
+
 def export_audit_bundle(
     dest_dir: str,
     *,
@@ -60,8 +112,7 @@ def export_audit_bundle(
         if not src.exists() or not src.is_file():
             continue
         out_file = dest / rel_dst
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, out_file)
+        _copy_backup_file(src, out_file)
         digest = hashlib.sha256(out_file.read_bytes()).hexdigest()
         copied[rel_dst] = {"bytes": out_file.stat().st_size, "sha256": digest}
 
@@ -70,42 +121,44 @@ def export_audit_bundle(
     if rotate:
         active_db = home / "audit" / "audit.db"
         if active_db.exists():
-            audit = AuditLog(db_path=active_db)
-            verify = audit.verify()
-            if not verify.valid:
-                raise RuntimeError(
-                    f"refusing audit rotation: chain integrity invalid ({verify.error_message})"
-                )
-            archived_db_sha = compute_file_sha256(active_db)
-            conn = audit._connect()
-            try:
-                last_row = conn.execute(
-                    "SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1"
-                ).fetchone()
-                tip_hash = str(last_row[0]) if last_row else "genesis"
-            finally:
-                conn.close()
+            with _audit_rotation_lock(active_db.parent):
+                audit = AuditLog(db_path=active_db)
+                verify = audit.verify()
+                if not verify.valid:
+                    raise RuntimeError(
+                        f"refusing audit rotation: chain integrity invalid ({verify.error_message})"
+                    )
+                conn = audit._connect()
+                try:
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    last_row = conn.execute(
+                        "SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    tip_hash = str(last_row[0]) if last_row else "genesis"
+                finally:
+                    conn.close()
+                archived_db_sha = compute_file_sha256(active_db)
 
-            stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-            sealed_dir = dest / f"audit-archive-{stamp}"
-            sealed_dir.mkdir(parents=True, exist_ok=True)
-            for fname in ("audit.db", "audit.db-wal", "audit.db-shm", ".audit_anchor"):
-                cand = active_db.parent / fname
-                if cand.exists() and cand.is_file():
-                    shutil.move(str(cand), str(sealed_dir / fname))
-            fresh = AuditLog(db_path=active_db)
-            fresh_entry = fresh.insert(
-                tool_name="system:audit_rotate",
-                tool_args={"archive_dir": str(sealed_dir)},
-                result_status="success",
-                payload={
-                    "rotated_from_sha256": archived_db_sha,
-                    "previous_tip_hash": tip_hash,
-                    "previous_entries": verify.total_rows,
-                },
-            )
-            rotated = True
-            rollover_tip = fresh_entry.row_hash
+                stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+                sealed_dir = dest / f"audit-archive-{stamp}"
+                sealed_dir.mkdir(parents=True, exist_ok=True)
+                for fname in ("audit.db", "audit.db-wal", "audit.db-shm", ".audit_anchor"):
+                    cand = active_db.parent / fname
+                    if cand.exists() and cand.is_file():
+                        shutil.move(str(cand), str(sealed_dir / fname))
+                fresh = AuditLog(db_path=active_db)
+                fresh_entry = fresh.insert(
+                    tool_name="system:audit_rotate",
+                    tool_args={"archive_dir": str(sealed_dir)},
+                    result_status="success",
+                    payload={
+                        "rotated_from_sha256": archived_db_sha,
+                        "previous_tip_hash": tip_hash,
+                        "previous_entries": verify.total_rows,
+                    },
+                )
+                rotated = True
+                rollover_tip = fresh_entry.row_hash
 
     pruned_archives: list[str] = []
     if retention_days is not None and retention_days > 0:

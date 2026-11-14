@@ -12,15 +12,16 @@ MCP client or spending LLM tokens:
 
 from __future__ import annotations
 
-import contextlib
 import datetime as dt
 import json
+import logging
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
 
 from powerbi_orchestrator_mcp.cloud.audit_cloud import CloudAuditLog
+from powerbi_orchestrator_mcp.orchestrator.audit_guard import _fail_closed
 from powerbi_orchestrator_mcp.tools.check_report_data_consistency import (
     CheckReportDataConsistencyResult,
     check_report_data_consistency,
@@ -240,6 +241,13 @@ async def run_scheduled_report(
             as_of_date=kpis_res.as_of_date,
             cadence=job.cadence,
         )
+        _record_audit(
+            status="attempted",
+            report_title=job.report_title,
+            as_of_date=effective_as_of,
+            exported_files=exported_files,
+            recipient_hashes=[],
+        )
         email_result = await send_report_email(
             recipients_to=job.email.recipients_to,
             recipients_cc=job.email.recipients_cc,
@@ -287,6 +295,9 @@ async def run_scheduled_report(
     )
 
 
+_logger = logging.getLogger(__name__)
+
+
 def _record_audit(
     *,
     status: str,
@@ -295,7 +306,7 @@ def _record_audit(
     exported_files: list[str],
     recipient_hashes: list[str],
 ) -> None:
-    with contextlib.suppress(Exception):  # noqa: BLE001
+    try:
         CloudAuditLog().record(
             operation="cli.run_report",
             target_id=report_title,
@@ -306,6 +317,10 @@ def _record_audit(
                 "recipient_hashes": recipient_hashes,
             },
         )
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("Failed to record cli.run_report audit entry (%s): %s", status, exc)
+        if _fail_closed():
+            raise
 
 
 __all__ = [

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import datetime as dt
 import json
+import os
 import sqlite3
 import uuid
 from pathlib import Path
@@ -113,6 +116,15 @@ class SessionStore:
 
     def create(self, context: SessionContext | None = None) -> SessionContext:
         """Create a new session and persist it."""
+        _ensure_sessions_dir()
+        ttl_raw = os.environ.get("PBI_SESSION_TTL_HOURS", "168").strip()
+        try:
+            ttl_hours = float(ttl_raw)
+        except ValueError:
+            ttl_hours = 168.0
+        if ttl_hours > 0:
+            self.prune_expired(max_age_hours=ttl_hours)
+
         ctx = context or SessionContext()
         db_path = _get_db_path(ctx.session_id)
         conn = sqlite3.connect(str(db_path))
@@ -203,9 +215,9 @@ class SessionStore:
         sessions: list[SessionContext] = []
         for db_file in SESSIONS_DIR.glob("*.db"):
             conn = sqlite3.connect(str(db_file))
-            restrict_file(db_file)
-            conn.row_factory = sqlite3.Row
             try:
+                restrict_file(db_file)
+                conn.row_factory = sqlite3.Row
                 _init_db(conn)
                 rows = conn.execute("SELECT * FROM sessions").fetchall()
                 for row in rows:
@@ -213,3 +225,39 @@ class SessionStore:
             finally:
                 conn.close()
         return sessions
+
+    def prune_expired(self, *, max_age_hours: float = 168.0) -> int:
+        """Delete persisted session SQLite files older than ``max_age_hours``.
+
+        Args:
+            max_age_hours: Maximum idle age in hours (uses file mtime). Non-positive
+                values disable pruning and return ``0``.
+
+        Returns:
+            Number of expired session database files removed.
+        """
+        if max_age_hours <= 0:
+            return 0
+        _ensure_sessions_dir()
+        cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(hours=max_age_hours)
+        removed = 0
+        for db_file in list(SESSIONS_DIR.glob("*.db")):
+            candidates = [
+                db_file,
+                db_file.with_name(f"{db_file.name}-wal"),
+                db_file.with_name(f"{db_file.name}-shm"),
+            ]
+            mtimes: list[float] = []
+            for cand in candidates:
+                with contextlib.suppress(OSError):
+                    if cand.exists():
+                        mtimes.append(cand.stat().st_mtime)
+            if not mtimes:
+                continue
+            mtime = dt.datetime.fromtimestamp(max(mtimes), tz=dt.UTC)
+            if mtime < cutoff:
+                for candidate in candidates:
+                    with contextlib.suppress(OSError):
+                        candidate.unlink(missing_ok=True)
+                removed += 1
+        return removed
