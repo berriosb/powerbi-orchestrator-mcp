@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`docs/releases/RELEASE-NOTES-vX.Y.Z.md`](./docs/releases/) files.
 > This file is a condensed digest for quick lookup.
 
+## [1.25.0] — 2026-11-13
+
+### Added
+- **Headless Flow B Cron Runner (`powerbi-orchestrator run-report`).** Executes YAML/JSON scheduled report jobs end-to-end (`compute_process_kpis` -> deterministic narrative + `draft_report_summary` check -> `export_kpi_report_bundle` `.xlsx`/`.pdf` -> optional `check_report_data_consistency` -> optional `send_report_email` defaulting to `dry_run=True` unless `--live` is passed, plus `CloudAuditLog` trail).
+- **Schema Artifact to TMDL Power Query M Partitions (`create_semantic_model_from_schema`).** Added `partition_m` and `schema_artifact_path` on `TableSpec` (and `partitions_attached` on `CreateSemanticModelResult`) to consume `.schema.json` artifacts from `ingest_source_table`, emit `partition <Table> = m` blocks in TMDL, and infer columns/keys automatically when omitted.
+- **ISO 9001/14001/45001 §7.5 Handover & Audit Rotation (`export-handoff`, `audit-export --rotate --retention-days`).** Added `generate_iso_handoff` (`SOLUTION-HANDOFF.md`, `iso-7.5-document-control.csv`/`.xlsx` with formula neutralization and SHA-256) and linked audit-chain rollover archiving with retention pruning.
+- **Chained E2E & Edge-Case Coverage.** Added end-to-end `define_kpi_catalog` -> `ingest_source_table` -> `compute_process_kpis` -> `draft_report_summary` -> `export_kpi_report_bundle` -> `send_report_email` -> `check_report_data_consistency` integration tests and comprehensive HTTP adapter error/fallback tests.
+
+### Fixed
+- **Spanish Number Disambiguation in `draft_report_summary`.** Fixed `_NUMBER_TOKEN_RE` so trailing sentence punctuation (e.g. `"0.125."`) is excluded from extracted tokens, and disambiguated Spanish single-dot thousands (`$4.000`, `4.000` with `language="es"`) against genuine decimals (`0.125`) and English decimals.
+- **Real `audit-export` Subdirectory Backup & CLI Event-Loop Safety.** Fixed `export_audit_bundle` to back up `audit/audit.db`, `audit/.audit_anchor`, and `plans/plans.db` (plus legacy flat fallbacks), and added `_run_coro` in `cli.py` for running async subcommands when an event loop is already active.
+
 ## [1.24.0] — 2026-11-13
 
 ### Added
