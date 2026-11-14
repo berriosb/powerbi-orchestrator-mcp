@@ -16,11 +16,11 @@ For MVP we focus on the operations needed by ``run_refresh`` and
 in ``specs/02-cloud-fabric.md``.
 
 Concurrency primitives (per Tier-B §6):
-- ``TokenBucket`` — limits requests/minute (default 200 RPM). It is per
-  client instance, not per tenant: a tool that builds its own client
-  gets its own bucket, and the bucket dies with the call.
-- ``CircuitBreaker`` — opens after 5 consecutive 5xx in 60s.
-- Long-running ops (refresh, deploy) bypass the main bucket.
+- ``TokenBucket`` — limits requests/minute (default 200 RPM), shared per
+  credential scope ``(auth_mode, tenant_id, client_id)`` when using a real
+  ``FabricCredential`` so consecutive/concurrent MCP calls enforce tenant-wide limits.
+- ``CircuitBreaker`` — opens after 5 consecutive 5xx in 60s, shared alongside the bucket.
+- Long-running ops (refresh, deploy) use their own bounded bucket.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -255,6 +256,45 @@ def _build_async_client(
             os.environ[key] = original
 
 
+@dataclass
+class _SharedResilience:
+    bucket: TokenBucket
+    long_running_bucket: TokenBucket
+    breaker: CircuitBreaker
+
+
+_RESILIENCE_LOCK = threading.Lock()
+_SHARED_RESILIENCE: dict[tuple[str, str, str, int, int, int], _SharedResilience] = {}
+
+
+def reset_shared_fabric_resilience() -> None:
+    """Clear shared TokenBucket/CircuitBreaker instances (intended for tests)."""
+    with _RESILIENCE_LOCK:
+        _SHARED_RESILIENCE.clear()
+
+
+def _get_shared_resilience(
+    credential: Any,
+    *,
+    rpm: int,
+    burst: int,
+    long_running_rpm: int,
+) -> _SharedResilience | None:
+    if not isinstance(credential, FabricCredential):
+        return None
+    scope = (*credential.scope_key, rpm, burst, long_running_rpm)
+    with _RESILIENCE_LOCK:
+        entry = _SHARED_RESILIENCE.get(scope)
+        if entry is None:
+            entry = _SharedResilience(
+                bucket=TokenBucket(rpm=rpm, burst=burst),
+                long_running_bucket=TokenBucket(rpm=long_running_rpm, burst=long_running_rpm),
+                breaker=CircuitBreaker(),
+            )
+            _SHARED_RESILIENCE[scope] = entry
+        return entry
+
+
 class FabricClient:
     """Async REST client for Microsoft Fabric / Power BI Service.
 
@@ -284,11 +324,27 @@ class FabricClient:
         fabric_base_url: str = BASE_URL,
         pbi_service_base_url: str = PBI_SERVICE_BASE_URL,
         trust_env: bool = True,
+        shared_resilience: bool = True,
     ) -> None:
         self._credential = credential
-        self._bucket = TokenBucket(rpm=rpm, burst=burst)
-        self._long_running_bucket = TokenBucket(rpm=long_running_rpm, burst=long_running_rpm)
-        self._breaker = CircuitBreaker()
+        shared = (
+            _get_shared_resilience(
+                credential,
+                rpm=rpm,
+                burst=burst,
+                long_running_rpm=long_running_rpm,
+            )
+            if shared_resilience
+            else None
+        )
+        if shared is not None:
+            self._bucket = shared.bucket
+            self._long_running_bucket = shared.long_running_bucket
+            self._breaker = shared.breaker
+        else:
+            self._bucket = TokenBucket(rpm=rpm, burst=burst)
+            self._long_running_bucket = TokenBucket(rpm=long_running_rpm, burst=long_running_rpm)
+            self._breaker = CircuitBreaker()
         timeout = httpx.Timeout(self.DEFAULT_TIMEOUT, connect=5.0)
         self._fabric_client = _build_async_client(
             base_url=fabric_base_url,
@@ -863,4 +919,5 @@ __all__ = [
     "FabricAPIError",
     "FabricClient",
     "TokenBucket",
+    "reset_shared_fabric_resilience",
 ]

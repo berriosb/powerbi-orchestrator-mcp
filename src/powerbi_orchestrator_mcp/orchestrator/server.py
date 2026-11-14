@@ -21,6 +21,7 @@ import json
 import os
 import re
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -369,10 +370,13 @@ def set_active_session_id(session_id: str | None) -> None:
 
 
 def _reset_server_state() -> None:
+    from powerbi_orchestrator_mcp.cloud.fabric_client import reset_shared_fabric_resilience
+
     _plans.clear()
     _plan_owners.clear()
     _session_state["active_id"] = None
     _active_session_var.set(None)
+    reset_shared_fabric_resilience()
 
 
 def _parse_json_arg(val: Any, default: Any = None) -> Any:
@@ -595,6 +599,7 @@ def _build_plan_from_intent(
 
 @mcp.tool()
 @requires_scope("plan_change")
+@audited("plan_change")
 async def plan_change(
     intent: str,
     options: dict[str, Any] | None = None,
@@ -2249,6 +2254,7 @@ async def screenshot_report_pages(
         raise ReadOnlyModeError(
             "screenshot_report_pages writes rendered artifacts and is disabled while PBI_READONLY is set."
         )
+    require_capability_scope(SCOPE_WRITE, reason="screenshot_report_pages")
     result = await asyncio.to_thread(
         _screenshot,
         pbip_path=pbip_path,
@@ -3132,6 +3138,62 @@ def _log_startup_warnings(*, transport: str | None = None) -> None:
         sys.stderr.write(line + "\n")
 
 
+def build_http_app(
+    starlette_app: Any,
+    validate_fn: Callable[[str | None], dict[str, object]],
+) -> Any:
+    """Wrap the Starlette MCP ASGI app with Entra auth and Kubernetes health probes.
+
+    ``GET /healthz`` returns lightweight liveness JSON without authentication.
+    ``GET /readyz`` evaluates ``collect_readiness(transport_override="http")`` and
+    returns HTTP 200 when ready or 503 with failed check names (no paths/secrets).
+    All other paths require Bearer token validation via ``EntraAuthMiddleware``.
+    """
+    from powerbi_orchestrator_mcp.orchestrator.readiness import collect_readiness
+    from powerbi_orchestrator_mcp.orchestrator.transport import EntraAuthMiddleware
+
+    authed_app = EntraAuthMiddleware(starlette_app, validate_fn)
+
+    async def _app(scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") == "http":
+            path = str(scope.get("path", ""))
+            method = str(scope.get("method", "GET")).upper()
+            if method in {"GET", "HEAD"} and path in {"/healthz", "/readyz"}:
+                if path == "/healthz":
+                    status = 200
+                    payload: dict[str, Any] = {
+                        "status": "ok",
+                        "version": __version__,
+                        "transport": "http",
+                    }
+                else:
+                    findings = await asyncio.to_thread(collect_readiness, transport_override="http")
+                    failed = [f.name for f in findings if not f.ok]
+                    status = 200 if not failed else 503
+                    payload = {
+                        "status": "ready" if not failed else "not_ready",
+                        "version": __version__,
+                        "failed_checks": failed,
+                    }
+                body = b"" if method == "HEAD" else json.dumps(payload).encode("utf-8")
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": status,
+                        "headers": [
+                            [b"content-type", b"application/json"],
+                            [b"content-length", str(len(body)).encode("ascii")],
+                            [b"cache-control", b"no-store"],
+                        ],
+                    }
+                )
+                await send({"type": "http.response.body", "body": body})
+                return
+        await authed_app(scope, receive, send)
+
+    return _app
+
+
 def main() -> None:
     """Run the MCP server.
 
@@ -3183,7 +3245,6 @@ def main() -> None:
         return
 
     from powerbi_orchestrator_mcp.orchestrator.transport import (
-        EntraAuthMiddleware,
         auth_middleware_factory,
     )
 
@@ -3209,7 +3270,7 @@ def main() -> None:
     import uvicorn
 
     starlette_app = mcp.streamable_http_app()
-    authed_app = EntraAuthMiddleware(starlette_app, _validate_request)
+    authed_app = build_http_app(starlette_app, _validate_request)
     config = uvicorn.Config(
         authed_app,
         host=http_cfg.host,

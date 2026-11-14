@@ -11,13 +11,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import inspect
 import mimetypes
 import os
 import re
 import smtplib
+import ssl
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, Field
@@ -29,7 +32,11 @@ EMAIL_ALLOWED_DOMAINS_ENV = "PBI_EMAIL_ALLOWED_DOMAINS"
 INTERNAL_DOMAINS_ENV = "PBI_EMAIL_INTERNAL_DOMAINS"
 MAX_ATTACHMENT_BYTES_DEFAULT = 10 * 1024 * 1024
 
-_SIMPLE_EMAIL_RE = re.compile(r"^[^@\s<>]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$")
+# Restrict local-part to safe non-routing characters so Graph URL path segments
+# and SMTP envelopes cannot carry '/', '?', '#', '%', whitespace, or controls.
+_SIMPLE_EMAIL_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9])?@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$"
+)
 _EMBEDDED_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
@@ -76,8 +83,70 @@ def _parse_domains(env_var: str) -> set[str]:
 
 
 def _extract_domain(address: str) -> str | None:
-    match = _SIMPLE_EMAIL_RE.match(address.strip())
+    cleaned = address.strip()
+    if ".." in cleaned:
+        return None
+    match = _SIMPLE_EMAIL_RE.match(cleaned)
     return match.group(1).lower() if match else None
+
+
+def _acquire_graph_token() -> str:
+    from azure.identity import DefaultAzureCredential
+
+    cred = DefaultAzureCredential()
+    return str(cred.get_token("https://graph.microsoft.com/.default").token)
+
+
+def _send_via_smtp_sync(
+    *,
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    msg: EmailMessage,
+    subject: str,
+) -> str:
+    use_ssl = port == 465 or os.environ.get("PBI_SMTP_SSL", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    allow_insecure = os.environ.get("PBI_SMTP_ALLOW_INSECURE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    tls_context = ssl.create_default_context()
+
+    def _deliver(smtp: smtplib.SMTP) -> None:
+        if user:
+            smtp.login(user, password)
+        smtp.send_message(msg)
+
+    if use_ssl:
+        with smtplib.SMTP_SSL(host, port, timeout=20, context=tls_context) as smtp_ssl:
+            smtp_ssl.ehlo()
+            _deliver(smtp_ssl)
+    else:
+        with smtplib.SMTP(host, port, timeout=20) as smtp:
+            smtp.ehlo()
+            if smtp.has_extn("starttls"):
+                sig = inspect.signature(smtp.starttls)
+                if "context" in sig.parameters:
+                    smtp.starttls(context=tls_context)
+                else:
+                    smtp.starttls()
+                smtp.ehlo()
+            elif not allow_insecure:
+                raise RuntimeError(
+                    f"SMTP server {host}:{port} does not advertise STARTTLS and cleartext "
+                    "fallback is disabled (set PBI_SMTP_ALLOW_INSECURE=1 only for trusted relays)"
+                )
+            _deliver(smtp)
+
+    return str(
+        msg.get("Message-ID") or f"smtp-{hashlib.sha256(subject.encode('utf-8')).hexdigest()[:12]}"
+    )
 
 
 async def _send_via_smtp(
@@ -111,21 +180,15 @@ async def _send_via_smtp(
         )
         msg.add_attachment(att.read_bytes(), maintype=maintype, subtype=subtype, filename=att.name)
 
-    def _blocking_send() -> str:
-        with smtplib.SMTP(host, port, timeout=20) as smtp:
-            smtp.ehlo()
-            if port in {587, 25} and smtp.has_extn("starttls"):
-                smtp.starttls()
-                smtp.ehlo()
-            if user:
-                smtp.login(user, password)
-            smtp.send_message(msg)
-        return str(
-            msg.get("Message-ID")
-            or f"smtp-{hashlib.sha256(subject.encode('utf-8')).hexdigest()[:12]}"
-        )
-
-    return await asyncio.to_thread(_blocking_send)
+    return await asyncio.to_thread(
+        _send_via_smtp_sync,
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        msg=msg,
+        subject=subject,
+    )
 
 
 async def _send_via_graph(
@@ -140,10 +203,7 @@ async def _send_via_graph(
 ) -> str:
     token = os.environ.get("PBI_GRAPH_ACCESS_TOKEN", "").strip()
     if not token:
-        from azure.identity import DefaultAzureCredential
-
-        cred = DefaultAzureCredential()
-        token = cred.get_token("https://graph.microsoft.com/.default").token
+        token = await asyncio.to_thread(_acquire_graph_token)
 
     payload: dict[str, Any] = {
         "message": {
@@ -162,7 +222,8 @@ async def _send_via_graph(
         },
         "saveToSentItems": True,
     }
-    url = f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail"
+    encoded_sender = quote(sender.strip(), safe="@._+-")
+    url = f"https://graph.microsoft.com/v1.0/users/{encoded_sender}/sendMail"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     if graph_client is not None:
@@ -203,6 +264,8 @@ async def send_report_email(
 
     if not recipients_to:
         blocked.append("recipients_to cannot be empty")
+    if "\r" in subject or "\n" in subject:
+        blocked.append("subject contains forbidden control characters (CR/LF)")
 
     allowed_domains = _parse_domains(EMAIL_ALLOWED_DOMAINS_ENV)
     internal_domains = _parse_domains(INTERNAL_DOMAINS_ENV)

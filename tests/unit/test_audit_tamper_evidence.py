@@ -73,11 +73,11 @@ class TestAnchorIsSigned:
         conn.commit()
         conn.close()
 
-        row = (
-            sqlite3.connect(str(db))
-            .execute("SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1")
-            .fetchone()
-        )
+        conn = sqlite3.connect(str(db))
+        try:
+            row = conn.execute("SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
+        finally:
+            conn.close()
         anchor = audit_mod._anchor_file()
         data = json.loads(anchor.read_text())
         data.update({"last_id": 1, "count": 1, "last_hash": row[0]})

@@ -154,6 +154,15 @@ class FabricCredential:
         self._config = config
         self._credential: Any = self._build_credential()
 
+    @property
+    def scope_key(self) -> tuple[str, str, str]:
+        """Return a secret-free tuple identifying the credential's tenant/app scope."""
+        return (
+            self._config.mode,
+            self._config.tenant_id or "",
+            self._config.client_id or "",
+        )
+
     def _build_credential(self) -> Any:
         """Construct the appropriate azure-identity credential.
 

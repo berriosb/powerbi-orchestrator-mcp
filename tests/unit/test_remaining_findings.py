@@ -140,7 +140,11 @@ class TestPlanOwnership:
 
         store = PlanStore(db_path=legacy)
         store.count()
-        cols = {r[1] for r in sqlite3.connect(str(legacy)).execute("PRAGMA table_info(plans)")}
+        conn_check = sqlite3.connect(str(legacy))
+        try:
+            cols = {r[1] for r in conn_check.execute("PRAGMA table_info(plans)")}
+        finally:
+            conn_check.close()
 
         assert "owner" in cols
         assert store.get("old") is not None
