@@ -1318,7 +1318,7 @@ wheels = [
 
 [[package]]
 name = "powerbi-orchestrator-mcp"
-version = "1.25.0"
+version = "1.25.1"
 source = { editable = "." }
 dependencies = [
     { name = "azure-core" },
