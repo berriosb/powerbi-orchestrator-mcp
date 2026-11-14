@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > live in the [`docs/releases/RELEASE-NOTES-vX.Y.Z.md`](./docs/releases/) files.
 > This file is a condensed digest for quick lookup.
 
+## [1.25.1] — 2026-11-13
+
+### Security
+- **Runtime `Tools.Write` enforcement & plan auditing.** `screenshot_report_pages` now enforces `require_capability_scope(SCOPE_WRITE)` alongside `PBI_READONLY=1`, and `plan_change` records HMAC-chained audit entries via `@audited("plan_change")`.
+- **Hardened email & Microsoft Graph delivery (`send_report_email`).** Tightened address validation (rejecting `/`, `?`, `#`, `%`, `..`, CR/LF), URL-encoded Graph sender UPNs, offloaded `DefaultAzureCredential().get_token()` via `asyncio.to_thread`, added implicit TLS support (`SMTP_SSL` on port `465` / `PBI_SMTP_SSL=1`), and refused silent plaintext SMTP downgrades when `STARTTLS` is absent.
+- **Fail-closed audit trail in `report_runner`.** Emits a write-ahead `"attempted"` record prior to email delivery and propagates audit persistence failures when `PBI_AUDIT_FAIL_CLOSED=1` or `PBI_STRICT_COMPLIANCE=1`.
+- **Atomic SQLite WAL backup & rotation locking (`iso_handoff`).** `export_audit_bundle` copies active SQLite databases via `sqlite3.Connection.backup()`, checkpoints WAL before archiving, and guards `--rotate` with a cross-thread + advisory `fcntl.flock` lock.
+
+### Operations & Reliability
+- **HTTP health probes (`build_http_app`).** Exposed unauthenticated `GET`/`HEAD /healthz` (liveness) and `/readyz` (readiness returning HTTP 200 or 503 with failing check names only, no paths/secrets) ahead of `EntraAuthMiddleware`.
+- **Shared credential-scoped Fabric resilience.** `TokenBucket`, `long_running_bucket`, and `CircuitBreaker` are now shared across `FabricClient` instances per `(mode, tenant_id, client_id)` scope.
+- **Session store TTL pruning.** `SessionStore.prune_expired()` removes idle SQLite session files (`PBI_SESSION_TTL_HOURS`, default `168` h) including `-wal`/`-shm` sidecars.
+- **Container & security doc alignment.** Synced `Dockerfile`, `DOCKER.md`, `docker-compose.yml`, and `SECURITY.md` (supported versions and `--readonly` / HTTP probe / single-writer semantics).
+
 ## [1.25.0] — 2026-11-13
 
 ### Added

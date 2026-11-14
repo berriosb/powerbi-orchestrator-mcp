@@ -3,22 +3,22 @@
 # Stage 1: builder — installs the package + dependencies from uv.lock.
 # Stage 2: runtime — minimal image with just the package + runtime deps.
 #
-# The image is for running the orchestrator as an MCP server (stdio).
-# For HTTP transport you'd expose the port and use a process manager that
-# proxies stdio.
+# The image defaults to the MCP stdio transport. It also supports native
+# Streamable HTTP mode with Entra ID authentication (plus ``/healthz`` and
+# ``/readyz`` probes) via ``--transport http``.
 #
 # Build:
-#   docker build -t powerbi-orchestrator-mcp:1.23.1 .
+#   docker build -t powerbi-orchestrator-mcp:1.25.1 .
 #
 # Run (stdio for MCP — connect via your MCP client):
-#   docker run --rm -i powerbi-orchestrator-mcp:1.23.1
+#   docker run --rm -i powerbi-orchestrator-mcp:1.25.1
 #
 # Run the standalone CLI (the entrypoint is the MCP server, so the CLI
 # needs its own entrypoint):
 #   docker run --rm --entrypoint powerbi-orchestrator \
-#     powerbi-orchestrator-mcp:1.23.1 version
+#     powerbi-orchestrator-mcp:1.25.1 version
 #   docker run --rm --entrypoint powerbi-orchestrator \
-#     -v /host/path:/data powerbi-orchestrator-mcp:1.23.1 validate /data
+#     -v /host/path:/data powerbi-orchestrator-mcp:1.25.1 validate /data
 #
 
 # ---------------------------------------------------------------------------
@@ -75,6 +75,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 USER orchestrator
 WORKDIR /home/orchestrator
 
+# Expose default HTTP port when started with ``--transport http`` (stdio ignores this).
+EXPOSE 8000
+
 # Default to the MCP stdio transport. Override with ``powerbi-orchestrator``
 # for the standalone CLI.
 ENTRYPOINT ["/app/.venv/bin/powerbi-orchestrator-mcp"]
@@ -85,4 +88,4 @@ LABEL org.opencontainers.image.title="powerbi-orchestrator-mcp" \
       org.opencontainers.image.description="High-level MCP orchestrator for Power BI / Microsoft Fabric" \
       org.opencontainers.image.source="https://github.com/berriosb/powerbi-orchestrator-mcp" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="1.23.1"
+      org.opencontainers.image.version="1.25.1"

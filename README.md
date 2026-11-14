@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple)](https://modelcontextprotocol.io)
 
-**Status:** v1.25.0 — Beta. 38 tools, 88% cobertura, enterprise hardening
+**Status:** v1.25.1 — Beta. 38 tools, 89% cobertura, enterprise hardening
 (per-tool scopes, read- and write-path containment, plan ownership, full
 audit trail).
 Every state-changing tool is safe by default: `dry_run=True` on
@@ -23,7 +23,7 @@ Every tool also **reports what it actually did**: a check that could not
 run says so instead of returning a green result, a rollback that only
 partly succeeded is reported as partial, and a step says which engine
 served it.
-See [release notes](./docs/releases/RELEASE-NOTES-v1.25.0.md) · [changelog](./CHANGELOG.md).
+See [release notes](./docs/releases/RELEASE-NOTES-v1.25.1.md) · [changelog](./CHANGELOG.md).
 
 ---
 
@@ -226,7 +226,7 @@ Nadie entrega **orquestación cross-engine + nube maduro + UX verificable**.
 - [`SECURITY.md`](./SECURITY.md) — how to report vulnerabilities.
 - [`docs/troubleshooting.md`](./docs/troubleshooting.md) — common errors with remediation.
 - [`SPEC.md`](./SPEC.md) — visión, arquitectura 6 capas, MVP ambicioso.
-- [`docs/releases/RELEASE-NOTES-v1.25.0.md`](./docs/releases/RELEASE-NOTES-v1.25.0.md) — última release con decisiones.
+- [`docs/releases/RELEASE-NOTES-v1.25.1.md`](./docs/releases/RELEASE-NOTES-v1.25.1.md) — última release con decisiones.
 - [`docs/architecture.md`](./docs/architecture.md) — arquitectura detallada.
 - [`docs/engines-setup.md`](./docs/engines-setup.md) — instalar engines opcionales.
 - [`docs/connect-target.md`](./docs/connect-target.md) — uso del entry-point tool.
@@ -456,7 +456,7 @@ pasada es la que dice si el arreglo funcionó.
 
 → [`examples/03-audit-then-fix/`](./examples/03-audit-then-fix/README.md)
 
-## Estado actual (v1.25.0)
+## Estado actual (v1.25.1)
 
 - ✅ 38 tools implementadas (modelado, refactoring, reportes, nube, auditoría, UX, DAX, KPIs operacionales y entrega verificada)
 - ✅ Cross-engine rollback
@@ -484,7 +484,7 @@ pasada es la que dice si el arreglo funcionó.
   detiene la mutación, se reporta como aviso en el resultado. Con
   `PBI_AUDIT_FAIL_CLOSED=1` (o `PBI_STRICT_COMPLIANCE=1`) deja de serlo.
 
-Ver [`docs/releases/RELEASE-NOTES-v1.25.0.md`](./docs/releases/RELEASE-NOTES-v1.25.0.md) para el detalle de
+Ver [`docs/releases/RELEASE-NOTES-v1.25.1.md`](./docs/releases/RELEASE-NOTES-v1.25.1.md) para el detalle de
 la última release y [`CHANGELOG.md`](./CHANGELOG.md) para el historial completo.
 
 ## Licencia
